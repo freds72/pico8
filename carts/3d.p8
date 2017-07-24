@@ -19,7 +19,12 @@ hw=128/2
 -- heli settings
 heli={}
 heli.x=0
+heli.y=0
+heli.z=0
 heli.rotor={128,131,134}
+heli.zi=1
+heli.r2=12*12
+heli.dead=0
 -- global time
 t=0
 -- bullets
@@ -31,6 +36,7 @@ zbuf={}
 -- tanks
 tks={}
 tks_c=0
+tk_w=8
 -- helos
 helos={}
 helos_c=0
@@ -66,6 +72,7 @@ function spawn_building(x,y)
 	local b={}
 	b.x=x
 	b.y=y
+	b.touch=0
 	blds_c+=1
 	blds[blds_c]=b
 end
@@ -82,8 +89,21 @@ function fire(x,y,z,dy,dz)
 		blts[blts_c]=b
 end
 
+function write_zbuf(o,z,fn)
+	local zi
+	zi=flr((z-flr_z)/flr_h+0.5)
+	zi=mid(zi,1,flr_n+1)
+	zbuf[zi].n+=1
+	zbuf[zi].objs[zbuf[zi].n]=o
+	zbuf[zi].elts[zbuf[zi].n]=fn
+	return zi
+end
+
 function _update()
  t+=1
+ -- clear zbuf
+ for zb in all(zbuf) do zb.n=0 end
+ 
  if (btn(0)) then
 		heli.x-=1
 		if (heli.x<-10) then
@@ -102,9 +122,13 @@ function _update()
  if (btn(2)) cam.z-=0.5			
  if (btn(3)) cam.z+=0.5
  cam.z=mid(cam.z,flr_z+1,0)
+ heli.z=cam.z
+ heli.zi=write_zbuf(heli,cam.z,draw_plyr)
+ 
   -- advance 
  cam.y-=0.5
-
+	heli.y=cam.y
+	
  -- pick buildings
  map_t-=1
  if (map_t<0) then
@@ -115,9 +139,6 @@ function _update()
 		end
  end
 
- -- clear zbuf
- for zb in all(zbuf) do zb.n=0 end
-
  -- fire
 	if (btn(4) and blts_dly<=0 and blts_c<blts_n) then
 		fire(cam.x,cam.y+8,cam.z-1,-2,-0.5)
@@ -125,17 +146,38 @@ function _update()
 		blts_dly=2
 	end
 	blts_dly-=1
- 
+	
  -- update tanks
+ n=tks_c
+ tks_c=0
  for i=1,tks_c do
  	local tk=tks[i]
- 	tk.dly-=1
- 	if (tk.dly<=0) then
- 		fire(tk.x,tk.y,flr_z+0.5,2,1)
- 		tk.dly=2*30+rnd(30)
+ 	if (tk.y-cam.y<128) then
+		tk.dly-=1
+		if (tk.dly<=0) then
+ 			fire(tk.x,tk.y,flr_z+0.5,2,1)
+ 			tk.dly=2*30+rnd(30)
+ 		end
+ 		tks_c+=1
+		tks[tks_c]=tk
  	end
  end
  
+
+	-- update helos
+	n=helos_c
+ 	helos_c=0
+	for i=1,n do
+		local h=helos[i]
+		h.z+=h.dz
+		if (h.y-cam.y<128 and h.z<0) then
+		 helos_c+=1
+		 helos[helos_c]=h
+			--insert into zbuffer
+			write_zbuf(h,h.z,function() draw_helo(h) end)
+		end
+	end
+
 	-- update bullets
 	local n=blts_c
 	blts_c=0
@@ -149,10 +191,7 @@ function _update()
 			blts_c+=1
 			blts[blts_c]=b
 			--insert into zbuffer
-			zi=flr((b.z-flr_z)/flr_h)+1
-			zi=min(zi,flr_n+1)
-			zbuf[zi].n+=1
-			zbuf[zi].elts[zbuf[zi].n]=function() draw_bullet(b) end
+			write_zbuf(b,b.z,function() draw_bullet(b) end)
 		end
 	end 
 	-- update buildings
@@ -162,37 +201,24 @@ function _update()
 		local b
 		b=blds[i]
 		if (b.y-cam.y<128) then
+			b.touch=0
 			blds_c+=1
 			blds[blds_c]=b
 		end
 	end
-	-- update tanks
-	n=tks_c
- tks_c=0
-	for i=1,n do
-		local tk=tks[i]
-		if (tk.y-cam.y<128) then
-		 tks_c+=1
-			tks[tks_c]=tk
-		end
-	end
-	-- update helos
-	n=helos_c
- helos_c=0
-	for i=1,n do
-		local h=helos[i]
-		h.z+=h.dz
-		if (h.y-cam.y<128 and h.z<0) then
-		 helos_c+=1
-		 helos[helos_c]=h
-			--insert into zbuffer
-			local zi
-			zi=flr((h.z-flr_z)/flr_h)+1
-			zi=min(zi,flr_n+1)
-			zbuf[zi].n+=1
-			zbuf[zi].elts[zbuf[zi].n]=function() draw_helo(h) end
-		end
-	end
+
+	player_world_coll()
+end
+
+function draw_plyr()
+	palt(0,false)
+	palt(3,true)
+	local hs=66
+	if (heli.x<-2) hs=64
+	if (heli.x>2) hs=68
+	spr(hs,hw+heli.x-8,hw+16,2,3)
+	spr(heli.rotor[t%3+1],hh-11+heli.x,hw+13,3,3)
+	palt()
 end
 
 function draw_helo(h)
@@ -246,19 +272,19 @@ function draw_world()
 				if(i%2==1) then
 					sspr(40,0,32,32,xe-ze,ye-ze,2*ze,2*ze)
 				else
-				rectfill(xe-ze,ye-ze,xe+ze,ye+ze,5)
+					rectfill(xe-ze,ye-ze,xe+ze,ye+ze,5)
 				end
 			end
 			-- process zbuffer *after* building floors
 			zb=zbuf[i+1]
 			for j=1,zb.n do
 				zb.elts[j]()
-			end				
+			end
 		end
 		zb=zbuf[flr_n+1]
 		for j=1,zb.n do
 			zb.elts[j]()
-		end				
+		end
 	end
 end
 
@@ -266,7 +292,7 @@ function draw_tanks()
 	local ze,z,k,n,ye,w,dy,c,y1,h
 	z=flr_z-cam.z
 	w=1/z
-	ze=-0.5*focal*flr_w*w
+	ze=-focal*tk_w*w
 	palt(0,false)
 	palt(3,true)
 	for i=1,tks_c do
@@ -304,13 +330,45 @@ function draw_floor()
 		palt()
 	end
 end
+flr_z_max=-(flr_n-1)*flr_h
+function player_world_coll()
+	-- against buildings
+	if (heli.z<flr_z_max) then
+		local b,bx,by,x,y,dx,dy,d2
+		for i=1,blds_c do
+			b=blds[i]
+			bx=b.x-cam.x
+			by=b.y-cam.y
+			x=heli.x-1
+			y=24
+			dx=x-mid(x,bx-flr_w,bx+flr_w)
+			dy=y-mid(y,by-flr_w,by+flr_w)
+			d2=dx*dx+dy*dy
+			if (d2<heli.r2) then
+				heli.dead=1
+				b.touch=1
+				break
+			end
+		end
+	end
+	-- local zb=zbuf[heli.zi]
+	-- for i=1,zb.n do
+	-- 	local o=zb.objs[i]
+	-- 	if (o.iff==1) then
+	-- 		local dx,dy
+	-- 		dx=o.x-heli.x
+	-- 		dy=o.y-heli.y
+	-- 		if(dx*dx+dy*dy<o.r*o.r+heli.r2) then
+	-- 			o.hide=true
+	-- 			heli.dead=true
+	-- 		end
+	-- 	end
+	-- end
+end
 
 function print_zbuf(x,y)
-	local zi
-	zi=flr((cam.z-flr_z)/flr_h+0.5)
-	zi=mid(zi,1,flr_n+1)
 	for i=1,flr_n+1 do
-		if(zi==i) then
+		if(heli.zi==i) then
 			print("*zb:"..zbuf[i].n,x,y+i*8,12)
 		else
 			print("zb:"..zbuf[i].n,x,y+i*8,12)
@@ -325,28 +383,37 @@ function print_map(x,y)
 	palt()
 end
 
+function debug_draw()
+ --cls(0)
+	for i=1,blds_c do
+		local b=blds[i]
+		local x,y
+		x=b.x-cam.x
+		y=b.y-cam.y
+		x+=hw
+		y+=hh
+		if(b.touch==1) then
+			rectfill(x-flr_w,y-flr_w,x+flr_w,y+flr_w,10)
+		else
+			rect(x-flr_w,y-flr_w,x+flr_w,y+flr_w,10)
+		end
+	end 
+	circ(hw+heli.x-1,hh+24,12,12)
+end
+
 function _draw()
 
 	draw_floor()
-	draw_tanks()
+	--draw_tanks()
 	draw_world()
 	
-	palt(0,false)
-	palt(3,true)
-	local hs
-	hs=66
-	if (heli.x<-2) hs=64
-	if (heli.x>2) hs=68
-	spr(hs,hw-8+heli.x,hw+16,2,3)
-	spr(heli.rotor[t%3+1],hh-11+heli.x,hw+13,3,3)
-	palt()
-	
-	print("“"..stat(1),0,0,12)
-	print("˜"..stat(0),0,8,12)	
+	print("cpu"..stat(1),0,0,12)
+	print("mem"..stat(0),0,8,12)	
 	--print("blds:"..blds_c,0,16,12)
 	--print("tks :"..tks_c,0,24,12)
 	--print_map(0,32)
 	--print_zbuf(0,16)
+	debug_draw()
 end
 
 function _init()
@@ -357,6 +424,7 @@ for i=1,flr_n+1 do
 	zbuf[i]={}
 	zbuf[i].n=0
 	zbuf[i].elts={}
+	zbuf[i].objs={}
 end
 for i=1,15 do
 	map_funcs[i]=spawn_nop
