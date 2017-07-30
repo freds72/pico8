@@ -50,6 +50,7 @@ tk_h=24
 helos={}
 helos_c=0
 helo_w=24
+helo_h=32
 helo_r2=helo_w*helo_w
 helo_body={64,88}
 -- map index
@@ -140,13 +141,14 @@ function tk_class:update()
 end
 
 function tk_class:draw()
-	local x,y,xe,ye,tk
-	local ze=self.w*tk_w
-	x=self.x-cam.x
-	y=self.y-cam.y
-	xe=hw+x*self.w
-	ye=hh+y*self.w
-	sspr(0,8,16,24,xe-ze/2,ye-3*ze/4,ze,3*ze/2)
+	local w=self.w
+	local zw,zh=tk_w*w,tk_h*w
+	local xe,ye=hw+(self.x-cam.x)*w,hh+(self.y-cam.y)*w
+	if (self.hit==0) then
+		sspr(0,8,16,24,xe-zw/2,ye-zw/2,zw,zh)
+	else
+		sspr(32,96,32,24,xe-12*w,ye-16*w,32*w,24*w,t%2==0,t%4==0)
+	end
 end
 function tk_class:blt_hit(blt)
 	if(blt.z<flr_z+0.5) then
@@ -194,17 +196,15 @@ end
 helo_class={}
 function helo_class:draw()
 	local z=self.z-cam.z
-	local ze,w,x,y,xe,ye
-	w=1/(focal+z)
-	ze=helo_w*focal*w
-	x=self.x-cam.x
-	y=self.y-cam.y
-	xe=hw+focal*x*w
-	ye=hh+focal*y*w
+	local zh,zw,w
+	w=focal/(focal+z)
+	zw=helo_w*w
+	zh=helo_h*w
+	local xe,ye=hw+(self.x-cam.x)*w,hh+(self.y-cam.y)*w
 	if(self.hit==0) then
-		sspr(helo_body[t%2+1],32,24,32,xe-ze/2,ye-2*ze/3,ze,4*ze/3)
+		sspr(helo_body[t%2+1],32,24,32,xe-zw/2,ye-zh/2,zw,zh)
 	else
-		sspr(32,96,32,24,xe-ze/2,ye-ze/2,ze,ze,t%2==0,t%4==0)
+		sspr(32,96,32,24,xe-12*w,ye-16*w,32*w,24*w,t%2==0,t%4==0)
 	end
 end
 function helo_class:blt_hit(blt)
@@ -232,15 +232,12 @@ function spawn_helo(x,y)
 	h.dz=8/30
 	h.hit=0
 	helos_c+=1
- 	helos[helos_c]=h
+ helos[helos_c]=h
 	return h
 end
 
 function spawn_building(x,y)
-	local b={}
-	b.x=x
-	b.y=y
-	b.touch=0
+	local b={x=x,y=y,touch=0}
 	blds_c+=1
 	blds[blds_c]=b
 	return b
@@ -248,14 +245,14 @@ end
 
 blt_class={}
 function fire(x,y,z,dy,dz)
-	local b={}
+	local b={
+ 	x=x,
+		y=y,
+		z=max(flr_z,z),
+		dy=dy,
+		dz=dz,
+		t=t+2*30}
 	setmetatable(b,{__index=blt_class})
- 	b.x=x
-	b.y=y
-	b.z=max(flr_z,z)
-	b.dy=dy
-	b.dz=dz
-	b.t=t+2*30
 	blts_c+=1
 	blts[blts_c]=b
 	sfx(3)
@@ -265,13 +262,11 @@ function blt_class:draw()
 	local ze,z,c,w
 	z=self.z-cam.z
 	if(z<0) then
-		w=1/(focal+z)
-		ze=flr(blt_w*focal*w)+1
-		local x,y,xe,ye
-		x=self.x-cam.x
-		y=self.y-cam.y
-		xe=hw+focal*x*w
-		ye=hh+focal*y*w				
+		w=focal/(focal+z)
+		ze=flr(blt_w*w)+1
+		local xe,ye
+		xe=hw+(self.x-cam.x)*w
+		ye=hh+(self.y-cam.y)*w				
 		sspr(6*8,4*8,8,8,xe-ze,ye-ze,2*ze,2*ze)
 	end
 end
@@ -334,8 +329,7 @@ function top_down_game:update()
 
  -- fire
 	if (btn(4) and blts_dly<=t and blts_c<blts_n) then
-		fire(cam.x+heli.x,cam.y+16,cam.z-0.5,-3,-1)
-		
+		fire(cam.x+heli.x,cam.y+16,cam.z-0.5,-3,-1)		
 		blts_dly=t+2
 	end
 
@@ -374,8 +368,7 @@ function top_down_game:update()
 	n=blds_c
 	blds_c=0
 	for i=1,n do
-		local b
-		b=blds[i]
+		local b=blds[i]
 		if (b.y-cam.y<196) then
 			b.touch=0
 			blds_c+=1
@@ -387,8 +380,7 @@ function top_down_game:update()
 	local n=blts_c
 	blts_c=0
 	for i=1,n do
-		local b
-		b=blts[i]
+		local b=blts[i]
 		b.z+=b.dz
 		if (b.t>t and b.z>=flr_z) then
 			b.y+=b.dy
@@ -408,16 +400,14 @@ function draw_world()
 	for i=0,flr_n-1 do
 		z=i*flr_h+flr_z-cam.z
 		if(z<=0) then
-			w=1/(focal+z)
-			ze=focal*flr_w*w
+			w=focal/(focal+z)
+			ze=flr_w*w
 			c=ramp[i%2+1]
 			for k=1,blds_c do
 				local b=blds[k]
-				local x,y,xe,ye
-				x=b.x-cam.x
-				y=b.y-cam.y
-				xe=hw+focal*x*w
-				ye=hh+focal*y*w				
+				local xe,ye
+				xe=hw+(b.x-cam.x)*w
+				ye=hh+(b.y-cam.y)*w				
 				if(i==flr_n-1) then
 				 sspr(40,0,32,32,xe-ze,ye-ze,2*ze,2*ze)
 				else
@@ -440,21 +430,18 @@ end
 function draw_floor()
 	local ze,z,k,n,ye,w,dy,c,y1,h
 	z=flr_z-cam.z
-	w=-1/(focal+z)
-	ze=-focal*flr_w*w
+	w=-focal/(focal+z)
+	ze=-flr_w*w
  k=flr(128/ze+0.5)
- dy=focal*cam.y*w
+ dy=cam.y*w
 	h=64+(dy%(2*ze))
 	y1=flr(-2*ze+h%(2*ze))
 	-- map(0,0,0,-1+y1%2,16,17)
 	map(0,0,0,-1+y1%2,16,17)
  for i=-2,k-1,2 do
- 	--c=grass[i%2+1]
- 	--rectfill(0,y1,127,y1+ze,c)
 		rectfill(0,y1,127,y1+flr(ze),3)
 	 y1+=2*ze
 	end
-	-- draw_roads()
 	-- draw heli shadow
 	if (flr(t)%2==0) then
 		ze/=2
@@ -599,6 +586,8 @@ end
 
 function top_down_game:init()
 t=0
+map_i=0
+map_t=t+64
 cam.x=0
 cam.y=0
 cam.z=0
@@ -667,8 +656,10 @@ function title_screen:score(name,s)
 	local c=1
 	for i=1,5 do
 		if(s>=scores[i][2]) then
-			for j=i,4 do
-				scores[j+1]=scores[j]
+		 local j=5
+			while(j!=i) do
+				scores[j]=scores[j-1]
+				j-=1
 			end
 			scores[i]={name,s}
 			break
@@ -696,7 +687,7 @@ end
 function game_over:update()
 	t+=1
 	if(t>30*30 or btn(4) or btn(5)) then
-		title_screen:score(self.get_name(),950)
+		title_screen:score(self.get_name(),1450)
 		sm:push(title_screen)
 	end
 	if(btnp(0)) name_i-=1
@@ -730,7 +721,7 @@ function game_over:init()
 end
 
 -- game loop
-function _update()	
+function _update()
 	t+=1
 	sm:update()
 end
@@ -738,7 +729,7 @@ function _draw()
 	sm:draw()
 end
 function _init()
-	sm:push(title_screen)
+	sm:push(game_over)
 end
 
 __gfx__
