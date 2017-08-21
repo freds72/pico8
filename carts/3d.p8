@@ -16,8 +16,8 @@ flr_zmax=(flr_n-1)*flr_h
 -- camera
 hh=63
 hw=64
--- heli settings
-heli={
+-- player "thunderblade" settings
+plyr={
 	x=0,
 	y=0,
 	z=16,
@@ -28,12 +28,12 @@ heli={
 	hit=false,
 	safe_dly=0
 }
-heli_zmax=56
-heli_r2=12*12
-heli_rotor={128,131,134}
-heli_body={64,66,68}
-heli_body3d={204,200,202}
-heli_rotor3d={
+plyr_zmax=56
+plyr_r2=12*12
+plyr_rotor={128,131,134}
+plyr_body={64,66,68}
+plyr_body3d={204,200,202}
+plyr_rotor3d={
 	[1]={250,{-10,5,true},{8,-2,false,true}},
 	[2]={248,{-10,2,false,false},{8,2,true,false}},
 	[3]={250,{-8,-2,true,true},{8,5}}
@@ -44,7 +44,6 @@ t=0
 blts={}
 blts_c=0
 blts_n=32
-blts_dly=0
 blt_w=4
 blt_r2=blt_w*blt_w
 -- zbuffer
@@ -192,11 +191,6 @@ end
 --------------------
 --- tank -----------
 tk_class={}
-tk_class.w=0
-function tk_class:update()
-	--local z=flr_z-cam.z
-	--self.w=-focal/z
-end
 function tk_class:draw(pos,i)
 	local we,he=tk_w*pos.w,tk_h*pos.w
 	if (self.hit==0) then
@@ -242,7 +236,7 @@ end
 
 ---------------------
 --- blast -----------
-function draw_blast(self,pos)
+function blast_draw(self,pos)
 	local s=(self.t-t)/8
 	local we=s*self.width*pos.w
 	sspr(32,104,16,16,pos.x-we/2,pos.y-we/2,we,we,t%2==0,t%4==0)
@@ -267,7 +261,7 @@ function blasts:make(x,y,z,dy,dz,w,tmax)
 		dz=dz or 0,
 		t=t+(tmax or 0.2)*30+rnd((tmax or 0.4)/2),
 		width=w or 32,
-		draw=draw_blast
+		draw=blast_draw
 	}
 	add(blasts,b)
 	return b
@@ -275,22 +269,29 @@ end
 
 ---------------------
 --- player ----------
-heli_class={}
-setmetatable(heli,{__index=heli_class})
-function heli_class:draw(pos)
-	if(heli.safe_dly>t and band(t,1)==0) return
+function plyr:init()
+	self.x=0
+	self.y=0
+	self.z=plyr_zmax
+	self.lives=3
+	self.hit=false
+	self.safe_dly=t+3*30
+	self.fire_dly=0
+end
+function plyr:draw(pos)
+	if(self.safe_dly>t and band(t,1)==0) return
 	local idx=mid(flr(self.vx),-1,1)+2
 	if(cam:is_top_down()) then
-		spr(heli_body[idx],hw-8,hh+16,2,3)
-		spr(heli_rotor[t%3+1],hw-11,hh+13,3,3)
+		spr(plyr_body[idx],hw-8,hh+16,2,3)
+		spr(plyr_rotor[t%3+1],hw-11,hh+13,3,3)
 	else
-		local pos=heli_rotor3d[idx][band(t,1)+2]
-		spr(heli_rotor3d[idx][1],hw-8+pos[1],hh+pos[2],2,1,pos[3],pos[4])
-		spr(heli_body3d[idx],hw-8,hh,2,3)
+		local pos=plyr_rotor3d[idx][band(t,1)+2]
+		spr(plyr_rotor3d[idx][1],hw-8+pos[1],hh+pos[2],2,1,pos[3],pos[4])
+		spr(plyr_body3d[idx],hw-8,hh,2,3)
 	end
 	print(pos.z-cam.zfar,pos.x,pos.y,0)
 end
-function heli_class:die()
+function plyr:die()
 	sfx(1)
 	self.lives-=1
 	if(self.lives==0) then
@@ -298,7 +299,7 @@ function heli_class:die()
 	end
 	self.safe_dly=t+3*30
 end
-function heli_class:update()
+function plyr:update()
 	local dx=0
 	if (btn(0)) dx=-0.25
 	if (btn(1)) dx=0.25
@@ -312,7 +313,7 @@ function heli_class:update()
 	
 	if (btn(2)) self.z-=0.5
 	if (btn(3)) self.z+=0.5
-	self.z=mid(self.z,0,heli_zmax)
+	self.z=mid(self.z,0,plyr_zmax)
 
 	if(btn(5)) then
 		self.vy-=0.25
@@ -329,17 +330,16 @@ function heli_class:update()
 	end
 	
 	-- fire
-	if (btn(4) and blts_dly<=t and blts_c<blts_n) then
+	if (btn(4) and self.fire_dly<=t and blts_c<blts_n) then
 		fire(self.x,self.y-16,self.z-0.5,3,-3)		
-		blts_dly=t+2
+		self.fire_dly=t+2
 	end
 
 	-- cam world position
 	cam:track(self)
 	self.zi=zbuf:write(self)
- 
 end
-function heli_class:resolve_collision()
+function plyr:resolve_collision()
 	-- just (re)spawned
 	if (self.safe_dly>=t) return
 	-- against buildings
@@ -358,7 +358,7 @@ function heli_class:resolve_collision()
 			dx/=8
 			dy/=8
 			d2=dx*dx+dy*dy
-			if (d2<heli_r2/64) then
+			if (d2<plyr_r2/64) then
 				--self:die()
 				b.touch=1
 				break
@@ -384,21 +384,21 @@ end
 ------------
 --- helo ---
 helo_class={}
-function helo_class:draw(pos)
+function helo_draw(self,pos)
 	local we,he=helo_w*pos.w,helo_h*pos.w
-	if(cam:is_top_down()) then
-		sspr(helo_body[band(t,1)+1],32,24,32,pos.x-we/2,pos.y-he/2,we,he)
-	else
-		sspr(72,64,16,16,pos.x-8*pos.w,pos.y-8*pos.w,16*pos.w,16*pos.w)
-		--[[
-		if(t%2==0) then
-			sspr(64,120,16,8,pos.x-8*pos.w,pos.y-4*pos.w,16*pos.w,16*pos.w)
-			sspr(64,120,16,8,pos.x-16*pos.w,pos.y-4*pos.w,16*pos.w,16*pos.w,true)	
-		end
-		]]
-	end
+	sspr(helo_body[band(t,1)+1],32,24,32,pos.x-we/2,pos.y-he/2,we,he)
 end
-function helo_class:blt_hit(blt)
+function helo_chase_draw(self,pos)
+	local we,he=helo_w*pos.w,helo_h*pos.w
+	sspr(72,64,16,16,pos.x-8*pos.w,pos.y-8*pos.w,16*pos.w,16*pos.w)
+	--[[
+	if(t%2==0) then
+		sspr(64,120,16,8,pos.x-8*pos.w,pos.y-4*pos.w,16*pos.w,16*pos.w)
+		sspr(64,120,16,8,pos.x-16*pos.w,pos.y-4*pos.w,16*pos.w,16*pos.w,true)	
+	end
+	]]
+end
+function helo_blt_collision(self,blt)
 	local dx,dy,d2
 	dx=blt.x-self.x
 	dy=blt.y-self.y
@@ -420,8 +420,13 @@ function spawn_helo(x,y)
 		x=x,y=y,z=0,
 		dy=0,dz=24/30,
 		dly=t+1.5*30+rnd(30),
-		hit=0}
-	setmetatable(h,{__index=helo_class})
+		hit=0,
+		blt_hit=helo_blt_collision}
+	if(cam:is_top_down()) then
+		h.draw=helo_draw
+	else
+		h.draw=helo_chase_draw
+	end
 	helos_c+=1
 	helos[helos_c]=h
 	return h
@@ -571,11 +576,11 @@ function zbuf_class:draw()
 end
 function zbuf_class:print(x,y,c)
 	local col=c or 1
-	print("heli:"..heli.z,x,y,col)
+	print("plyr:"..plyr.z,x,y,col)
 	y+=6
 	for i=1,self.n+1 do
 		local s="."
-		if(heli.zi==i) s=">"
+		if(plyr.zi==i) s=">"
 		print(s..i..":"..zbuf[i].n,x,y+i*8,col)
 	end
 end
@@ -584,17 +589,17 @@ top_down_game={}
 function top_down_game:update()
 	zbuf:clear()
  
-	heli:update()
+	plyr:update()
 
 	cam:update()
 	
 	-- pick world items
-	local h2map=flr(heli.y/8)
+	local h2map=flr(plyr.y/8)
 	if (map_t<h2map) then
 		map_i+=1
 		map_t=h2map+8
 		for i=0,7 do
-			map_funcs[sget(map_i,56+i)+1](-96+192*(i+1)/8,heli.y+128)
+			map_funcs[sget(map_i,56+i)+1](-96+192*(i+1)/8,plyr.y+128)
 		end
 	end
 
@@ -603,7 +608,7 @@ function top_down_game:update()
 	blds_c=0
 	for i=1,n do
 		local b=blds[i]
-		if (b.y-heli.y>-128) then
+		if (b.y-plyr.y>-128) then
 			b.touch=0
 			for zi=1,#b.floors do
 				--zbuf:write(b.floors[zi],nil,zi)
@@ -614,12 +619,11 @@ function top_down_game:update()
 		end
 	end
 	-- update tanks
-	tk_class:update()
 	n=tks_c
 	tks_c=0
 	for i=1,n do
 		local tk=tks[i]
-		if (tk.y-heli.y>-128 and tk.hit==0) then
+		if (tk.y-plyr.y>-128 and tk.hit==0) then
 			if (tk.dly<=t) then
 				fire(tk.x,tk.y,0.5,-2,1)
 				tk.dly=t+2*30+rnd(30)
@@ -636,9 +640,9 @@ function top_down_game:update()
 	for i=1,n do
 		local h=helos[i]
 		if (h.dly<=t) h.z+=h.dz
-		if (h.y-heli.y>-128 and h.hit==0) then
-		 helos_c+=1
-		 helos[helos_c]=h
+		if (h.y-plyr.y>-128 and h.hit==0) then
+			helos_c+=1
+			helos[helos_c]=h
 			--insert into zbuffer
 			zbuf:write(h,h)
 		end
@@ -661,10 +665,10 @@ function top_down_game:update()
 		end
 	end 
 
- -- updates splosions
- blasts:update()
+	-- updates splosions
+ 	blasts:update()
  
-	heli:resolve_collision()
+	plyr:resolve_collision()
 	blts_world_coll()
 end
 
@@ -683,7 +687,7 @@ function draw_floor()
 			 	local ca=cos(a)
 				-- find v coords 
 				local w=cam.focal/dist
-				local ydist=dist*ca+heli.y
+				local ydist=dist*ca+plyr.y
 				local y=band(band(0x7fff,ydist),31)
 				local c=band(band(flr(y/16),31),1)
 				memset(0x6000+(64-i)*64,grass[2*c+band(64-i,1)+1],64)
@@ -744,10 +748,10 @@ function blts_world_coll()
 				dy/=8
 				d2=dx*dx+dy*dy
 				if (d2<blt_r2/64) then
-				 blt.t=0
-				 b.touch=1
-				 blasts:make(blt.x,blt.y,blt.z,0,0,8)
-				 break
+					blt.t=0
+					b.touch=1
+					blasts:make(blt.x,blt.y,blt.z,0,0,8)
+					break
 				end
 			end
 		end
@@ -768,7 +772,7 @@ function print_map(x,y)
 	spr(112,x,y,6,1)
 	line(x+map_i,y,x+map_i,y+8,8)
 	palt()
-	print("y:"..heli.y,x,y+16,0)
+	print("y:"..plyr.y,x,y+16,0)
 end
 
 function debug_draw()
@@ -808,7 +812,7 @@ function top_down_game:draw_spd(x,y)
 		pset(x+13+4*i,y,8)
 		pset(x+13+4*i,y+4,8)		
 	end
-	rectfill(x+13,y+1,x+13+16*heli.vy,y+3,11)
+	rectfill(x+13,y+1,x+13+16*plyr.vy,y+3,11)
 	
 	print("spd",x+1,y,8)
 	
@@ -823,7 +827,7 @@ function top_down_game:draw()
 	--cls(0)
 	palt(3,true)
 	zbuf:draw()
-	for i=0,heli.lives-1 do
+	for i=0,plyr.lives-1 do
 		spr(0,2+i*9,128-9)
 	end
 	palt()
@@ -861,7 +865,7 @@ function top_down_game:init()
 	cam.z=0
 	cam.beta=0.75
 	--zbuf=make_zbuf(flr_n,flr_h)
- zbuf=make_zbuf(8,flr_h)
+ 	zbuf=make_zbuf(8,flr_h)
 	
 	for i=1,15 do
 		map_funcs[i]=spawn_nop
@@ -888,12 +892,7 @@ function top_down_game:init()
 	-- sounds
 	sfx(4)
 
-	heli.x=0
-	heli.y=0
-	heli.z=heli_zmax
-	heli.lives=3
-	heli.hit=false
-	heli.safe_dly=t+3*30
+	plyr:init()
 end
 
 -------------------------
@@ -906,7 +905,7 @@ function chase_game:draw()
 	draw_floor()
 	palt(3,true)
 	zbuf:draw()
-	for i=0,heli.lives-1 do
+	for i=0,plyr.lives-1 do
 		spr(0,2+i*9,128-9)
 	end
 	palt()
@@ -963,10 +962,7 @@ function chase_game:init()
 	-- sounds
 	sfx(4)
 
-	heli.x=0
-	heli.y=0
-	heli.z=0
-	heli.hit=false
+	plyr:init()
 end
 
 -- title_screen
@@ -1089,7 +1085,7 @@ function _draw()
 	sm:draw()
 end
 function _init()
-	cam=cam_class:new(96,-96-heli_zmax)
+	cam=cam_class:new(96,-96-plyr_zmax)
 	sm:push(top_down_game)
 end
 
