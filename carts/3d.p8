@@ -29,7 +29,8 @@ plyr={
 	safe_dly=0
 }
 plyr_zmax=56
-plyr_r2=12*12
+plyr_r=12
+plyr_r2=plyr_r*plyr_r
 plyr_rotor={128,131,134}
 plyr_body={64,66,68}
 plyr_body3d={204,200,202}
@@ -45,6 +46,7 @@ blts={}
 blts_c=0
 blts_n=32
 blt_w=4
+blt_r=blt_w
 blt_r2=blt_w*blt_w
 -- zbuffer
 zbuf={}
@@ -53,12 +55,15 @@ tks={}
 tks_c=0
 tk_w=16
 tk_h=24
+tk_chase_w=16
+tk_chase_h=16
 -- helos
 helos={}
 helos_c=0
 helo_w=24
 helo_h=32
-helo_r2=helo_w*helo_w
+helo_r=12
+helo_r2=helo_r*helo_r
 helo_body={64,88}
 -- map index
 map_t=12
@@ -79,7 +84,7 @@ _pl={[0]="00000015d67",
      [1]="0000015d677",
      [2]="0000024ef77",
      [3]="000013b7777",
-     [4]="0000249a777",
+     [4]="00009a777",
      [5]="000015d6777",
      [6]="0015d677777",
      [7]="015d6777777",
@@ -184,51 +189,54 @@ function cam_class:project(pos)
 end
 function cam_class:track(pos)
 	self.x=pos.x
-	self.y=pos.y-self.cb*self.focal
+	self.y=pos.y+24-self.cb*self.focal
 	self.z=pos.z-self.sb*self.focal
 end
 
 --------------------
 --- tank -----------
 tk_class={}
-function tk_class:draw(pos,i)
+function tk_draw(self,pos)
 	local we,he=tk_w*pos.w,tk_h*pos.w
-	if (self.hit==0) then
-		if(cam:is_top_down()) then
-			sspr(0,8,16,24,pos.x-we/2,pos.y-we/2,we,he)
-		else
-			sspr(104,16,16,16,pos.x-8*pos.w,pos.y-8*pos.w,16*pos.w,16*pos.w)		
-		end
-	else
-		sspr(32,96,32,24,pos.x-12*pos.w,pos.y-16*pos.w,32*w,24*w,band(t,1)==0,t%4==0)
-	end
+	sspr(0,8,16,24,pos.x-we/2,pos.y-we/2,we,he)
 end
-function tk_class:blt_hit(blt)
-	if(blt.z<0.25) then
-		local dx,dy,d2
-		dx=blt.x-mid(blt.x,self.x-tk_w,self.x+tk_w)
-		dy=blt.y-mid(blt.y,self.y-tk_h,self.y+tk_h)
-		-- avoid overflow
-		dx/=8
-		dy/=8
-		d2=dx*dx+dy*dy
-		if (d2<blt_r2/64) then
-			self.hit=1
-			sfx(1)
-			return true
-		end
+function tk_chase_draw(self,pos)
+	local we,he=tk_chase_w*pos.w,tk_chase_h*pos.w
+	sspr(104,16,16,16,pos.x-we/2,pos.y-we/2,we,he)
+end
+function tk_blt_collision(self,blt)
+	local dz=blt.z-self.z
+	if(abs(dz)>2) return
+	local dx,dy,d2
+	dx=blt.x-mid(blt.x,self.x-tk_w,self.x+tk_w)
+	dy=blt.y-mid(blt.y,self.y-tk_h,self.y+tk_h)
+	-- avoid overflow
+	dx/=8
+	dy/=8
+	d2=dx*dx+dy*dy
+	if (d2<blt_r2/64) then
+		self.hit=1
+		blasts:make(self.x,self.y,self.z,0,0,4,1)
+		sfx(1)
+		return true
 	end
 	return false
 end
 
 function spawn_tk(x,y)
-	local tk={}
-	setmetatable(tk,{__index=tk_class})	
-	tk.x=x
-	tk.y=y
-	tk.z=0
-	tk.dly=2*30+rnd(2*30)
-	tk.hit=0
+	local tk={
+		x=x,
+		y=y,
+		z=0,
+		dly=2*30+rnd(2*30),
+		hit=0,
+		blt_hit=tk_blt_collision,
+	}
+	if(cam:is_top_down()) then
+		tk.draw=tk_draw
+	else
+		tk.draw=tk_chase_draw
+	end
 	tks_c+=1
 	tks[tks_c]=tk
 	return tk
@@ -282,14 +290,13 @@ function plyr:draw(pos)
 	if(self.safe_dly>t and band(t,1)==0) return
 	local idx=mid(flr(self.vx),-1,1)+2
 	if(cam:is_top_down()) then
-		spr(plyr_body[idx],hw-8,hh+16,2,3)
-		spr(plyr_rotor[t%3+1],hw-11,hh+13,3,3)
+		spr(plyr_body[idx],pos.x-8,pos.y-9,2,3)
+		spr(plyr_rotor[t%3+1],pos.x-10,pos.y-11,3,3)
 	else
 		local pos=plyr_rotor3d[idx][band(t,1)+2]
 		spr(plyr_rotor3d[idx][1],hw-8+pos[1],hh+pos[2],2,1,pos[3],pos[4])
 		spr(plyr_body3d[idx],hw-8,hh,2,3)
 	end
-	print(pos.z-cam.zfar,pos.x,pos.y,0)
 end
 function plyr:die()
 	sfx(1)
@@ -331,7 +338,7 @@ function plyr:update()
 	
 	-- fire
 	if (btn(4) and self.fire_dly<=t and blts_c<blts_n) then
-		fire(self.x,self.y-16,self.z-0.5,3,-3)		
+		blts:make(self.x,self.y+5,self.z-0.5,3,-3)		
 		self.fire_dly=t+2
 	end
 
@@ -339,18 +346,18 @@ function plyr:update()
 	cam:track(self)
 	self.zi=zbuf:write(self)
 end
-function plyr:resolve_collision()
+function plyr:resolve_collisions()
 	-- just (re)spawned
 	if (self.safe_dly>=t) return
 	-- against buildings
-	if (self.z<flr_zmax) then
+	if (self.z<=flr_zmax) then
 		local b,bx,by,x,y,dx,dy,d2
 		for i=1,blds_c do
 			b=blds[i]
 			bx=b.x-self.x
 			by=b.y-self.y
-			x=-1
-			y=-24
+			x=0
+			y=0
 			-- printh("bx:"..bx.." by:"..by)
 			dx=x-mid(x,bx-flr_w,bx+flr_w)
 			dy=y-mid(y,by-flr_w,by+flr_w)
@@ -359,26 +366,21 @@ function plyr:resolve_collision()
 			dy/=8
 			d2=dx*dx+dy*dy
 			if (d2<plyr_r2/64) then
-				--self:die()
+				self:die()
 				b.touch=1
 				break
 			end
 		end
 	end
-	-- todo: lookup map, find height
-	-- local zb=zbuf[heli.zi]
-	-- for i=1,zb.n do
-	-- 	local o=zb.objs[i]
-	-- 	if (o.iff==1) then
-	-- 		local dx,dy
-	-- 		dx=o.x-heli.x
-	-- 		dy=o.y-heli.y
-	-- 		if(dx*dx+dy*dy<o.r*o.r+heli.r2) then
-	-- 			o.hide=true
-	-- 			heli.dead=true
-	-- 		end
-	-- 	end
-	-- end
+	-- against stuff
+	local zb=zbuf[plyr.zi]
+	for i=1,zb.o do
+		local o=zb.objs[i]
+		if (o.plyr_hit and o:plyr_hit(self)) then
+			self:die()
+			break
+		end
+	end
 end
 
 ------------
@@ -398,19 +400,34 @@ function helo_chase_draw(self,pos)
 	end
 	]]
 end
+local helo_blt_r2=(blt_r+helo_r)*(blt_r+helo_r)
 function helo_blt_collision(self,blt)
-	local dx,dy,d2
-	dx=blt.x-self.x
-	dy=blt.y-self.y
-	-- avoid overflow
-	dx/=8
-	dy/=8
-	d2=dx*dx+dy*dy
-	if(d2<(blt_r2+helo_r2)/64) then
+	local dz=blt.z-self.z
+	if(abs(dz)>blt_r+8) return
+	local dx,dy=blt.x-self.x,blt.y-self.y
+	local dist=blt_r+helo_r
+	if(abs(dx)>dist or abs(dy)>dist) return
+	if(dx*dx+dy*dy<helo_blt_r2) then
 		self.hit=1
 		blasts:make(self.x,self.y,self.z,0,-32/30,4,2)
 		sfx(1)
 		return true
+	end
+	return false
+end
+local helo_plyr_r2=(plyr_r+helo_r)*(plyr_r+helo_r)
+function helo_plyr_collision(self, p)
+	local dz=p.z-self.z
+	if(abs(dz)>4) return
+	local dx,dy=p.x-self.x,p.y-self.y
+	local dist=plyr_r+helo_r
+	if(abs(dx)<=dist and abs(dy)<=dist) then
+		if(dx*dx+dy*dy<helo_plyr_r2) then
+			self.hit=1
+			blasts:make(self.x,self.y,self.z,0,-32/30,4,2)
+			sfx(1)
+			return true
+		end
 	end
 	return false
 end
@@ -419,11 +436,12 @@ function spawn_helo(x,y)
 	local h={
 		x=x,y=y,z=0,
 		dy=0,dz=24/30,
-		dly=t+1.5*30+rnd(30),
-		hit=0,
-		blt_hit=helo_blt_collision}
+		dly=t+1.8*30,
+		hit=0}
 	if(cam:is_top_down()) then
 		h.draw=helo_draw
+		h.blt_hit=helo_blt_collision
+		h.plyr_hit=helo_plyr_collision		
 	else
 		h.draw=helo_chase_draw
 	end
@@ -435,7 +453,7 @@ end
 -------------
 --- building ---
 bld_class={}
-function draw_flr(self,pos)
+function flr_draw(self,pos)
 	local we=flr_w*pos.w
 	if(self.i==1) then
 		-- shadow
@@ -446,41 +464,41 @@ function draw_flr(self,pos)
 	local c=ramp[band(self.i,1)+1]
 	local k=flr(we/4+0.5)
 	we*=2
- if(pos.y>64) then
- 	rectfill(x,y,x+we,y+k,c)
- else
- 	rectfill(x,y+we-k,x+we,y+we,c)
- end
- if(pos.x<64) then
- 	rectfill(x+we-k,y,x+we,y+we,c)
- else
- 	rectfill(x,y,x+k,y+we,c)
- end
+	if(pos.y>64) then
+		rectfill(x,y,x+we,y+k,c)
+	else
+		rectfill(x,y+we-k,x+we,y+we,c)
+	end
+	if(pos.x<64) then
+		rectfill(x+we-k,y,x+we,y+we,c)
+	else
+		rectfill(x,y,x+k,y+we,c)
+	end
 end
-function draw_top_flr(self,pos,i)
-		local we=flr_w*pos.w
-		sspr(40,0,32,32,pos.x-we,pos.y-we,2*we,2*we)
+function roof_draw(self,pos,i)
+	local we=flr_w*pos.w
+	sspr(40,0,32,32,pos.x-we,pos.y-we,2*we,2*we)
 end
-function draw_slice(self,pos)
+function flr_chase_draw(self,pos)
 	local we=flr_w*pos.w
 	local x,y=pos.x-we,pos.y-we
 	local c=ramp[band(self.i,1)+1]
 	local k=flr(we/4+0.5)
 	we*=2
- if(pos.y>64) then
- 	rectfill(x,y,x+we,y+k,c)
- else
- 	rectfill(x,y+we-k,x+we,y+we,c)
- end
- if(pos.x<64) then
- 	rectfill(x+we-k,y,x+we,y+we,c)
- else
- 	rectfill(x,y,x+k,y+we,c)
- end
+	if(pos.y>64) then
+		rectfill(x,y,x+we,y+k,c)
+	else
+		rectfill(x,y+we-k,x+we,y+we,c)
+	end
+	if(pos.x<64) then
+		rectfill(x+we-k,y,x+we,y+we,c)
+	else
+		rectfill(x,y,x+k,y+we,c)
+	end
 end
-function draw_front_slice(self,pos,i)
-		local we=flr_w*pos.w
-		sspr(72,0,32,32,pos.x-we,pos.y-we,2*we,2*we)
+function roof_chase_draw(self,pos,i)
+	local we=flr_w*pos.w
+	sspr(72,0,32,32,pos.x-we,pos.y-we,2*we,2*we)
 end
 function spawn_building(x,y)
 	local b={
@@ -489,16 +507,15 @@ function spawn_building(x,y)
 	}
 	if(cam:is_top_down()) then
 		for i=0,flr_n-1 do
-			add(b.floors,{x=x,y=y,z=i*flr_h,i=i,draw=draw_flr})
+			add(b.floors,{x=x,y=y,z=i*flr_h,i=i,draw=flr_draw})
 		end
-		add(b.floors,{x=x,y=y,z=flr_n*flr_h,i=8,draw=draw_top_flr})
+		add(b.floors,{x=x,y=y,z=flr_n*flr_h,i=8,draw=roof_draw})
 	else
 		for i=1,flr_n do
-			add(b.floors,{x=x,y=y+i*flr_h,z=0,i=i,draw=draw_slice})
+			add(b.floors,{x=x,y=y+i*flr_h,z=0,i=i,draw=flr_chase_draw})
 		end
-		add(b.floors,{x=x,y=y,z=0,i=8,draw=draw_front_slice})
+		add(b.floors,{x=x,y=y,z=0,i=8,draw=roof_chase_draw})
 	end
-	setmetatable(b,{__index=bld_class})
 	blds_c+=1
 	blds[blds_c]=b
 	return b
@@ -506,26 +523,57 @@ end
 
 --------------
 --- bullet ---
-blt_class={}
-function fire(x,y,z,dy,dz)
-	local b={}
-	setmetatable(b,{__index=blt_class})
-	b.x=x
-	b.y=y
-	b.z=max(z,0)
-	b.dy=dy
-	b.dz=dz
-	b.t=t+3*30
-	blts_c+=1
-	blts[blts_c]=b
-	sfx(3)
-	return b
-end
-function blt_class:draw(pos)
+function blt_draw(self,pos)
 	local we=flr(blt_w*pos.w)+1
 	sspr(6*8,4*8,8,8,pos.x-we,pos.y-we,2*we,2*we)
 end
-
+function blts:make(x,y,z,dy,dz)
+	local b={
+		x=x,
+		y=y,
+		z=max(z,0),
+		dy=dy,
+		dz=dz,
+		t=t+3*30,
+		draw=blt_draw
+	}
+	blts_c+=1
+	self[blts_c]=b
+	sfx(3)
+	return b
+end
+function blts:resolve_collisions()
+	for j=1,blts_c do
+		local blt=self[j]
+		-- against buildings
+		if (blt.z<=flr_zmax) then
+			local b,dx,dy,d2
+			for i=1,blds_c do
+				b=blds[i]
+				dx=blt.x-mid(blt.x,b.x-flr_w,b.x+flr_w)
+				dy=blt.y-mid(blt.y,b.y-flr_w,b.y+flr_w)
+				dx/=8
+				dy/=8
+				d2=dx*dx+dy*dy
+				if (d2<blt_r2/64) then
+					blt.t=0
+					b.touch=1
+					blasts:make(blt.x,blt.y,blt.z,0,0,8)
+					break
+				end
+			end
+		end
+		-- against stuff
+		local zb=zbuf[blt.zi]
+		for i=1,zb.o do
+			local o=zb.objs[i]
+			if (o:blt_hit(blt)) then
+		 		blt.t=0
+		 		break
+		 	end
+		end
+	end
+end
 ---------------
 --- zbuffer ---
 zbuf_class={}
@@ -611,13 +659,13 @@ function top_down_game:update()
 		if (b.y-plyr.y>-128) then
 			b.touch=0
 			for zi=1,#b.floors do
-				--zbuf:write(b.floors[zi],nil,zi)
 				zbuf:write(b.floors[zi])
 			end
 			blds_c+=1
 			blds[blds_c]=b
 		end
 	end
+
 	-- update tanks
 	n=tks_c
 	tks_c=0
@@ -625,7 +673,7 @@ function top_down_game:update()
 		local tk=tks[i]
 		if (tk.y-plyr.y>-128 and tk.hit==0) then
 			if (tk.dly<=t) then
-				fire(tk.x,tk.y,0.5,-2,1)
+				blts:make(tk.x,tk.y,0.5,-2,1)
 				tk.dly=t+2*30+rnd(30)
 			end
 			tks_c+=1
@@ -666,10 +714,10 @@ function top_down_game:update()
 	end 
 
 	-- updates splosions
- 	blasts:update()
+ blasts:update()
  
-	plyr:resolve_collision()
-	blts_world_coll()
+	plyr:resolve_collisions()
+	blts:resolve_collisions()
 end
 
 function draw_floor()
@@ -734,39 +782,6 @@ function draw_floor()
 	--end
 end
 
-function blts_world_coll()
-	for j=1,blts_c do
-		local blt=blts[j]
-		-- against buildings
-		if (blt.z<flr_zmax) then
-			local b,dx,dy,d2
-			for i=1,blds_c do
-				b=blds[i]
-				dx=blt.x-mid(blt.x,b.x-flr_w,b.x+flr_w)
-				dy=blt.y-mid(blt.y,b.y-flr_w,b.y+flr_w)
-				dx/=8
-				dy/=8
-				d2=dx*dx+dy*dy
-				if (d2<blt_r2/64) then
-					blt.t=0
-					b.touch=1
-					blasts:make(blt.x,blt.y,blt.z,0,0,8)
-					break
-				end
-			end
-		end
-		-- against stuff
-		local zb=zbuf[blt.zi]
-		for i=1,zb.o do
-			local o=zb.objs[i]
-			if (o:blt_hit(blt)) then
-		 		blt.t=0
-		 		break
-		 	end
-		end
-	end
-end
-
 function print_map(x,y)
 	palt(0,false)
 	spr(112,x,y,6,1)
@@ -792,7 +807,11 @@ function debug_draw()
 		end
 	end 
 	
-	circ(hw-1,hh+24,12,12)
+	local pos=cam:project(plyr)
+	if(pos.w) then
+		circ(pos.x,pos.y,plyr_r,12)	
+		print(pos.w,pos.x+helo_r+1,pos.y,0)
+	end
 	for i=1,blts_c do
 		local b=blts[i]
 		local x,y
@@ -802,6 +821,24 @@ function debug_draw()
 		y=hh-y
 		circ(x,y,blt_w,12)
 		print(b.zi,x+blt_w,y,0)		
+	end
+
+	for i=1,helos_c do
+		local o=helos[i]
+		local dz=plyr.z-o.z
+		local pos=cam:project({x=o.x,y=o.y,z=plyr.z})
+		if(pos.w) then
+			local x,y=o.x-plyr.x,o.y-plyr.y
+			if((x*x+y*y)<(helo_r+plyr_r)*(helo_r+plyr_r)) then
+				circfill(pos.x,pos.y,helo_r,10)
+			else
+				circ(pos.x,pos.y,helo_r,10)
+			end
+			if(abs(dz)<=4) then
+				line(hw-1,hh+24,64+x,64-y,8)
+			end		
+			--print(dz,pos.x+helo_r+1,pos.y,0)
+		end
 	end
 end
 
@@ -816,6 +853,7 @@ function top_down_game:draw_spd(x,y)
 	
 	print("spd",x+1,y,8)
 	
+	-- debug (beta angle)
 	circ(118,17,8,1)
 	line(118,17,118+8*cam.cb,17-8*cam.sb,8)
 	print(flr(360*cam.beta),118-6,17+12,1)
@@ -838,7 +876,7 @@ function top_down_game:draw()
 	--print("blds:"..blds_c,0,16,12)
 	--print("tks :"..tks_c,0,24,12)
 	--print_map(0,32)
-	zbuf:print(0,16,1)
+	--zbuf:print(0,16,1)
 	--debug_draw()
 end
 
@@ -864,6 +902,13 @@ function top_down_game:init()
 	cam.y=0
 	cam.z=0
 	cam.beta=0.75
+	-- reset entities
+	helos_c=0
+	tks_c=0
+	blts_c=0
+	for b in all(blasts) do
+		del(blasts, b)
+	end
 	--zbuf=make_zbuf(flr_n,flr_h)
  	zbuf=make_zbuf(8,flr_h)
 	
@@ -878,6 +923,7 @@ function top_down_game:init()
 	-- scan map
 	local du=1/32
 	local u=0
+	road_offset={}
 	for i=1,6*8*32 do
 		add(road_offset,road_avg(u,du))
 		u+=du
