@@ -40,7 +40,7 @@ plyr_rotor3d={
 	[3]={250,{-8,-2,true,true},{8,5}}
 }
 -- global time
-t=0
+time_t=0
 -- bullets
 blts={}
 blts_c=0
@@ -189,7 +189,7 @@ function cam_class:project(pos)
 end
 function cam_class:track(pos)
 	self.x=pos.x
-	self.y=pos.y+24-self.cb*self.focal
+	self.y=pos.y-self.cb*self.focal
 	self.z=pos.z-self.sb*self.focal
 end
 
@@ -251,7 +251,7 @@ function blast_draw(self,pos)
 end
 function blasts:update()
 	for b in all(blasts) do
-		if(b.t<t) then
+		if(b.t<time_t) then
 			del(blasts,b)
 		else
 			b.y+=b.dy
@@ -267,7 +267,7 @@ function blasts:make(x,y,z,dy,dz,w,tmax)
 		z=z,
 		dy=dy or 0,
 		dz=dz or 0,
-		t=t+(tmax or 0.2)*30+rnd((tmax or 0.4)/2),
+		t=time_t+(tmax or 0.2)*30+rnd((tmax or 0.4)/2),
 		width=w or 32,
 		draw=blast_draw
 	}
@@ -283,7 +283,7 @@ function plyr:init()
 	self.z=plyr_zmax
 	self.lives=3
 	self.hit=false
-	self.safe_dly=t+3*30
+	self.safe_dly=time_t+3*30
 	self.fire_dly=0
 end
 function plyr:draw(pos)
@@ -304,7 +304,7 @@ function plyr:die()
 	if(self.lives==0) then
 		sm:push(game_over)
 	end
-	self.safe_dly=t+3*30
+	self.safe_dly=time_t+3*30
 end
 function plyr:update()
 	local dx=0
@@ -337,38 +337,36 @@ function plyr:update()
 	end
 	
 	-- fire
-	if (btn(4) and self.fire_dly<=t and blts_c<blts_n) then
-		blts:make(self.x,self.y+5,self.z-0.5,3,-3)		
-		self.fire_dly=t+2
+	if (btn(4) and self.fire_dly<=time_t and blts_c<blts_n) then
+		blts:make(self.x,self.y+5,self.z-0.5,3,-3)
+		self.fire_dly=time_t+0.2*30
 	end
 
 	-- cam world position
-	cam:track(self)
+	cam:track({
+		x=self.x,
+		y=self.y+24,
+		z=self.z})
 	self.zi=zbuf:write(self)
 end
 function plyr:resolve_collisions()
 	-- just (re)spawned
-	if (self.safe_dly>=t) return
+	if (self.safe_dly>=time_t) return
 	-- against buildings
 	if (self.z<=flr_zmax) then
-		local b,bx,by,x,y,dx,dy,d2
+		local b,bx,by,dx,dy
 		for i=1,blds_c do
 			b=blds[i]
 			bx=b.x-self.x
 			by=b.y-self.y
-			x=0
-			y=0
-			-- printh("bx:"..bx.." by:"..by)
-			dx=x-mid(x,bx-flr_w,bx+flr_w)
-			dy=y-mid(y,by-flr_w,by+flr_w)
-			-- avoid overflow :[
-			dx/=8
-			dy/=8
-			d2=dx*dx+dy*dy
-			if (d2<plyr_r2/64) then
+			dx=mid(0,bx-flr_w,bx+flr_w)
+			dy=mid(0,by-flr_w,by+flr_w)
+			if(abs(dx)>plyr_r or abs(dy) >plyr_r) return
+			local d2=dx*dx+dy*dy
+			if (d2<plyr_r2) then
 				self:die()
 				b.touch=1
-				break
+				return
 			end
 		end
 	end
@@ -378,9 +376,32 @@ function plyr:resolve_collisions()
 		local o=zb.objs[i]
 		if (o.plyr_hit and o:plyr_hit(self)) then
 			self:die()
-			break
+			return
 		end
 	end
+end
+
+function circ_coll(a,b,ra,rb,r2)
+	local dz=b.z-a.z
+	if(abs(dz)>ra+rb) return
+	local dx,dy=b.x-a.x,b.y-a.y
+	local dist=ra+rb
+	if(abs(dx)>dist or abs(dy)>dist) return
+	local dist2=r2 or dist*dist
+	return (dx*dx+dy*dy<dist2)
+end
+
+function circbox_coll(a,b,ra,bw,bh,bz)
+	local dz=b.z-a.z
+	if(abs(dz)>bz+ra) return
+	local dx,dy
+	dx=a.x-mid(a.x,b.x-bw,b.x+bw)
+	dy=a.y-mid(a.y,b.y-bh,b.y+bh)
+	if(abs(dx)>ra or abs(dy)>ra) return
+	local d2=dx*dx+dy*dy
+	return (d2<ra*ra)
+end
+function box_coll(a,ah,aw,b,bw,bh)
 end
 
 ------------
@@ -401,6 +422,11 @@ function helo_chase_draw(self,pos)
 	]]
 end
 local helo_blt_r2=(blt_r+helo_r)*(blt_r+helo_r)
+function helo_die(self)
+	self.hit=1
+	blasts:make(self.x,self.y,self.z,0,-32/30,4,2)
+	sfx(1)
+end
 function helo_blt_collision(self,blt)
 	local dz=blt.z-self.z
 	if(abs(dz)>blt_r+8) return
@@ -436,12 +462,12 @@ function spawn_helo(x,y)
 	local h={
 		x=x,y=y,z=0,
 		dy=0,dz=24/30,
-		dly=t+1.8*30,
+		dly=time_t+1.8*30,
 		hit=0}
 	if(cam:is_top_down()) then
 		h.draw=helo_draw
 		h.blt_hit=helo_blt_collision
-		h.plyr_hit=helo_plyr_collision		
+		h.plyr_hit=helo_plyr_collision
 	else
 		h.draw=helo_chase_draw
 	end
@@ -534,7 +560,7 @@ function blts:make(x,y,z,dy,dz)
 		z=max(z,0),
 		dy=dy,
 		dz=dz,
-		t=t+3*30,
+		t=time_t+3*30,
 		draw=blt_draw
 	}
 	blts_c+=1
@@ -672,9 +698,9 @@ function top_down_game:update()
 	for i=1,n do
 		local tk=tks[i]
 		if (tk.y-plyr.y>-128 and tk.hit==0) then
-			if (tk.dly<=t) then
+			if (tk.dly<=time_t) then
 				blts:make(tk.x,tk.y,0.5,-2,1)
-				tk.dly=t+2*30+rnd(30)
+				tk.dly=time_t+2*30+rnd(30)
 			end
 			tks_c+=1
 			tks[tks_c]=tk
@@ -687,7 +713,7 @@ function top_down_game:update()
 	helos_c=0
 	for i=1,n do
 		local h=helos[i]
-		if (h.dly<=t) h.z+=h.dz
+		if (h.dly<=time_t) h.z+=h.dz
 		if (h.y-plyr.y>-128 and h.hit==0) then
 			helos_c+=1
 			helos[helos_c]=h
@@ -702,7 +728,7 @@ function top_down_game:update()
 	for i=1,n do
 		local b=blts[i]
 		b.z+=b.dz
-		if (b.t>t and b.z>0) then
+		if (b.t>time_t and b.z>0) then
 			b.y+=b.dy
 			blts_c+=1
 			blts[blts_c]=b
@@ -714,7 +740,7 @@ function top_down_game:update()
 	end 
 
 	-- updates splosions
- blasts:update()
+	blasts:update()
  
 	plyr:resolve_collisions()
 	blts:resolve_collisions()
@@ -898,6 +924,7 @@ function top_down_game:init()
 	t=0
 	map_i=0
 	map_t=8
+	cam=cam_class:new(96,-96-plyr_zmax)
 	cam.x=0
 	cam.y=0
 	cam.z=0
@@ -1015,7 +1042,7 @@ end
 title_screen={}
 start_ramp={8,2,1,2}
 scores={
-	{"aaa",1000},	
+	{"aaa",1000},
 	{"bbb",900},
 	{"ccc",800},
 	{"ddd",600},
@@ -1023,11 +1050,115 @@ scores={
 }
 ranks={"1st","2nd","3rd","4th","5th"}
 starting=false
+rooster={
+	rows={}
+}
+chars=" abcdefghijklmnopqrstuvwxyz-0123456789\131\132\133\134\135\136\137\138\139\140"
+chars_mem={}
+function rooster:clear()
+	self.rows={}
+end
+function rooster:update()
+	for row in all(self.rows) do
+		if(row.dly<time_t) then
+			for c in all(row.chars) do
+				if (c.dly<time_t) c:update()
+			end
+		end
+	end
+end
+function rooster:draw()
+	for row in all(self.rows) do
+		if(row.dly<time_t) then
+			for c in all(row.chars) do
+				if (c.dly<time_t) c:draw()
+			end
+		end
+	end
+end
+function rooster:add(s)
+	local n=#self.rows
+	local row={
+		dly=time_t+n*0.5*30,
+		chars={}
+	}
+	local x,z=-48,12-8*n
+	local dt=0
+	for i=1,#s do
+		local c=sub(s,i,i)
+		-- no need to display space
+		if(c!=" ") then
+			local char={
+				c=c,
+				dly=row.dly+n*2*30+dt*0.25*30,
+				src={x=x,y=-64,z=-24},
+				dst={x=x,y=0,z=z},
+				draw=char_draw,
+				update=char_update
+			}
+			add(row.chars,char)
+			dt+=1
+		end
+		x+=8
+	end
+	add(self.rows,row)
+end
+function lerpn(a,b,t)
+	local r={}
+	for k,v in pairs(a) do
+		r[k]=v*(1-t)+b[k]*t
+	end
+	return r
+end
+function smoothstep(t)
+	t=mid(t,0,1)
+	return t*t*(3-2*t)
+end
+function char_update(self)
+	local t=(time_t-self.dly)/(0.8*30)
+	self.cur=lerpn(self.src,self.dst,smoothstep(t))
+end
+function char_draw(self)
+	local pos=cam:project(self.cur)
+	if(pos.w) sprint(self.c,pos.x,pos.y,7,pos.w)
+end
+
+sprint_lastm=-1
+function sprint_init(chars)
+	for i=1,#chars do
+		local c=sub(chars,i,i)
+		cls(0)
+		print(c,0,0,7)
+		local mem=0x4300+(i-1)*32
+		for y=0,7 do
+			memcpy(mem+4*y,0x6000+64*y,4)
+		end
+		chars_mem[c]=mem
+	end
+end
+function sprint(c,x,y,col,size)
+	if(abs(size-1)<0.01) then
+		print(c,x-4,y-4,col)
+	else
+		local mem=chars_mem[c]
+		if(mem!=sprint_lastm) then
+			for m=0,7 do
+				memcpy(0x0+64*m,mem+4*m,4)
+			end
+			sprint_lastm=mem
+		end
+		pal(7,col)
+		sspr(0,0,8,8,x-4*size,y-4*size,8*size,8*size)
+		pal(7,7)
+	end
+end
+	
 function title_screen:update()
 	if(btnp(4) or btnp(5)) then
 		starting=true
 		sm:push(top_down_game)
 	end
+	rooster:update()
 end
 function title_screen:draw()
 	cls(0)
@@ -1042,24 +1173,30 @@ function title_screen:draw()
 	print("rank",24,36,5)
 	print("score",48,36,5)
 	print("name",76,36,5)
-	for i=1,5 do
-		print(ranks[i],24,36+7*i,6)
-		print(scores[i][2],48,36+7*i,6)
-		print(scores[i][1],76,36+7*i,6)
-	end
+
+	rooster:draw()
+	
 	s="\151 or \145 to play"
 	local rs=8
 	if (starting) rs=2
-	print(s,64-#s*5/2,128-8,start_ramp[flr(t/rs)%#start_ramp+1])
+	print(s,64-#s*5/2,128-8,start_ramp[flr(time_t/rs)%#start_ramp+1])
 end
 function title_screen:init()
 	starting=false
+	cam=cam_class:new(96,-96)
+	cam.beta=0
+	cam:track({x=0,y=0,z=0})
+	rooster:clear()
+	for i=1,#ranks do
+		local s=ranks[i].."  "..scores[i][2].."  "..scores[i][1]
+		rooster:add(s)
+	end
 end
 function title_screen:score(name,s)
 	local c=1
-	for i=1,5 do
+	for i=1,#ranks do
 		if(s>=scores[i][2]) then
-		 local j=5
+		 local j=#ranks
 			while(j!=i) do
 				scores[j]=scores[j-1]
 				j-=1
@@ -1073,7 +1210,6 @@ end
 game_over={}
 name={}
 name_i=1
-chars="abcdefghijklmnopqrstuvwxyz-0123456789\131\132\133\134\135\136\137\138\139\140"
 i2c={}
 for i=1,#chars do
  local c=sub(chars,i,i)
@@ -1087,8 +1223,8 @@ function game_over:get_name()
 	return s
 end
 function game_over:update()
-	t+=1
-	if(t>30*30 or btnp(4) or btnp(5)) then
+	time_t+=1
+	if(time_t>30*30 or btnp(4) or btnp(5)) then
 		title_screen:score(self.get_name(),1450)
 		sm:push(title_screen)
 	end
@@ -1116,7 +1252,7 @@ function game_over:draw()
 	print(30-flr(t/30),128-8,128-12,1)
 end
 function game_over:init()
-	t=0
+	time_t=0
 	name={1,1,1}
 	name_i=1
 	name_c=1
@@ -1124,15 +1260,17 @@ end
 
 -- game loop
 function _update()
-	t+=1
+	time_t+=1
 	sm:update()
 end
 function _draw()
 	sm:draw()
 end
 function _init()
-	cam=cam_class:new(96,-96-plyr_zmax)
-	sm:push(top_down_game)
+	cls(0)
+	print("dip switch testing...")
+	sprint_init(chars)
+	sm:push(title_screen)
 end
 
 __gfx__
