@@ -145,6 +145,72 @@ function sm:draw()
 	end
 end
 
+-- decompress pic --
+-- written by dw817 (david w)
+-- http://writerscafe.org/dw817
+set="abcdefghijklmnopqrstuvwxyz()[]{}"
+function pic2scr(p)
+	s=dot2str(p)
+	str2mem(s,24576)
+end
+
+function str2mem(t,m)
+	local b1,b2,c,n,p=0,0,0,0,1
+	repeat
+		if b1==0 then
+			n=instr(set,sub(t,p,p))-1
+		end
+		if band(n,2^b1)>0 then
+			c+=2^b2
+		end
+		b1+=1
+		if (b1==5) b1=0 p+=1
+		b2+=1
+		if b2==8 or p>#t then
+			poke(m,c)
+			b2=0 c=0 m+=1
+		end
+	until p>=#t
+end--str2mem
+
+-- decompress dots to string
+function dot2str(t)
+	local i,c,ch,n1,n2
+	local r,l1="",0
+	i=1 
+	while i<=#t do
+		c=sub(t,i,i)
+		if c=="." then
+			i+=1
+			ch=sub(t,i,i)
+			repeat
+				i+=1
+				c=sub(t,i,i)
+				if (c!=".") l1=l1..c 
+			until c=="." or i==#t
+			l2=l1+0 --clumsy!
+			for j=1,l2 do
+				r=r..ch
+			end
+			l1=""
+		else
+			r=r..c
+		end
+		i+=1 
+	end--wend
+	return r
+end--dots2str
+
+-- return pos # of str b in a
+function instr(a,b)
+	local r=0,0
+	for i=1,#a-#b+1 do
+		if (sub(a,i,i+#b-1)==b) r=i
+	end
+	return r
+end--instr
+
+-- 
 function spawn_nop()
 end
 
@@ -245,9 +311,9 @@ end
 ---------------------
 --- blast -----------
 function blast_draw(self,pos)
-	local s=(self.t-t)/8
+	local s=(self.t-time_t)/8
 	local we=s*self.width*pos.w
-	sspr(32,104,16,16,pos.x-we/2,pos.y-we/2,we,we,t%2==0,t%4==0)
+	sspr(32,104,16,16,pos.x-we/2,pos.y-we/2,we,we,time_t%2==0,time_t%4==0)
 end
 function blasts:update()
 	for b in all(blasts) do
@@ -287,13 +353,13 @@ function plyr:init()
 	self.fire_dly=0
 end
 function plyr:draw(pos)
-	if(self.safe_dly>t and band(t,1)==0) return
+	if(self.safe_dly>time_t and band(time_t,1)==0) return
 	local idx=mid(flr(self.vx),-1,1)+2
 	if(cam:is_top_down()) then
 		spr(plyr_body[idx],pos.x-8,pos.y-9,2,3)
-		spr(plyr_rotor[t%3+1],pos.x-10,pos.y-11,3,3)
+		spr(plyr_rotor[time_t%3+1],pos.x-10,pos.y-11,3,3)
 	else
-		local pos=plyr_rotor3d[idx][band(t,1)+2]
+		local pos=plyr_rotor3d[idx][band(time_t,1)+2]
 		spr(plyr_rotor3d[idx][1],hw-8+pos[1],hh+pos[2],2,1,pos[3],pos[4])
 		spr(plyr_body3d[idx],hw-8,hh,2,3)
 	end
@@ -301,7 +367,7 @@ end
 function plyr:die()
 	sfx(1)
 	self.lives-=1
-	if(self.lives==0) then
+	if(self.lives<=0) then
 		sm:push(game_over)
 	end
 	self.safe_dly=time_t+3*30
@@ -409,13 +475,13 @@ end
 helo_class={}
 function helo_draw(self,pos)
 	local we,he=helo_w*pos.w,helo_h*pos.w
-	sspr(helo_body[band(t,1)+1],32,24,32,pos.x-we/2,pos.y-he/2,we,he)
+	sspr(helo_body[band(time_t,1)+1],32,24,32,pos.x-we/2,pos.y-he/2,we,he)
 end
 function helo_chase_draw(self,pos)
 	local we,he=helo_w*pos.w,helo_h*pos.w
 	sspr(72,64,16,16,pos.x-8*pos.w,pos.y-8*pos.w,16*pos.w,16*pos.w)
 	--[[
-	if(t%2==0) then
+	if(time_t%2==0) then
 		sspr(64,120,16,8,pos.x-8*pos.w,pos.y-4*pos.w,16*pos.w,16*pos.w)
 		sspr(64,120,16,8,pos.x-16*pos.w,pos.y-4*pos.w,16*pos.w,16*pos.w,true)	
 	end
@@ -892,7 +958,7 @@ function top_down_game:draw()
 	palt(3,true)
 	zbuf:draw()
 	for i=0,plyr.lives-1 do
-		spr(0,2+i*9,128-9)
+		spr(2,2+i*9,128-9)
 	end
 	palt()
 	
@@ -979,7 +1045,7 @@ function chase_game:draw()
 	palt(3,true)
 	zbuf:draw()
 	for i=0,plyr.lives-1 do
-		spr(0,2+i*9,128-9)
+		spr(2,2+i*9,128-9)
 	end
 	palt()
 	
@@ -1040,6 +1106,7 @@ end
 
 -- title_screen
 title_screen={}
+title_pic=".a163.cecriekbafcr.a13.fcrk.a12.qa].}8.l]}}d.a24.}}).a18.i]}pl]}}g[}}p.a12.u{}hb.a12.cvkvk}}}lvku}}p.a24.[}}h.a18.v}})v}}}r}}}b.a11.r(}}e.a15.ri]}}pvkv{}}vkb.a21.q}}}f.a17.u{}}x}}}x}}}h.a10.iym}}t.a15.emw}}}gtz{}}xnn.a22.{}}xb.a16.q(}}u{}}}{}}}.a11.bl}}pc.a14.qiu{}})m]a]}}wvb.a8.q(}}e.a7.ry}}}gacriecbiukfaukaaak}}tk}}})k]}dqivkvkvaaivm}}ljaivkvkvk.a8.qqkvktvdevkjpvskpvskpvskkvsikvsab(}jkvk)a(}jkv{bev{jkvcaaijvkcjvkklvknuukfjvknuukfrukfbikvsukvc.a8.ckvknwoquknlvkkjvkkjvkkjvkvkvkcquknivkntuknqukfqukvsieaaaevkvkvklnvkvbskjfskvfskvntkvuskvuskvk.a8.iivkvz(bskvnvkvnvkjnvkvnvkvevkvnvkvgvkvnskvnvkvfskvuwvdaaquknsukvwvkvwiecvvkvsukvw)kvk)kvs(kvkb.a9.vkvgldikvwvkvwvkvwvkv(ukv(ukv(ukv(ukvwjkvwtkvwikvwnglaaqskv(wkv(wkv(wkv(ukv(wkv({lvknlvknlvkf.a9.ukv(mnajv(wkv(wkvzwkv(wkvktkvktkvktkvzgjv(gjv(cjv(ovkaaaikvg)kvk)kvkljvk)evk)jvk)evkjnvkjnvkt.a9.ikvjtvbevk)jvg)kvs(kvg)kvsmjvsmjvgnjvg)evgjjvglevkl.a6.jvjkft(mhvknhvzuru(mhv(mtszevtzmsszmc.a9.zmgnwgqszmtsjkhtjkhtjkhtjsftjsftjsftjktszeriekrszmb.a5.umgjvmgt]mgt]mgtgkgtnkgtnkgtekgtecrif.a9.etjsz(akgtnkgj]mgj]mgj]mgjwmgjgkgjwmgjnkgt]crifkgtf.a5.qszevszevtzmwjzezizmwjzmwjzmsizmsmwg.a11.kgjgldizmwjzevtzevtzevtzezizezizezizevjzevjzevizmw.a6.kgtukgtugftugftedftugftugftjcftjkxlqqiec.a6.ieczmnariugriugriecriugriedriedriecriugriugriucrieb.a5.eecriecr(ecr(ecriecr(ecriecriecriaaaeecr.a7.rietvbccr(ecr(ecriecr(ecrmecrmccriccr(ecriecrkccrk.a5.iriecriejtiejtiebriejtiebriebriecriecriec.a6.crqmwgaabtz(ftzkgtz(gtv)gtvk]wf(gtvnglh(]ox(]ovmglb.a5.ntzmgtzkntzkgtzmgtzkgtzmgtvlwoxlvkv)]ofc.a8.btz(aae(]ov(]ov)]ox)]kv)]k)mwiv)]ox)fqzmgtzm]ix)f.a5.u(]ox)]ou(]ou(]ox)]ku)]ox)]kzmgtzmgtzmf.a9.ekvkb.a21.vkv.a9.vkvkvkf.a37.qiecriecri.a10962"
 start_ramp={8,2,1,2}
 scores={
 	{"aaa",1000},
@@ -1161,22 +1228,16 @@ function title_screen:update()
 	rooster:update()
 end
 function title_screen:draw()
-	cls(0)
-	local s="thunderblade"
-	local x=64-flr(#s*5+0.5)/2
-	print(s,x+1,12,7)
-	print(s,x-1,12,7)
-	print(s,x,12-1,7)
-	print(s,x,12+1,7)
+	-- cls(0)
+	rectfill(0,24,127,127,0)
 	
-	print(s,x,12,8)
 	print("rank",24,36,5)
 	print("score",48,36,5)
 	print("name",76,36,5)
 
 	rooster:draw()
 	
-	s="\151 or \145 to play"
+	local s="\151 or \145 to play"
 	local rs=8
 	if (starting) rs=2
 	print(s,64-#s*5/2,128-8,start_ramp[flr(time_t/rs)%#start_ramp+1])
@@ -1191,6 +1252,7 @@ function title_screen:init()
 		local s=ranks[i].."  "..scores[i][2].."  "..scores[i][1]
 		rooster:add(s)
 	end
+	pic2scr(title_pic)
 end
 function title_screen:score(name,s)
 	local c=1
@@ -1223,7 +1285,6 @@ function game_over:get_name()
 	return s
 end
 function game_over:update()
-	time_t+=1
 	if(time_t>30*30 or btnp(4) or btnp(5)) then
 		title_screen:score(self.get_name(),1450)
 		sm:push(title_screen)
@@ -1246,7 +1307,7 @@ function game_over:draw()
 	print(s,64-(#s*5)/2,48,8)
 	for i=1,#name do
 		local c=7
-		if(i==name_i and t%2==0) c=9
+		if(i==name_i and time_t%2==0) c=9
 		print(i2c[name[i]],48+i*8,64,c)
 	end
 	print(30-flr(t/30),128-8,128-12,1)
@@ -1274,14 +1335,14 @@ function _init()
 end
 
 __gfx__
-333333333b3b3b3b0000000005555555555555507777777777777777777777777777777777777777777777777777777777777777000000000000000000000000
-37776555b3b3b3b30000000005555555555555507555557777755555555555777775555766666666666666666666666666666666000000000000000000000000
-133313333b3b3b3b0000000005555555555555507566665555566666666666555556665766666666666666666666666666666666000000000000000000000000
-151111c3b3b3b3b30000000005555555555555507566666666666666666666666666665755555555555555555555555555555555000000000000000000000000
-333111113b3b3b3b0000000005555557755555507566666666666666666666666666665755555555555555555555555555555555000000000000000000000000
-33355553b3b3b3b30000000005555557755555507566666666666666666666666666657755555555555555555555555555555555000000000000000000000000
-333333333b3b3b3b0000000005555557755555507756666666666666666677777776657766666666666666666666666666666666000000000000000000000000
-33333333b3b3b3b30000000005555557755555507756666666666666666675575576657766666666666666666666666666666666000000000000000000000000
+888888883b3b3b3b3333333305555555555555507777777777777777777777777777777777777777777777777777777777777777000000000000000000000000
+88000088b3b3b3b33777655505555555555555507555557777755555555555777775555766666666666666666666666666666666000000000000000000000000
+808008083b3b3b3b1333133305555555555555507566665555566666666666555556665766666666666666666666666666666666000000000000000000000000
+80088008b3b3b3b3151111c305555555555555507566666666666666666666666666665755555555555555555555555555555555000000000000000000000000
+800880083b3b3b3b3331111105555557755555507566666666666666666666666666665755555555555555555555555555555555000000000000000000000000
+80800808b3b3b3b33335555305555557755555507566666666666666666666666666657755555555555555555555555555555555000000000000000000000000
+880000883b3b3b3b3333333305555557755555507756666666666666666677777776657766666666666666666666666666666666000000000000000000000000
+88888888b3b3b3b33333333305555557755555507756666666666666666675575576657766666666666666666666666666666666000000000000000000000000
 0040444444490440cccccccc05555557755555507756666666666666666677777776657766666666666666666666666666666666000000000000000000000000
 00404444444904407ccc7ccc05555557755555507756666666666666666675575576665755555555555555555555555555555555000000000000000000000000
 0040440000490440cccccccc05555555555555507756666666666666666677777776665755555555555555555555555555555555000000000000000000000000
