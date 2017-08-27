@@ -1,7 +1,7 @@
 pico-8 cartridge // http://www.pico-8.com
 version 8
 __lua__
-cam=nil
+cam={}
 -- color ramps
 ramp={6,5}
 grass={0x33,0x33,0xb3,0x3b}
@@ -26,7 +26,8 @@ plyr={
 	vy=1,
 	lives=3,
 	hit=false,
-	safe_dly=0
+	safe_dly=0,
+	side=0
 }
 plyr_zmax=56
 plyr_r=12
@@ -116,15 +117,15 @@ function sm:push(s)
 end
 function sm:update()
 	self.t+=1
- 	if(self.next) then 
- 		if (self.dly<self.t) then
+ if(self.next) then 
+ 	if (self.dly<self.t) then
 			self.cur=self.next
 			self.cur:init()
 			self.next=nil
 			fade(0,0,8)
 		end
- 	else
- 	 self.cur:update()
+	else
+	 self.cur:update()
 	end
 	if(_pf>0) then --pal fade
 		if(_pf==1) then _pi=_pe
@@ -241,44 +242,39 @@ end
 
 ---------------------------
 ---- camera ---------------
-cam_class={}
-function cam_class:new(focal,zfar)
-	local c={
-		x=0,
-		y=0,
-		z=0,
-		focal=focal,
-		zfar=zfar,
-		beta=0,
+function cam:reset(focal,zfar,beta)
+	self.x=0
+	self.y=0
+	self.z=0
+	self.focal=focal
+	self.zfar=zfar
+	self.beta=beta or 0
 		-- pico8 trig is inverted!
-		alpha=1-atan2(focal,hh)
-	}
-	c.cb=cos(c.beta)
-	c.sb=-sin(c.beta)
-	setmetatable(c, self)
- self.__index = self
-	return c
-end
-function cam_class:update()
+	self.alpha=1-atan2(focal,hh)
 	self.cb=cos(self.beta)
 	self.sb=-sin(self.beta)
 end
-function cam_class:is_top_down()
+function cam:rotate(beta)
+	cam.beta=beta
+	self.cb=cos(self.beta)
+	self.sb=-sin(self.beta)
+end
+function cam:is_top_down()
 	return self.beta>0.6 and self.beta<0.9
 end
-function cam_class:project(pos)
+function cam:project(pos)
 	local cb,sb=self.cb,self.sb
-	local xe=pos.x-self.x
 	local y=pos.y-self.y
 	local z=pos.z-self.z
 	local ze=-(y*cb+z*sb)
 	-- invalid projection?
 	if(ze<self.zfar or ze>=0) return {z=ze}
 	local w=-self.focal/ze
+	local xe=pos.x-self.x
 	local ye=-y*sb+z*cb
 	return {x=hw+xe*w,y=hh-ye*w,z=ze,w=w}
 end
-function cam_class:track(pos)
+function cam:track(pos)
 	self.x=pos.x
 	self.y=pos.y-self.cb*self.focal
 	self.z=pos.z-self.sb*self.focal
@@ -312,6 +308,7 @@ function spawn_tk(x,y)
 		z=0,
 		dly=2*30+rnd(2*30),
 		hit=0,
+		side=1,
 		blt_hit=tk_blt_collision,
 	}
 	if(cam:is_top_down()) then
@@ -388,6 +385,13 @@ function plyr:die()
 	end
 	self.safe_dly=time_t+3*30
 end
+function plyr:blt_hit(blt)
+	if(circ_coll(self,plyr_r,blt,blt_r)) then
+		self:die()
+		return true
+	end
+	return false
+end
 function plyr:update()
 	local dx=0
 	if (btn(0)) dx=-0.25
@@ -420,7 +424,7 @@ function plyr:update()
 	
 	-- fire
 	if (btn(4) and self.fire_dly<=time_t and blts_c<blts_n) then
-		blts:make(self.x,self.y+5,self.z-0.5,3,-3)
+		blts:make(self.x,self.y+5,self.z-0.5,3,-3,self.side)
 		self.fire_dly=time_t+0.2*30
 	end
 
@@ -429,7 +433,7 @@ function plyr:update()
 		x=self.x,
 		y=self.y+24,
 		z=self.z})
-	self.zi=zbuf:write(self)
+	self.zi=zbuf:write(self,self)
 end
 function plyr:resolve_collisions()
 	-- just (re)spawned
@@ -488,6 +492,7 @@ function spawn_helo(x,y)
 		dy=0,dz=24/30,
 		dly=time_t+1.8*30,
 		die=helo_die,
+		side=1,
 		hit=0}
 	if(cam:is_top_down()) then
 		h.draw=helo_draw
@@ -590,7 +595,7 @@ function blt_draw(self,pos)
 	local we=flr(blt_w*pos.w)+1
 	sspr(6*8,4*8,8,8,pos.x-we,pos.y-we,2*we,2*we)
 end
-function blts:make(x,y,z,dy,dz)
+function blts:make(x,y,z,dy,dz,side)
 	local b={
 		x=x,
 		y=y,
@@ -598,6 +603,7 @@ function blts:make(x,y,z,dy,dz)
 		dy=dy,
 		dz=dz,
 		t=time_t+3*30,
+		side=side,
 		draw=blt_draw
 	}
 	blts_c+=1
@@ -626,11 +632,11 @@ function blts:resolve_collisions()
 				end
 			end
 		end
-		-- against stuff
+		-- against entities
 		local zb=zbuf[blt.zi]
 		for i=1,zb.o do
 			local o=zb.objs[i]
-			if (o:blt_hit(blt)) then
+			if (o.side!=blt.side and o:blt_hit(blt)) then
 		 		blt.t=0
 		 		break
 		 	end
@@ -702,8 +708,6 @@ function top_down_game:update()
  
 	plyr:update()
 
-	cam:update()
-	
 	-- pick world items
 	local h2map=flr(plyr.y/8)
 	if (map_t<h2map) then
@@ -736,7 +740,7 @@ function top_down_game:update()
 		local tk=tks[i]
 		if (tk.y-plyr.y>-128 and tk.hit==0) then
 			if (tk.dly<=time_t) then
-				blts:make(tk.x,tk.y,0.5,-2,1)
+				blts:make(tk.x,tk.y,0.5,-2,1,tk.side)
 				tk.dly=time_t+2*30+rnd(30)
 			end
 			tks_c+=1
@@ -803,7 +807,7 @@ function draw_floor()
 				local c=band(band(flr(y/16),31),1)
 				memset(0x6000+(64-i)*64,grass[2*c+band(64-i,1)+1],64)
 				local ze=flr(32*w+0.5)
-				local xroad=4*road_offset[max(1,flr(ydist/8+0.5))]
+				local xroad=4*road_offset[max(1,flr(ydist/4+0.5))]
 				local xe=hw+(xroad-cam.x)*w
 				local v=flr(y) --flr(ze/16)%32
 				-- mipmap selection
@@ -882,8 +886,10 @@ function debug_draw()
 		y=b.y-cam.y
 		x+=hw
 		y=hh-y
-		circ(x,y,blt_w,12)
-		print(b.zi,x+blt_w,y,0)		
+		local col=10
+	 if(b.side!=plyr.side) col=8
+		circ(x,y,blt_w,col)
+		print(b.z-plyr.z,x+blt_w,y,0)		
 	end
 
 	for i=1,helos_c do
@@ -940,7 +946,7 @@ function top_down_game:draw()
 	--print("tks :"..tks_c,0,24,12)
 	--print_map(0,32)
 	--zbuf:print(0,16,1)
-	--debug_draw()
+	debug_draw()
 end
 
 function road_avg(u,du)
@@ -958,14 +964,10 @@ function road_avg(u,du)
 end
 
 function top_down_game:init()
-	t=0
+	time_t=0
 	map_i=0
 	map_t=8
-	cam=cam_class:new(96,-96-plyr_zmax)
-	cam.x=0
-	cam.y=0
-	cam.z=0
-	cam.beta=0.75
+	cam:reset(96,-96-plyr_zmax,0.75)
 	-- reset entities
 	helos_c=0
 	tks_c=0
@@ -974,7 +976,7 @@ function top_down_game:init()
 		del(blasts, b)
 	end
 	--zbuf=make_zbuf(flr_n,flr_h)
- 	zbuf=make_zbuf(8,flr_h)
+ zbuf=make_zbuf(8,flr_h)
 	
 	for i=1,15 do
 		map_funcs[i]=spawn_nop
@@ -1026,6 +1028,7 @@ function chase_game:draw()
 	print("�:"..flr(100*stat(1)+0.5).."% �:"..flr(stat(0)+0.5).."mb",1,1,7)
 end
 function chase_game:update()
+ -- todo: rotate camera based on time
 	if(cam.beta<0.75) cam.beta+=0.005
 	
 	-- clear zbuf
@@ -1033,8 +1036,6 @@ function chase_game:update()
 
 	heli:update()
 
-	cam:update()
-	
 	-- update bullets
 	local n=blts_c
 	blts_c=0
@@ -1077,7 +1078,7 @@ end
 
 -- title_screen
 title_screen={}
-title_pic=".a163.cecriekbafcr.a13.fcrk.a12.qa].}8.l]}}d.a24.}}).a18.i]}pl]}}g[}}p.a12.u{}hb.a12.cvkvk}}}lvku}}p.a24.[}}h.a18.v}})v}}}r}}}b.a11.r(}}e.a15.ri]}}pvkv{}}vkb.a21.q}}}f.a17.u{}}x}}}x}}}h.a10.iym}}t.a15.emw}}}gtz{}}xnn.a22.{}}xb.a16.q(}}u{}}}{}}}.a11.bl}}pc.a14.qiu{}})m]a]}}wvb.a8.q(}}e.a7.ry}}}gacriecbiukfaukaaak}}tk}}})k]}dqivkvkvaaivm}}ljaivkvkvk.a8.qqkvktvdevkjpvskpvskpvskkvsikvsab(}jkvk)a(}jkv{bev{jkvcaaijvkcjvkklvknuukfjvknuukfrukfbikvsukvc.a8.ckvknwoquknlvkkjvkkjvkkjvkvkvkcquknivkntuknqukfqukvsieaaaevkvkvklnvkvbskjfskvfskvntkvuskvuskvk.a8.iivkvz(bskvnvkvnvkjnvkvnvkvevkvnvkvgvkvnskvnvkvfskvuwvdaaquknsukvwvkvwiecvvkvsukvw)kvk)kvs(kvkb.a9.vkvgldikvwvkvwvkvwvkv(ukv(ukv(ukv(ukvwjkvwtkvwikvwnglaaqskv(wkv(wkv(wkv(ukv(wkv({lvknlvknlvkf.a9.ukv(mnajv(wkv(wkvzwkv(wkvktkvktkvktkvzgjv(gjv(cjv(ovkaaaikvg)kvk)kvkljvk)evk)jvk)evkjnvkjnvkt.a9.ikvjtvbevk)jvg)kvs(kvg)kvsmjvsmjvgnjvg)evgjjvglevkl.a6.jvjkft(mhvknhvzuru(mhv(mtszevtzmsszmc.a9.zmgnwgqszmtsjkhtjkhtjkhtjsftjsftjsftjktszeriekrszmb.a5.umgjvmgt]mgt]mgtgkgtnkgtnkgtekgtecrif.a9.etjsz(akgtnkgj]mgj]mgj]mgjwmgjgkgjwmgjnkgt]crifkgtf.a5.qszevszevtzmwjzezizmwjzmwjzmsizmsmwg.a11.kgjgldizmwjzevtzevtzevtzezizezizezizevjzevjzevizmw.a6.kgtukgtugftugftedftugftugftjcftjkxlqqiec.a6.ieczmnariugriugriecriugriedriedriecriugriugriucrieb.a5.eecriecr(ecr(ecriecr(ecriecriecriaaaeecr.a7.rietvbccr(ecr(ecriecr(ecrmecrmccriccr(ecriecrkccrk.a5.iriecriejtiejtiebriejtiebriebriecriecriec.a6.crqmwgaabtz(ftzkgtz(gtv)gtvk]wf(gtvnglh(]ox(]ovmglb.a5.ntzmgtzkntzkgtzmgtzkgtzmgtvlwoxlvkv)]ofc.a8.btz(aae(]ov(]ov)]ox)]kv)]k)mwiv)]ox)fqzmgtzm]ix)f.a5.u(]ox)]ou(]ou(]ox)]ku)]ox)]kzmgtzmgtzmf.a9.ekvkb.a21.vkv.a9.vkvkvkf.a37.qiecriecri.a10962"
+title_pic=".a163.cecriekbafcr.a13.fcrk.a12.qqkvkvkvkvklnvkd.a24.kv(.a18.ijvkljv(givkn.a12.uukfb.a12.cvkvkkvklvkuvkn.a24.ivkf.a18.fvk)fvkvbvkvb.a11.rskve.a15.rijvknvkvwkvvkb.a22.vkvf.a17.uukvwvkvwvkvg.a10.iymkvs.a15.emgvkvgtzukvwnn.a22.ukvwb.a16.qskvuwkv(wkv(.a11.bllvkc.a14.qiuukv(m]ajv(wvb.a8.qskve.a7.rqkv(gacriecbiukfaukaaakkvskkvk)kvkdqivkvkvaaivmkvkjaivkvkvk.a8.qqkvktvdevkjpvskpvskpvskkvsikvsabskjkvk)askjkvkbev{jkvcaaijvkcjvkklvknuukfjvknuukfrukfbikvsukvc.a8.ckvknwoquknlvkkjvkkjvkkjvkvkvkcquknivkntuknqukfqukvsieaaaevkvkvklnvkvbskjfskvfskvntkvuskvuskvk.a8.iivkvz(bskvnvkvnvkjnvkvnvkvevkvnvkvgvkvnskvnvkvfskvuwvdaaquknsukvwvkvwiecvvkvsukvw)kvk)kvs(kvkb.a9.vkvgldikvwvkvwvkvwvkv(ukv(ukv(ukv(ukvwjkvwtkvwikvwnglaaqskv(wkv(wkv(wkv(ukv(wkv({lvknlvknlvkf.a9.ukv(mnajv(wkv(wkvzwkv(wkvktkvktkvktkvzgjv(gjv(cjv(ovkaaaikvg)kvk)kvkljvk)evk)jvk)evkjnvkjnvkt.a9.ikvjtvbevk)jvg)kvs(kvg)kvsmjvsmjvgnjvg)evgjjvglevkl.a6.jvjkft(mhvknhvzuru(mhv(mtszevtzmsszmc.a9.zmgnwgqszmtsjkhtjkhtjkhtjsftjsftjsftjktszeriekrszmb.a5.umgjvmgt]mgt]mgtgkgtnkgtnkgtekgtecrif.a9.etjsz(akgtnkgj]mgj]mgj]mgjwmgjgkgjwmgjnkgt]crifkgtf.a5.qszevszevtzmwjzezizmwjzmwjzmsizmsmwg.a11.kgjgldizmwjzevtzevtzevtzezizezizezizevjzevjzevizmw.a6.kgtukgtugftugftedftugftugftjcftjkxlqqiec.a6.ieczmnariugriugriecriugriedriedriecriugriugriucrieb.a5.eecriecr(ecr(ecriecr(ecriecriecriaaaeecr.a7.rietvbccr(ecr(ecriecr(ecrmecrmccriccr(ecriecrkccrk.a5.iriecriejtiejtiebriejtiebriebriecriecriec.a6.crqmwgaabtz(ftzkgtz(gtv)gtvk]wf(gtvnglh(]ox(]ovmglb.a5.ntzmgtzkntzkgtzmgtzkgtzmgtvlwoxlvkv)]ofc.a8.btz(aae(]ov(]ov)]ox)]kv)]k)mwiv)]ox)fqzmgtzm]ix)f.a5.u(]ox)]ou(]ou(]ox)]ku)]ox)]kzmgtzmgtzmf.a9.ekvkb.a21.vkv.a9.vkvkvkf.a37.qiecriecri.a312"
 start_ramp={8,2,1,2}
 scores={
 	--name/score/last?
@@ -1224,9 +1225,9 @@ function title_screen:draw()
 	print(s,64-#s*5/2,128-8,start_ramp[flr(time_t/rs)%#start_ramp+1])
 end
 function title_screen:init()
+	time_t=0
 	starting=false
-	cam=cam_class:new(96,-96)
-	cam.beta=0
+	cam:reset(96,-96)
 	cam:track({x=0,y=0,z=0})
 	rooster:clear()
 	for i=1,#ranks do
@@ -1321,8 +1322,7 @@ function game_over:init()
 	name={1,1,1}
 	name_i=1
 	name_c=1
-	cam=cam_class:new(72,-256)
-	cam.beta=0
+	cam:reset(72,-256)
 	cam:track({x=0,y=0,z=0})
 end
 
@@ -1338,7 +1338,7 @@ function _init()
 	cls(0)
 	print("dip switch testing...")
 	sprint_init(chars)
-	sm:push(game_over)
+	sm:push(top_down_game)
 end
 
 __gfx__
