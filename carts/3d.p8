@@ -210,6 +210,31 @@ function instr(a,b)
 	return r
 end--instr
 
+---------------------------
+--- collision helpers -----
+function circ_coll(a,ra,b,rb,r2)
+	local dz=b.z-a.z
+	if(abs(dz)>ra+rb) return
+	local dx,dy=b.x-a.x,b.y-a.y
+	local dist=ra+rb
+	if(abs(dx)>dist or abs(dy)>dist) return
+	local dist2=r2 or dist*dist
+	return (dx*dx+dy*dy<dist2)
+end
+
+function circbox_coll(a,ra,b,bw,bh,bz)
+	local dz=b.z-a.z
+	if(abs(dz)>bz+ra) return
+	local dx,dy
+	dx=a.x-mid(a.x,b.x-bw,b.x+bw)
+	dy=a.y-mid(a.y,b.y-bh,b.y+bh)
+	if(abs(dx)>ra or abs(dy)>ra) return
+	local d2=dx*dx+dy*dy
+	return (d2<ra*ra)
+end
+function box_coll(a,ah,aw,b,bw,bh)
+end
+
 -- 
 function spawn_nop()
 end
@@ -247,7 +272,7 @@ function cam_class:project(pos)
 	local y=pos.y-self.y
 	local z=pos.z-self.z
 	local ze=-(y*cb+z*sb)
-	-- invalid projection
+	-- invalid projection?
 	if(ze<self.zfar or ze>=0) return {z=ze}
 	local w=-self.focal/ze
 	local ye=-y*sb+z*cb
@@ -270,17 +295,8 @@ function tk_chase_draw(self,pos)
 	local we,he=tk_chase_w*pos.w,tk_chase_h*pos.w
 	sspr(104,16,16,16,pos.x-we/2,pos.y-we/2,we,he)
 end
-function tk_blt_collision(self,blt)
-	local dz=blt.z-self.z
-	if(abs(dz)>2) return
-	local dx,dy,d2
-	dx=blt.x-mid(blt.x,self.x-tk_w,self.x+tk_w)
-	dy=blt.y-mid(blt.y,self.y-tk_h,self.y+tk_h)
-	-- avoid overflow
-	dx/=8
-	dy/=8
-	d2=dx*dx+dy*dy
-	if (d2<blt_r2/64) then
+function tk_blt_collision(self,blt)		
+ if(circbox_coll(blt,blt_r,self,tk_w,tk_h,2)) then
 		self.hit=1
 		blasts:make(self.x,self.y,self.z,0,0,4,1)
 		sfx(1)
@@ -420,16 +436,10 @@ function plyr:resolve_collisions()
 	if (self.safe_dly>=time_t) return
 	-- against buildings
 	if (self.z<=flr_zmax) then
-		local b,bx,by,dx,dy
+		local b
 		for i=1,blds_c do
 			b=blds[i]
-			bx=b.x-self.x
-			by=b.y-self.y
-			dx=mid(0,bx-flr_w,bx+flr_w)
-			dy=mid(0,by-flr_w,by+flr_w)
-			if(abs(dx)>plyr_r or abs(dy) >plyr_r) return
-			local d2=dx*dx+dy*dy
-			if (d2<plyr_r2) then
+			if(circbox_coll(self,plyr_r,b,flr_w,flr_w,flr_zmax)) then
 				self:die()
 				b.touch=1
 				return
@@ -445,29 +455,6 @@ function plyr:resolve_collisions()
 			return
 		end
 	end
-end
-
-function circ_coll(a,b,ra,rb,r2)
-	local dz=b.z-a.z
-	if(abs(dz)>ra+rb) return
-	local dx,dy=b.x-a.x,b.y-a.y
-	local dist=ra+rb
-	if(abs(dx)>dist or abs(dy)>dist) return
-	local dist2=r2 or dist*dist
-	return (dx*dx+dy*dy<dist2)
-end
-
-function circbox_coll(a,b,ra,bw,bh,bz)
-	local dz=b.z-a.z
-	if(abs(dz)>bz+ra) return
-	local dx,dy
-	dx=a.x-mid(a.x,b.x-bw,b.x+bw)
-	dy=a.y-mid(a.y,b.y-bh,b.y+bh)
-	if(abs(dx)>ra or abs(dy)>ra) return
-	local d2=dx*dx+dy*dy
-	return (d2<ra*ra)
-end
-function box_coll(a,ah,aw,b,bw,bh)
 end
 
 ------------
@@ -487,41 +474,12 @@ function helo_chase_draw(self,pos)
 	end
 	]]
 end
-local helo_blt_r2=(blt_r+helo_r)*(blt_r+helo_r)
+helo_blt_r2=(blt_r+helo_r)*(blt_r+helo_r)
+helo_plyr_r2=(plyr_r+helo_r)*(plyr_r+helo_r)
 function helo_die(self)
 	self.hit=1
 	blasts:make(self.x,self.y,self.z,0,-32/30,4,2)
 	sfx(1)
-end
-function helo_blt_collision(self,blt)
-	local dz=blt.z-self.z
-	if(abs(dz)>blt_r+8) return
-	local dx,dy=blt.x-self.x,blt.y-self.y
-	local dist=blt_r+helo_r
-	if(abs(dx)>dist or abs(dy)>dist) return
-	if(dx*dx+dy*dy<helo_blt_r2) then
-		self.hit=1
-		blasts:make(self.x,self.y,self.z,0,-32/30,4,2)
-		sfx(1)
-		return true
-	end
-	return false
-end
-local helo_plyr_r2=(plyr_r+helo_r)*(plyr_r+helo_r)
-function helo_plyr_collision(self, p)
-	local dz=p.z-self.z
-	if(abs(dz)>4) return
-	local dx,dy=p.x-self.x,p.y-self.y
-	local dist=plyr_r+helo_r
-	if(abs(dx)<=dist and abs(dy)<=dist) then
-		if(dx*dx+dy*dy<helo_plyr_r2) then
-			self.hit=1
-			blasts:make(self.x,self.y,self.z,0,-32/30,4,2)
-			sfx(1)
-			return true
-		end
-	end
-	return false
 end
 
 function spawn_helo(x,y)
@@ -529,11 +487,24 @@ function spawn_helo(x,y)
 		x=x,y=y,z=0,
 		dy=0,dz=24/30,
 		dly=time_t+1.8*30,
+		die=helo_die,
 		hit=0}
 	if(cam:is_top_down()) then
 		h.draw=helo_draw
-		h.blt_hit=helo_blt_collision
-		h.plyr_hit=helo_plyr_collision
+		h.blt_hit=function(self,blt)
+			if(circ_coll(self,helo_r,blt,blt_r,helo_blt_r2)) then
+				self:die()
+				return true
+			end
+			return false
+		end
+		h.plyr_hit=function(self,p)
+			if(circ_coll(self,helo_r,plyr,plyr_r,helo_plyr_r2)) then
+				self:die()
+				return true
+			end
+			return false
+		end
 	else
 		h.draw=helo_chase_draw
 	end
@@ -594,7 +565,7 @@ function roof_chase_draw(self,pos,i)
 end
 function spawn_building(x,y)
 	local b={
-		x=x,y=y,touch=0,
+		x=x,y=y,z=0,touch=0,
 		floors={}
 	}
 	if(cam:is_top_down()) then
@@ -1109,11 +1080,12 @@ title_screen={}
 title_pic=".a163.cecriekbafcr.a13.fcrk.a12.qa].}8.l]}}d.a24.}}).a18.i]}pl]}}g[}}p.a12.u{}hb.a12.cvkvk}}}lvku}}p.a24.[}}h.a18.v}})v}}}r}}}b.a11.r(}}e.a15.ri]}}pvkv{}}vkb.a21.q}}}f.a17.u{}}x}}}x}}}h.a10.iym}}t.a15.emw}}}gtz{}}xnn.a22.{}}xb.a16.q(}}u{}}}{}}}.a11.bl}}pc.a14.qiu{}})m]a]}}wvb.a8.q(}}e.a7.ry}}}gacriecbiukfaukaaak}}tk}}})k]}dqivkvkvaaivm}}ljaivkvkvk.a8.qqkvktvdevkjpvskpvskpvskkvsikvsab(}jkvk)a(}jkv{bev{jkvcaaijvkcjvkklvknuukfjvknuukfrukfbikvsukvc.a8.ckvknwoquknlvkkjvkkjvkkjvkvkvkcquknivkntuknqukfqukvsieaaaevkvkvklnvkvbskjfskvfskvntkvuskvuskvk.a8.iivkvz(bskvnvkvnvkjnvkvnvkvevkvnvkvgvkvnskvnvkvfskvuwvdaaquknsukvwvkvwiecvvkvsukvw)kvk)kvs(kvkb.a9.vkvgldikvwvkvwvkvwvkv(ukv(ukv(ukv(ukvwjkvwtkvwikvwnglaaqskv(wkv(wkv(wkv(ukv(wkv({lvknlvknlvkf.a9.ukv(mnajv(wkv(wkvzwkv(wkvktkvktkvktkvzgjv(gjv(cjv(ovkaaaikvg)kvk)kvkljvk)evk)jvk)evkjnvkjnvkt.a9.ikvjtvbevk)jvg)kvs(kvg)kvsmjvsmjvgnjvg)evgjjvglevkl.a6.jvjkft(mhvknhvzuru(mhv(mtszevtzmsszmc.a9.zmgnwgqszmtsjkhtjkhtjkhtjsftjsftjsftjktszeriekrszmb.a5.umgjvmgt]mgt]mgtgkgtnkgtnkgtekgtecrif.a9.etjsz(akgtnkgj]mgj]mgj]mgjwmgjgkgjwmgjnkgt]crifkgtf.a5.qszevszevtzmwjzezizmwjzmwjzmsizmsmwg.a11.kgjgldizmwjzevtzevtzevtzezizezizezizevjzevjzevizmw.a6.kgtukgtugftugftedftugftugftjcftjkxlqqiec.a6.ieczmnariugriugriecriugriedriedriecriugriugriucrieb.a5.eecriecr(ecr(ecriecr(ecriecriecriaaaeecr.a7.rietvbccr(ecr(ecriecr(ecrmecrmccriccr(ecriecrkccrk.a5.iriecriejtiejtiebriejtiebriebriecriecriec.a6.crqmwgaabtz(ftzkgtz(gtv)gtvk]wf(gtvnglh(]ox(]ovmglb.a5.ntzmgtzkntzkgtzmgtzkgtzmgtvlwoxlvkv)]ofc.a8.btz(aae(]ov(]ov)]ox)]kv)]k)mwiv)]ox)fqzmgtzm]ix)f.a5.u(]ox)]ou(]ou(]ox)]ku)]ox)]kzmgtzmgtzmf.a9.ekvkb.a21.vkv.a9.vkvkvkf.a37.qiecriecri.a10962"
 start_ramp={8,2,1,2}
 scores={
-	{"aaa",1000},
-	{"bbb",900},
-	{"ccc",800},
-	{"ddd",600},
-	{"eee",500},
+	--name/score/last?
+	{"aaa",1000,true},
+	{"bbb",900,false},
+	{"ccc",800,false},
+	{"ddd",600,false},
+	{"eee",500,false},
 }
 ranks={"1st","2nd","3rd","4th","5th"}
 starting=false
@@ -1143,7 +1115,7 @@ function rooster:draw()
 		end
 	end
 end
-function rooster:add(s)
+function rooster:add(s,col)
 	local n=#self.rows
 	local row={
 		dly=time_t+n*0.5*30,
@@ -1157,6 +1129,7 @@ function rooster:add(s)
 		if(c!=" ") then
 			local char={
 				c=c,
+				col=col or 7,
 				dly=row.dly+n*2*30+dt*0.25*30,
 				src={x=x,y=-64,z=-24},
 				dst={x=x,y=0,z=z},
@@ -1170,10 +1143,13 @@ function rooster:add(s)
 	end
 	add(self.rows,row)
 end
+function lerp(a,b,t)
+	return a*(1-t)+b*t
+end
 function lerpn(a,b,t)
 	local r={}
 	for k,v in pairs(a) do
-		r[k]=v*(1-t)+b[k]*t
+		r[k]=lerp(v,b[k],t)
 	end
 	return r
 end
@@ -1187,7 +1163,7 @@ function char_update(self)
 end
 function char_draw(self)
 	local pos=cam:project(self.cur)
-	if(pos.w) sprint(self.c,pos.x,pos.y,7,pos.w)
+	if(pos.w) sprint(self.c,pos.x,pos.y,self.col,pos.w)
 end
 
 sprint_lastm=-1
@@ -1202,6 +1178,7 @@ function sprint_init(chars)
 		end
 		chars_mem[c]=mem
 	end
+	cls(0)
 end
 function sprint(c,x,y,col,size)
 	if(abs(size-1)<0.01) then
@@ -1223,6 +1200,10 @@ end
 function title_screen:update()
 	if(btnp(4) or btnp(5)) then
 		starting=true
+		-- clear last score
+		for s in all(scores) do
+			s[3]=false
+		end
 		sm:push(top_down_game)
 	end
 	rooster:update()
@@ -1250,7 +1231,9 @@ function title_screen:init()
 	rooster:clear()
 	for i=1,#ranks do
 		local s=ranks[i].."  "..scores[i][2].."  "..scores[i][1]
-		rooster:add(s)
+		local col=7
+		if(scores[i][3]) col=10
+		rooster:add(s,col)
 	end
 	pic2scr(title_pic)
 end
@@ -1263,13 +1246,18 @@ function title_screen:score(name,s)
 				scores[j]=scores[j-1]
 				j-=1
 			end
-			scores[i]={name,s}
+			scores[i]={name,s,true}
 			break
 		end
 	end
 end
 
-game_over={}
+game_over={
+	done=false,
+	cur_i=1,
+	next_i=1,
+	next_dly=0
+}
 name={}
 name_i=1
 i2c={}
@@ -1285,19 +1273,23 @@ function game_over:get_name()
 	return s
 end
 function game_over:update()
-	if(time_t>30*30 or btnp(4) or btnp(5)) then
+	if(time_t>30*30 or self.done) then
 		title_screen:score(self.get_name(),1450)
 		sm:push(title_screen)
 	end
-	if(btnp(0)) name_i-=1
-	if(btnp(1)) name_i+=1
-	name_i=mid(name_i,1,#name)
-	local i=name[name_i]
-	if(btnp(2)) i+=1
-	if(btnp(3)) i-=1
-	if(i>#chars) i=1
-	if(i<=0) i=#chars
-	name[name_i]=i
+	if(btnp(0)) then
+		self.next_i-=1
+		self.next_dly=time_t+0.25*30
+	elseif(btnp(1)) then
+		self.next_i+=1
+		self.next_dly=time_t+0.9*30
+	end
+	if(self.next_i>#chars) self.next_i=1
+	if(self.next_i<=0) self.next_i=#chars
+	if(self.next_dly<time_t) then
+		self.next_dly=0
+		self.cur_i=self.next_i
+	end
 end
 function game_over:draw()
 	cls(0)
@@ -1305,18 +1297,33 @@ function game_over:draw()
 	print(s,64-(#s*5)/2,24,8)
 	s="enter your name"
 	print(s,64-(#s*5)/2,48,8)
-	for i=1,#name do
-		local c=7
-		if(i==name_i and time_t%2==0) c=9
-		print(i2c[name[i]],48+i*8,64,c)
+	print(self.get_name(),48,64,10)
+	
+	-- carousel
+	local t=(self.next_dly-time_t)/(0.9*30)
+	t=smoothstep(1-t)
+	local da=1/#chars
+	local a=-0.25-da*lerp(self.cur_i,self.next_i,t)
+	local col=7
+	for i=1,#chars do
+		local c=sub(chars,i,i)
+		local pos=cam:project({x=56*cos(a),y=-48*sin(a),z=-16})
+		if (i==self.cur_i) col=10 else col=7
+		if(pos.w) sprint(c,pos.x,pos.y,col,pos.w)
+		a+=da
 	end
-	print(30-flr(t/30),128-8,128-12,1)
+	print(30-flr(time_t/30),128-8,128-12,1)
 end
 function game_over:init()
 	time_t=0
+	self.done=false
+	self.sel=1
 	name={1,1,1}
 	name_i=1
 	name_c=1
+	cam=cam_class:new(72,-256)
+	cam.beta=0
+	cam:track({x=0,y=0,z=0})
 end
 
 -- game loop
@@ -1331,7 +1338,7 @@ function _init()
 	cls(0)
 	print("dip switch testing...")
 	sprint_init(chars)
-	sm:push(title_screen)
+	sm:push(game_over)
 end
 
 __gfx__
@@ -1377,10 +1384,10 @@ __gfx__
 33333500116033333333360011633333333306001173333333888833330000033333000330933333333333333333333330000333333333333333333333333333
 33333306113033333333330061333333333303001633333300000000330000033330000330933333303333333333333330000333333333333333333333333333
 33333300130033333333300010033333333300301033333300000000333000333333000030933333000333333333333330000333333333333333333555333333
-33333300133033333333303013033333333303301033333300000000333000333333300030933330000033333333333330003333333333333333300090443333
-33333330133333333333333013333333333333301333333300000000333303333333330000943300000033333333333300003333333333333333300094443333
-33333330133333333333333013333333333333301333333300000000333303333333333000443000033333330033333300003333333333333333330074433333
-33333330133333333333333013333333333333301333333300000000333303333333333300940003333333330000033304043333333333333333333079333333
+33333300133033333333303013033333333303301033333377707070333000333333300030933330000033333333333330003333333333333333300090443333
+33333330133333333333333013333333333333301333333370707070333303333333330000943300000033333333333300003333333333333333300094443333
+33333330133333333333333013333333333333301333333370707700333303333333333000443000033333330033333300003333333333333333330074433333
+33333330133333333333333013333333333333301333333377707070333303333333333300940003333333330000033304043333333333333333333079333333
 33333330133333333333333013333333333333301333333300000000333303333333333000000033333333330000000000004333333333333333333049333333
 33333330133333333333333013333333333333301333333300000000333303333333333000604333333333330000000000600000000000333333333049333333
 33336330133633333336333013336333333363301336333300000000303303303333333000004333333333333333333000004000000000333533445049444335
@@ -1392,11 +1399,11 @@ __gfx__
 333333333333333333333333333333333333333333333333000000003333333333303333333333000033333333333333000333333333333333333300c5a33333
 333333333333333333333333333333333333333333333333000000003333333333333333333333000333333333333333000333333333333333333300c5a33333
 00000000000000000000700000060000000000000000000000000000000000003333333333333300333333333333333000033333333333333333333059333333
-06040060070000000070040700040008080440800000000000000000000000003333333333333333333333333333333000033333333333333333333049333333
-00855555558000070855555506050600004004000000000000000000000000003333333333333333333333333333333333333333333333333333333049333333
+06040860070000000070040700040008080440800000000000000000000000003333333333333333333333333333333000033333333333333333333049333333
+80855555558000070855555506050600004004000000000000000000000000003333333333333333333333333333333333333333333333333333333049333333
 55506080005444455508087055585550048555550000000000000000000000003333333333333333333333333333333333333333333333333333333049333333
-00400007008555500484840080040845555400400000000000000000000000003333333333333333333333333333333333333333333333333333333597333333
-00004000000700700040400700600000040004000000000000000000000000003333333333333333333333333333333333333333333333333333333597333333
+80408087008555500484840080040845555400400000000000000000000000003333333333333333333333333333333333333333333333333333333597333333
+00804000000700700040400700600000040004000000000000000000000000003333333333333333333333333333333333333333333333333333333597333333
 00600700000000000707070000000600084440800000000000000000000000003333333333333333333333333333333333333333333333333333333353333333
 00000000000000000000000008400000000000000000000000000000000000003333333333333333333333333333333333333333333333333333333353333333
 33333333300033333333333333333033333300033333333333333330003333333333333333333330433333330000000000000000000000000000000000000000
