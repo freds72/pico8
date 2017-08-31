@@ -2,6 +2,9 @@ pico-8 cartridge // http://www.pico-8.com
 version 8
 __lua__
 local cam={}
+-- color ramps
+ramp={6,5}
+local grass={0x33,0x33,0xb3,0x3b}
 -- active buildings
 local blds={}
 local blds_c=0
@@ -10,7 +13,6 @@ flr_n=6
 flr_h=8
 flr_w=24
 flr_zmax=(flr_n-1)*flr_h
-flr_ramp={6,5}
 -- camera
 hh=63
 hw=64
@@ -66,24 +68,16 @@ helo_r2=helo_r*helo_r
 helo_body={64,88}
 -- map
 local world={
-	scaley=64, -- 1 cell=1 half screen
-	scalex=32,
+	scale=8,
 	ymax=0,
 	cur=0,
-	funcs={}, -- entity spawners
-	road={}, -- road x-offset
-	floor={} -- floor color ramps
-}
+	funcs={},
+	road={}}
 local map_funcs={}
 local road_offset={}
 
 -- splosions
 local blasts={}
-
--- boss
-boss={
-	enabled=false
-}
 
 -- fade ramp + screen manager
 _shex={["0"]=0,["1"]=1,
@@ -161,20 +155,13 @@ end
 -- written by dw817 (david w)
 -- http://writerscafe.org/dw817
 set="abcdefghijklmnopqrstuvwxyz()[]{}"
-function pic2scr_cor(p,m)
-	local s=dot2str(p)
-	yield()
-	str2mem_cor(s,m or 24576)
-end
-function pic2scr_cor(p,m)
-	local s=dot2str(p)
-	yield()
-	str2mem(s,m or 24576)
+function pic2scr(p)
+	s=dot2str(p)
+	str2mem(s,24576)
 end
 
-function str2mem_cor(t,m)
+function str2mem(t,m)
 	local b1,b2,c,n,p=0,0,0,0,1
-	local k=0
 	repeat
 		if b1==0 then
 			n=instr(set,sub(t,p,p))-1
@@ -189,8 +176,6 @@ function str2mem_cor(t,m)
 			poke(m,c)
 			b2=0 c=0 m+=1
 		end
-		k+=1
-		if(band(k,15)) yield()
 	until p>=#t
 end--str2mem
 
@@ -256,24 +241,6 @@ end
 function box_coll(a,ah,aw,b,bw,bh)
 end
 
----------------------------
--- gfx functions
-function smap(cx,cy,cw,ch,x,y,scale)
-	scale=flr(shl(scale,3))
-	x-=cw*shr(scale,1)
-	y-=ch*shr(scale,1)
-	local s,sx,sy,ix
-	for i=0,cw-1 do
-		ix=x+i*scale
-		for j=0,ch-1 do
-			s=mget(cx+i,cy+j)
-			sx,sy=band(shl(s,3),127),shl(flr(s/16),3)
-			sspr(sx,sy,8,8,
-				ix,y+j*scale,scale,scale)
-		end
-	end
-end
-
 -- 
 function spawn_nop()
 end
@@ -281,37 +248,23 @@ end
 ---------------------------
 -- world
 function world:init(sx,sy,sw)
-	self.road_ymax=(sw+1)*self.scaley
-	for i=1,16 do
+	self.road_ymax=(sw+1)*self.scale
+	for i=1,15 do
 		self.funcs[i]=spawn_nop
 	end
 	for i=0,sw-1 do
 		local noroad=true
 		for j=0,7 do
-			if(sget(sx+i,sy+j)==5) then
-				self.road[i]=(j+1-4)*self.scalex
+			if(sget(i,j)==5) then
+				self.road[i]=(j+1-4)*self.scale
 				noroad=false
 				break
 			end
 		end
 		if(noroad) then
-			self.road_ymax=i*self.scaley
+			self.road_ymax=i*self.scale
 			break
 		end
-	end
-	-- floor color ramps
-	local r={0x33,0x33,0xb3,0x3b}
-	for i=0,flr(sw/8+0.5) do
-		local c1=sget(sx+8*i,sy)
-		if(c1!=0) then
-			local c2=sget(sx+8*i+1,sy)
-			r={
-				bor(shl(c1,4),c1),
-				bor(shl(c1,4),c1),
-				bor(shl(c2,4),c1),
-				bor(shl(c1,4),c2)}
-		end
-		self.floor[i+1]=r
 	end
 	-- debug
 	self.print=function(self,x,y)
@@ -321,12 +274,7 @@ function world:init(sx,sy,sw)
 			x+self.cur,y,
 			x+self.cur,y+8,8)
 		palt()
-		y+=8
-		rectfill(x,y,x+48,y+40,0)
-		for ramp in all(self.floor) do
-			print(ramp[1]..ramp[2].."/"..ramp[3]..ramp[4],x,y,7)
-			y+=6
-		end
+		print("y:"..plyr.y,x,y+16,0)
 	end
 	return self
 end
@@ -335,8 +283,8 @@ function world:register(i,fn)
 	return self
 end
 function world:roadx(y)
-	if(y<0 or y>=self.road_ymax) return
-	local t=y/self.scaley
+	if(y>=self.road_ymax) return
+	local t=y/self.scale
 	local i=flr(t)
 	-- fractional part
 	t-=i
@@ -344,23 +292,6 @@ function world:roadx(y)
 		self.road[i],
 		self.road[i+1],
 		smoothstep(t))
-end
-function world:floor_ramp(y)
-	y=shr(flr(max(0,y)/self.scaley),3)
-	return self.floor[y+1]
-end
-function world:update()
-	-- pick world items
-	local plyr_cur=flr((plyr.y+196)/self.scaley)
-	if (self.cur<plyr_cur) then
-		local i=0
-		for i=self.cur,plyr_cur do
-			for j=0,7 do
-				self.funcs[sget(i,56+j)+1]((j+1-4)*self.scalex,i*self.scaley)
-			end
-		end
-		self.cur=plyr_cur+1
-	end
 end
 ---------------------------
 -- camera
@@ -390,11 +321,11 @@ function cam:project(pos)
 	local z=pos.z-self.z
 	local ze=-(y*cb+z*sb)
 	-- invalid projection?
-	if(ze<self.zfar or ze>=0) return nil,nil,z,nil
+	if(ze<self.zfar or ze>=0) return {z=ze}
 	local w=-self.focal/ze
 	local xe=pos.x-self.x
 	local ye=-y*sb+z*cb
-	return hw+xe*w,hh-ye*w,ze,w
+	return {x=hw+xe*w,y=hh-ye*w,z=ze,w=w}
 end
 function cam:track(pos)
 	self.x=pos.x
@@ -405,13 +336,13 @@ end
 --------------------
 --- tank -----------
 tk_class={}
-function tk_draw(self,x,y,z,w)
-	local we,he=tk_w*w,tk_h*w
-	sspr(0,8,16,24,x-we/2,y-we/2,we,he)
+function tk_draw(self,pos)
+	local we,he=tk_w*pos.w,tk_h*pos.w
+	sspr(0,8,16,24,pos.x-we/2,pos.y-we/2,we,he)
 end
-function tk_chase_draw(self,x,y,z,w)
-	local we,he=tk_chase_w*w,tk_chase_h*w
-	sspr(104,16,16,16,x-we/2,y-we/2,we,he)
+function tk_chase_draw(self,pos)
+	local we,he=tk_chase_w*pos.w,tk_chase_h*pos.w
+	sspr(104,16,16,16,pos.x-we/2,pos.y-we/2,we,he)
 end
 function tk_blt_collision(self,blt)		
  if(circbox_coll(blt,blt_r,self,tk_w,tk_h,2)) then
@@ -445,10 +376,10 @@ end
 
 ---------------------
 --- blast -----------
-function blast_draw(self,x,y,z,w)
+function blast_draw(self,pos)
 	local s=(self.t-time_t)/8
-	local we=s*self.width*w
-	sspr(32,104,16,16,x-we/2,y-we/2,we,we,time_t%2==0,time_t%4==0)
+	local we=s*self.width*pos.w
+	sspr(32,104,16,16,pos.x-we/2,pos.y-we/2,we,we,time_t%2==0,time_t%4==0)
 end
 function blasts:update()
 	for b in all(blasts) do
@@ -487,16 +418,16 @@ function plyr:init()
 	self.safe_dly=time_t+3*30
 	self.fire_dly=0
 end
-function plyr:draw(x,y,z,w)
+function plyr:draw(pos)
 	if(self.safe_dly>time_t and band(time_t,1)==0) return
 	local idx=mid(flr(self.vx),-1,1)+2
 	if(cam:is_top_down()) then
-		spr(plyr_body[idx],x-8,y-9,2,3)
-		spr(plyr_rotor[time_t%3+1],x-10,y-11,3,3)
+		spr(plyr_body[idx],pos.x-8,pos.y-9,2,3)
+		spr(plyr_rotor[time_t%3+1],pos.x-10,pos.y-11,3,3)
 	else
 		local pos=plyr_rotor3d[idx][band(time_t,1)+2]
-		spr(plyr_rotor3d[idx][1],x-8+pos[1],y+pos[2],2,1,pos[3],pos[4])
-		spr(plyr_body3d[idx],x-8,y,2,3)
+		spr(plyr_rotor3d[idx][1],hw-8+pos[1],hh+pos[2],2,1,pos[3],pos[4])
+		spr(plyr_body3d[idx],hw-8,hh,2,3)
 	end
 end
 function plyr:die()
@@ -586,13 +517,13 @@ end
 ------------
 --- helo ---
 helo_class={}
-function helo_draw(self,x,y,z,w)
-	local we,he=helo_w*w,helo_h*w
-	sspr(helo_body[band(time_t,1)+1],32,24,32,x-we/2,y-he/2,we,he)
+function helo_draw(self,pos)
+	local we,he=helo_w*pos.w,helo_h*pos.w
+	sspr(helo_body[band(time_t,1)+1],32,24,32,pos.x-we/2,pos.y-he/2,we,he)
 end
-function helo_chase_draw(self,x,y,z,w)
-	local we,he=helo_w*w,helo_h*w
-	sspr(72,64,16,16,x-8*w,y-8*w,16*w,16*w)
+function helo_chase_draw(self,pos)
+	local we,he=helo_w*pos.w,helo_h*pos.w
+	sspr(72,64,16,16,pos.x-8*pos.w,pos.y-8*pos.w,16*pos.w,16*pos.w)
 	--[[
 	if(time_t%2==0) then
 		sspr(64,120,16,8,pos.x-8*pos.w,pos.y-4*pos.w,16*pos.w,16*pos.w)
@@ -643,52 +574,52 @@ end
 -------------
 --- building ---
 bld_class={}
-function flr_draw(self,xe,ye,z,w)
-	local we=flr_w*w
+function flr_draw(self,pos)
+	local we=flr_w*pos.w
 	if(self.i==1) then
 		-- shadow
 		local se=1.2*we
-		rectfill(xe-se,ye-se,xe+se,ye+se,3)
+		rectfill(pos.x-se,pos.y-se,pos.x+se,pos.y+se,3)
 	end
-	local x,y=xe-we,ye-we
-	local c=flr_ramp[band(self.i,1)+1]
+	local x,y=pos.x-we,pos.y-we
+	local c=ramp[band(self.i,1)+1]
 	local k=flr(we/4+0.5)
 	we*=2
-	if(ye>64) then
+	if(pos.y>64) then
 		rectfill(x,y,x+we,y+k,c)
 	else
 		rectfill(x,y+we-k,x+we,y+we,c)
 	end
-	if(xe<64) then
+	if(pos.x<64) then
 		rectfill(x+we-k,y,x+we,y+we,c)
 	else
 		rectfill(x,y,x+k,y+we,c)
 	end
 end
-function roof_draw(self,x,y,z,w,i)
-	local we=flr_w*w
-	sspr(40,0,32,32,x-we,y-we,2*we,2*we)
+function roof_draw(self,pos,i)
+	local we=flr_w*pos.w
+	sspr(40,0,32,32,pos.x-we,pos.y-we,2*we,2*we)
 end
-function flr_chase_draw(self,xe,ye,z,w)
-	local we=flr_w*w
-	local x,y=xe-we,ye-we
-	local c=flr_ramp[band(self.i,1)+1]
+function flr_chase_draw(self,pos)
+	local we=flr_w*pos.w
+	local x,y=pos.x-we,pos.y-we
+	local c=ramp[band(self.i,1)+1]
 	local k=flr(we/4+0.5)
 	we*=2
-	if(ye>64) then
+	if(pos.y>64) then
 		rectfill(x,y,x+we,y+k,c)
 	else
 		rectfill(x,y+we-k,x+we,y+we,c)
 	end
-	if(xe<64) then
+	if(pos.x<64) then
 		rectfill(x+we-k,y,x+we,y+we,c)
 	else
 		rectfill(x,y,x+k,y+we,c)
 	end
 end
-function roof_chase_draw(self,x,y,z,w,i)
-	local we=flr_w*w
-	sspr(72,0,32,32,x-we,y-we,2*we,2*we)
+function roof_chase_draw(self,pos,i)
+	local we=flr_w*pos.w
+	sspr(72,0,32,32,pos.x-we,pos.y-we,2*we,2*we)
 end
 function spawn_building(x,y)
 	local b={
@@ -713,9 +644,9 @@ end
 
 --------------
 --- bullet ---
-function blt_draw(self,x,y,z,w)
-	local we=flr(blt_w*w)+1
-	sspr(6*8,4*8,8,8,x-we,y-we,2*we,2*we)
+function blt_draw(self,pos)
+	local we=flr(blt_w*pos.w)+1
+	sspr(6*8,4*8,8,8,pos.x-we,pos.y-we,2*we,2*we)
 end
 function blts:make(x,y,z,dy,dz,side)
 	local b={
@@ -765,22 +696,6 @@ function blts:resolve_collisions()
 		end
 	end
 end
-
---------
--- battleship boss (level 1)
-function spawn_bship(x,y)
-	boss.enabled=true
-	boss.x=x
-	boss.y=y
-	boss.update=bship_update
-	boss.draw=bship_draw
-	return boss
-end
-function bship_update(self)
-end
-function bship_draw(self,x,y,z,w)
-end
-
 ---------------
 --- zbuffer ---
 zbuf_class={}
@@ -808,12 +723,12 @@ function zbuf_class:clear()
 	end
 end
 function zbuf_class:write(obj,phy_obj,i)
-	local x,y,z,w=cam:project(obj)
-	local zi=i or mid(flr((z-cam.zfar)/self.h+0.5),1,self.n+1)
+	local pos=cam:project(obj)
+	local zi=i or mid(flr((pos.z-cam.zfar)/self.h+0.5),1,self.n+1)
 	local zb=self[zi]
 	zb.n+=1
 	zb.elts[zb.n]=obj
-	zb.pos[zb.n]={x,y,z,w}
+	zb.pos[zb.n]=pos
 	if (phy_obj) then
 		zb.o+=1
 		zb.objs[zb.o]=phy_obj
@@ -825,7 +740,7 @@ function zbuf_class:draw()
 		local zb=zbuf[i]
 		for j=1,zb.n do
 			local pos=zb.pos[j]
-			if(pos[4]) zb.elts[j]:draw(pos[1],pos[2],pos[3],pos[4],i)
+			if(pos.w) zb.elts[j]:draw(pos,i)
 		end
 	end
 end
@@ -846,7 +761,17 @@ function top_down_game:update()
  
 	plyr:update()
 
-	world:update()
+	-- pick world items
+	local h2map=flr(plyr.y/world.scale)
+	if (map_i<h2map) then
+		local i=0
+		for i=map_i,h2map do
+			for i=0,7 do
+				map_funcs[sget(map_i,56+i)+1](-96+192*(i+1)/8,i*world.scale+128)
+			end
+		end
+		map_i=i+1
+	end
 
 	-- update buildings
 	local n=blds_c
@@ -924,7 +849,7 @@ function draw_floor()
 	local imax=0
 	local z=-cam.z
 	for i=-hh,hh do
-		local sa=-sin(a)
+	 local sa=-sin(a)
 		if(abs(sa)>0.01) then
 		 local ca_fix=cos(a_fix)
 			local dist=z*ca_fix/sa
@@ -934,9 +859,8 @@ function draw_floor()
 				local w=cam.focal/dist
 				local ydist=dist*ca+plyr.y
 				local y=band(band(0x7fff,ydist),31)
-				local ramp=world:floor_ramp(0)
 				local c=band(band(flr(y/16),31),1)
-				memset(0x6000+(64-i)*64,ramp[2*c+band(64-i,1)+1],64)
+				memset(0x6000+(64-i)*64,grass[2*c+band(64-i,1)+1],64)
 				local ze=flr(32*w+0.5)
 				local xroad=world:roadx(ydist)
 				if(xroad) then
@@ -1054,7 +978,6 @@ function top_down_game:draw()
 	--print_map(0,32)
 	--zbuf:print(0,16,1)
 	--debug_draw()
-	world:print(0,12)
 end
 
 function top_down_game:init()
@@ -1071,8 +994,8 @@ function top_down_game:init()
 	zbuf=make_zbuf(8,flr_h)
 	
 	world
-		:init(0,56,6*8)
-		:register(4+1,spawn_tk)
+		:init(0,24,6*8)
+		:register(4+1],spawn_tk)
 		:register(6+1,spawn_building)
 		:register(7+1,spawn_building)
 		:register(8+1,spawn_helo)
@@ -1245,8 +1168,8 @@ function char_update(self)
 	self.cur=lerpn(self.src,self.dst,smoothstep(t))
 end
 function char_draw(self)
-	local x,y,z,w=cam:project(self.cur)
-	if(w) sprint(self.c,x,y,self.col,w)
+	local pos=cam:project(self.cur)
+	if(pos.w) sprint(self.c,pos.x,pos.y,self.col,pos.w)
 end
 
 sprint_lastm=-1
@@ -1293,7 +1216,6 @@ function title_screen:update()
 end
 function title_screen:draw()
 	-- cls(0)
-	--[[
 	rectfill(0,24,127,127,0)
 	
 	print("rank",24,36,5)
@@ -1306,7 +1228,6 @@ function title_screen:draw()
 	local rs=8
 	if (starting) rs=2
 	print(s,64-#s*5/2,128-8,start_ramp[flr(time_t/rs)%#start_ramp+1])
-	]]
 end
 function title_screen:init()
 	time_t=0
@@ -1392,9 +1313,9 @@ function game_over:draw()
 	local col=7
 	for i=1,#chars do
 		local c=sub(chars,i,i)
-		local x,y,z,w=cam:project({x=56*cos(a),y=-48*sin(a),z=-16})
+		local pos=cam:project({x=56*cos(a),y=-48*sin(a),z=-16})
 		if (i==self.cur_i) col=10 else col=7
-		if(w) sprint(c,x,y,col,w)
+		if(pos.w) sprint(c,pos.x,pos.y,col,pos.w)
 		a+=da
 	end
 	print(30-flr(time_t/30),128-8,128-12,1)
@@ -1422,18 +1343,18 @@ function _init()
 	cls(0)
 	print("dip switch testing...")
 	sprint_init(chars)
-	sm:push(title_screen)
+	sm:push(top_down_game)
 end
 
 __gfx__
-888888883b3b36363333333305555555555555507777777777777777777777777777777777777777777777777777777777777777000000000000000000000000
-88000088b3b3b6b63777655505555555555555507555557777755555555555777775555766666666666666666666666666666666000000000000000000000000
-808008083b3b36361333133305555555555555507566665555566666666666555556665766666666666666666666666666666666000000000000000000000000
-80088008b3b3b6b3151111c305555555555555507566666666666666666666666666665755555555555555555555555555555555000000000000000000000000
-800880083b3b6b363331111105555557755555507566666666666666666666666666665755555555555555555555555555555555000000000000000000000000
-80800808b3b363b33335555305555557755555507566666666666666666666666666657755555555555555555555555555555555000000000000000000000000
-880000883b3b6b3b3333333305555557755555507756666666666666666677777776657766666666666666666666666666666666000000000000000000000000
-88888888b3b363b33333333305555557755555507756666666666666666675575576657766666666666666666666666666666666000000000000000000000000
+888888883b3b3b3b3333333305555555555555507777777777777777777777777777777777777777777777777777777777777777000000000000000000000000
+88000088b3b3b3b33777655505555555555555507555557777755555555555777775555766666666666666666666666666666666000000000000000000000000
+808008083b3b3b3b1333133305555555555555507566665555566666666666555556665766666666666666666666666666666666000000000000000000000000
+80088008b3b3b3b3151111c305555555555555507566666666666666666666666666665755555555555555555555555555555555000000000000000000000000
+800880083b3b3b3b3331111105555557755555507566666666666666666666666666665755555555555555555555555555555555000000000000000000000000
+80800808b3b3b3b33335555305555557755555507566666666666666666666666666657755555555555555555555555555555555000000000000000000000000
+880000883b3b3b3b3333333305555557755555507756666666666666666677777776657766666666666666666666666666666666000000000000000000000000
+88888888b3b3b3b33333333305555557755555507756666666666666666675575576657766666666666666666666666666666666000000000000000000000000
 0040444444490440cccccccc05555557755555507756666666666666666677777776657766666666666666666666666666666666000000000000000000000000
 00404444444904407ccc7ccc05555557755555507756666666666666666675575576665755555555555555555555555555555555000000000000000000000000
 0040440000490440cccccccc05555555555555507756666666666666666677777776665755555555555555555555555555555555000000000000000000000000
@@ -1482,14 +1403,14 @@ __gfx__
 333333333333333333333333333333333333333333333333000000003333333333000333355330000333333333333333000333333333333333333300c5a33333
 333333333333333333333333333333333333333333333333000000003333333333303333333333000033333333333333000333333333333333333300c5a33333
 333333333333333333333333333333333333333333333333000000003333333333333333333333000333333333333333000333333333333333333300c5a33333
-70000006070000000000700000060000000000000000000000000000000000003333333333333300333333333333333000033333333333333333333059333333
-00740800000000070070040700040008080440800000000000000000000000003333333333333333333333333333333000033333333333333333333049333333
-80855555558700000855555506050600004004000000000000000000000000003333333333333333333333333333333333333333333333333333333049333333
-55500080005444455508087055585550048555550000000000000000000000003333333333333333333333333333333333333333333333333333333049333333
+00000000000000000000700000060000000000000000000000000000000000003333333333333300333333333333333000033333333333333333333059333333
+06040860070000000070040700040008080440800000000000000000000000003333333333333333333333333333333000033333333333333333333049333333
+80855555558000070855555506050600004004000000000000000000000000003333333333333333333333333333333333333333333333333333333049333333
+55506080005444455508087055585550048555550000000000000000000000003333333333333333333333333333333333333333333333333333333049333333
 80408087008555500484840080040845555400400000000000000000000000003333333333333333333333333333333333333333333333333333333597333333
-00704000000000070040400700600000040004000000000000000000000000003333333333333333333333333333333333333333333333333333333597333333
-00000700000000000707070000000600084440800000000000000000000000003333333333333333333333333333333333333333333333333333333353333333
-70000000070000000000000008400000000000000000000000000000000000003333333333333333333333333333333333333333333333333333333353333333
+00804000000700700040400700600000040004000000000000000000000000003333333333333333333333333333333333333333333333333333333597333333
+00600700000000000707070000000600084440800000000000000000000000003333333333333333333333333333333333333333333333333333333353333333
+00000000000000000000000008400000000000000000000000000000000000003333333333333333333333333333333333333333333333333333333353333333
 33333333300033333333333333333033333300033333333333333330003333333333333333333330433333330000000000000000000000000000000000000000
 33333333300033333333333333300003333300033333333333333330003333000333333333333430437333330000000000000000000000000000000000000000
 33003333300033333003333333330003333300333333333333333333003333000033333333333000446333330000000000000000000000000000000000000000

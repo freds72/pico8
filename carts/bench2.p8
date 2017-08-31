@@ -1,9 +1,9 @@
 pico-8 cartridge // http://www.pico-8.com
 version 8
 __lua__
-cam={}
-hw=64
-hh=63
+local cam={}
+local hw=64
+local hh=63
 function cam:reset(focal,zfar,beta)
 	self.x=0
 	self.y=0
@@ -34,10 +34,38 @@ function cam:project(pos)
 	local ye=-y*sb+z*cb
 	return {x=hw+xe*w,y=hh-ye*w,z=ze,w=w}
 end
+function cam:project2(pos)
+	local cb,sb=self.cb,self.sb
+	local y=pos.y-self.y
+	local z=pos.z-self.z
+	local ze=-(y*cb+z*sb)
+	-- invalid projection?
+	if(ze<self.zfar or ze>=0) return {z=ze}
+	local w=-self.focal/ze
+	local xe=pos.x-self.x
+	local ye=-y*sb+z*cb
+	return hw+xe*w,hh-ye*w,ze,w
+end
+function cam:project3(x,y,z)
+	local cb,sb=self.cb,self.sb
+	y=y-self.y
+	z=z-self.z
+	local ze=-(y*cb+z*sb)
+	-- invalid projection?
+	if(ze<self.zfar or ze>=0) return nil,nil,z
+	local w=-self.focal/ze
+	local xe=x-self.x
+	local ye=-y*sb+z*cb
+	return hw+xe*w,hh-ye*w,ze,w
+end
 function cam:track(pos)
 	self.x=pos.x
 	self.y=pos.y-self.cb*self.focal
 	self.z=pos.z-self.sb*self.focal
+end
+function diffstats(s1,s2)
+	local ds=flr(1000*(s2-s1))
+	print("gain:"..ds/10)
 end
 cam:reset(96,-96)
 local stat0=stat(1)
@@ -46,7 +74,24 @@ for i=1,1000 do
 	local pos=cam:project(xyz)
 end
 local stat1=stat(1)
-print("cpu:"..(stat1-stat0))
+diffstats(stat0,stat1)
+
+stat0=stat(1)
+for i=1,1000 do
+	local x,y,z,w=cam:project2(xyz)
+end
+stat1=stat(1)
+diffstats(stat0,stat1)
+
+stat0=stat(1)
+local x,y,z=5,7,5
+for i=1,1000 do
+	local x,y,z,w=cam:project3(x,y,z)
+end
+stat1=stat(1)
+diffstats(stat0,stat1)
+
+
 __gfx__
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
