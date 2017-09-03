@@ -11,7 +11,6 @@ function bench(name,n,fn)
 		fn(i)
 	end
 	local t1=stat(1)
-	--print(name..":"..(flr(1000*(t1-t0))/10).."%")
 	return {name,(t1-t0)}
 end
 function stat2pct(s)
@@ -21,26 +20,27 @@ function bench_draw(name1,stat1,name2,stat2,y)
 	print(name1.." vs. "..name2,1,y,7)
 	y+=6
 	local total=stat1+stat2
-	local pct1=stat1/total
-	local pct2=stat2/total
+	local pct1,pct2=stat1/total,stat2/total
 	local c1,c2=8,11
 	if(stat1<stat2) c1=11 c2=8
 	local x=flr(128*pct1)
-	rectfill(0,y,x,y+6,c1)
+	rectfill(0,y,x+1,y+6,c1)
 	x+=1
 	print(stat2pct(stat1),x/2,y+1,0)
-	rectfill(x,y,x+128*pct2,y+6,c2)
-	x+=128*pct2/2
-	print(stat2pct(stat2),x,y+1,0)
-	
+	local x2=128*pct2
+	local msgx2=x+x2/2
+	if(x2<1) then
+		x=127 x2=127 msgx2=120
+	end
+	rectfill(x,y,x+x2,y+6,c2)
+	print(stat2pct(stat2),msgx2,y+1,0)
 	y+=8	
-	return y	
+	return y
 end
  
 local res={}
 local n=100
 function _update60()
-	time_t+=1
 	if(btnp(0)) n-=100
 	if(btnp(1)) n+=100
 	n=max(n,100)
@@ -97,17 +97,31 @@ function _update60()
 	add(res,bench("/",n,function()
 		j=shr(90,3)
 	end))
+
+	add(res,bench("local",n,function()
+		for i=1,50 do
+			local k=90/8
+		end
+	end))
+	add(res,bench("global",n,function()
+		local k
+		for i=1,50 do
+			k=90/8
+		end
+	end))
 end
 
 function _draw()
 	cls(0)
-	local y=0
+
+	rectfill(0,0,127,6,1)
+	print(n.." iterations - ï¿½ï¿½ to change",1,1,7)
+ 
+	local y=9
 	for i=1,#res,2 do
 		y=bench_draw(res[i][1],res[i][2],res[i+1][1],res[i+1][2],y)
 	end
 	
-	print(n.." ‹‘ to inc/dec loop count.",1,120,7)
- 
 end
 __gfx__
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
