@@ -1,6 +1,7 @@
 pico-8 cartridge // http://www.pico-8.com
 version 8
 __lua__
+local futures={c=0}
 local cam={}
 -- active buildings
 local blds={}
@@ -25,7 +26,8 @@ local plyr={
 	lives=3,
 	hit=false,
 	safe_dly=0,
-	side=0
+	side=0,
+	cam_yoffset=24
 }
 plyr_zmax=56
 plyr_r=12
@@ -129,21 +131,21 @@ function sm:push(s)
 end
 function sm:update()
 	self.t+=1
- if(self.next) then 
- 	if (self.dly<self.t) then
+	if(self.next) then 
+	if (self.dly<self.t) then
 			self.cur=self.next
 			self.cur:init()
 			self.next=nil
 			fade(0,0,8)
 		end
 	else
-	 self.cur:update()
+		self.cur:update()
 	end
 	if(_pf>0) then --pal fade
 		if(_pf==1) then _pi=_pe
 		else _pi+=((_pe-_pi)/_pf) 
 		end
- 		_pf-=1
+		_pf-=1
 	end
 end
 function sm:draw()
@@ -246,8 +248,25 @@ end
 function box_coll(a,ah,aw,b,bw,bh)
 end
 
+-- futures
+function futures:update()
+	local n=self.c
+	self.c=0
+	for i=1,n do
+		local f=self[i]
+		if(coresume(f)) then
+			self.c+=1
+			self[self.c]=f
+		end
+	end
+end
+function futures:add(fn)
+	self.c+=1
+	self[self.c]=cocreate(fn)
+end
+
 ---------------------------
--- gfx functions
+-- helpers
 function smap(cx,cy,cw,ch,x,y,scale)
 	scale=shl(scale,3)
 	--x-=cw*shr(scale,1)
@@ -267,6 +286,20 @@ function smap(cx,cy,cw,ch,x,y,scale)
 			end
 		end
 	end
+end
+function lerp(a,b,t)
+	return a*(1-t)+b*t
+end
+function lerpn(a,b,t)
+	local r={}
+	for k,v in pairs(a) do
+		r[k]=lerp(v,b[k],t)
+	end
+	return r
+end
+function smoothstep(t)
+	t=mid(t,0,1)
+	return t*t*(3-2*t)
 end
 
 -----------------------
@@ -330,6 +363,9 @@ function world:init(sx,sy,sw)
 				bor(shl(c1,4),c1),
 				bor(shl(c2,4),c1),
 				bor(shl(c1,4),c2)}
+			-- clear markers (conflict w/ spawn)
+			sset(sx+8*i,sy,0)
+			sset(sx+8*i+1,sy,0)			
 		end
 		self.floor[i+1]=r
 	end
@@ -351,7 +387,7 @@ function world:init(sx,sy,sw)
 	return self
 end
 function world:register(i,fn)
-	self.funcs[i]=fn
+	self.funcs[i+1]=fn
 	return self
 end
 function world:roadx(y)
@@ -367,7 +403,7 @@ function world:roadx(y)
 end
 function world:floor_ramp(y)
 	y=flr(shr(max(0,y),3)/self.scaley)
-	return self.floor[y+1]
+	return self.floor[min(#self.floor,y+1)]
 end
 function world:update()
 	-- pick world items
@@ -416,10 +452,10 @@ function cam:project(pos)
 	local ye=-y*sb+z*cb
 	return hw+xe*w,hh-ye*w,ze,w
 end
-function cam:track(pos)
-	self.x=pos.x/2
-	self.y=pos.y-self.cb*self.focal
-	self.z=pos.z-self.sb*self.focal
+function cam:track(x,y,z)
+	self.x=x
+	self.y=y-self.cb*self.focal
+	self.z=z-self.sb*self.focal
 end
 
 --------------------
@@ -601,10 +637,10 @@ function plyr:update()
 	end
 
 	-- cam world position
-	cam:track({
-		x=self.x,
-		y=self.y+24,
-		z=self.z})
+	cam:track(
+		self.x/2,
+		self.y+self.cam_yoffset,
+		self.z)
 	self.zi=zbuf:write(self,self)
 end
 function plyr:resolve_collisions()
@@ -1083,12 +1119,11 @@ function zbuf_class:print(x,y,c)
 	end
 end
 
-top_down_game={}
-function top_down_game:update()
+game_screen={}
+function game_screen:update()
+	futures:update()
 	zbuf:clear()
- 
 	plyr:update()
-
 	world:update()
 
 	if(boss.enabled) boss:update()
@@ -1172,7 +1207,7 @@ function draw_floor()
 					local v=flr(y)
 					sspr(24,band(v,15),16,1,xe-ze/2,64-i,ze,1)
 				end
-				imax=64-i
+				imax=hh-i
 			end
 		end
 		a+=da
@@ -1246,7 +1281,7 @@ function debug_draw()
 	end
 end
 
-function top_down_game:draw_spd(x,y)
+function game_screen:draw_spd(x,y)
 	rectfill(x,y,x+12,y+4,1)
 	rectfill(x+13,y,x+30,y+4,0)	
 	for i=0,4 do
@@ -1277,7 +1312,7 @@ function draw_shadow()
 	end
 end
 
-function top_down_game:draw()
+function game_screen:draw()
 	palt(0,false)
 	palt(3,true)
 	draw_floor()
@@ -1303,8 +1338,39 @@ function top_down_game:draw()
 		boss:msg_draw(36)
 	end
 end
-
-function top_down_game:init()
+function to_chase()
+	futures:add(function()
+		helos_c=0
+		tks_c=0
+		zbuf=make_zbuf(32,flr_h)
+		local n=2*30
+		for i=0,n do
+			local t=i/n
+			cam:rotate(lerp(0.75,1,t))
+			plyr.cam_yoffset=lerp(24,0,t)
+			yield()
+		end
+		cam:rotate(0)
+		plyr.cam_yoffset=0
+	end)
+end
+function to_top()
+	futures:add(function()
+		helos_c=0
+		tks_c=0
+		zbuf=make_zbuf(8,flr_h)
+		local n=2*30
+		for i=0,n do
+			local t=i/n
+			cam:rotate(lerp(1,0.75,t))
+			plyr.cam_yoffset=lerp(0,24,t)
+			yield()
+		end
+		cam:rotate(0.75)
+		plyr.cam_yoffset=24
+	end)
+end
+function game_screen:init()
 	time_t=0
 	cam:init(96,-96-plyr_zmax,0.75)
 	-- reset entities
@@ -1318,87 +1384,19 @@ function top_down_game:init()
 	
 	world
 		:init(0,56,6*8)
-		:register(4+1,spawn_tk)
-		:register(6+1,spawn_building)
-	 :register(7+1,spawn_building)
-		:register(8+1,spawn_helo)
-		:register(9+1,spawn_bship)
-				
+		:register(4,spawn_tk)
+		:register(6,spawn_building)
+		:register(7,spawn_building)
+		:register(8,spawn_helo)
+		:register(9,spawn_bship)
+		:register(10,to_chase)
+		:register(2,to_top)
 	--[[
 	spawn_building(0,0)
 	spawn_building(-48,56)
 	spawn_building(48,56)
 	]]
 	
-	-- sounds
-	sfx(4)
-
-	plyr:init()
-end
-
--------------------------
----- chase view game ----
--------------------------
-chase_game={}
-function chase_game:draw()
-	cls(12)
-	palt(0,false)
-	draw_floor()
-	palt(3,true)
-	zbuf:draw()
-	for i=0,plyr.lives-1 do
-		spr(2,2+i*9,128-9)
-	end
-	palt()
-	
-	zbuf:print(0,8)
-	
-	rectfill(0,0,127,7,1)
-	print("�:"..flr(100*stat(1)+0.5).."% �:"..flr(stat(0)+0.5).."mb",1,1,7)
-end
-function chase_game:update()
- -- todo: rotate camera based on time
-	if(cam.beta<0.75) cam.beta+=0.005
-	
-	-- clear zbuf
-	zbuf:clear()
-
-	heli:update()
-
-	-- update bullets
-	local n=blts_c
-	blts_c=0
-	for i=1,n do
-		local b=blts[i]
-		b.z+=b.dz
-		if (b.t>t and b.z>=flr_z) then
-			b.y+=b.dy
-			blts_c+=1
-			blts[blts_c]=b
-			--insert into zbuffer
-			b.zi=zbuf:write(nil,b.y,b)
-		end
-	end
-end
-
-function chase_game:init()
-	time_t=0
-	map_i=0
-	map_t=8
-	cam.x=0
-	cam.y=0
-	cam.z=0
-	beta=0.5
-	zbuf=make_zbuf(16,4)
-
-	for i=1,15 do
-		map_funcs[i]=spawn_nop
-	end
-	--map_funcs[4+1]=spawn_tk
-	--map_funcs[6+1]=spawn_building
-	--map_funcs[7+1]=spawn_building
-	--map_funcs[8+1]=spawn_helo
-
 	-- sounds
 	sfx(4)
 
@@ -1427,23 +1425,22 @@ chars_mem={}
 function rooster:clear()
 	self.rows={}
 end
-function rooster:update()
-	for row in all(self.rows) do
+function rooster:apply(fn)
+	for i=1,#self.rows do
+		local row=self.rows[i]
 		if(row.dly<time_t) then
-			for c in all(row.chars) do
-				if (c.dly<time_t) c:update()
+			for j=1,#row.chars do
+				local c=row.chars[j]
+				if (c.dly<time_t) fn(c)
 			end
 		end
 	end
 end
+function rooster:update()
+	self:apply(char_update)
+end
 function rooster:draw()
-	for row in all(self.rows) do
-		if(row.dly<time_t) then
-			for c in all(row.chars) do
-				if (c.dly<time_t) c:draw()
-			end
-		end
-	end
+	self:apply(char_draw)
 end
 function rooster:add(s,col)
 	local n=#self.rows
@@ -1462,9 +1459,7 @@ function rooster:add(s,col)
 				col=col or 7,
 				dly=row.dly+n*2*30+dt*0.25*30,
 				src={x=x,y=-64,z=-24},
-				dst={x=x,y=0,z=z},
-				draw=char_draw,
-				update=char_update
+				dst={x=x,y=0,z=z}
 			}
 			add(row.chars,char)
 			dt+=1
@@ -1472,20 +1467,6 @@ function rooster:add(s,col)
 		x+=8
 	end
 	add(self.rows,row)
-end
-function lerp(a,b,t)
-	return a*(1-t)+b*t
-end
-function lerpn(a,b,t)
-	local r={}
-	for k,v in pairs(a) do
-		r[k]=lerp(v,b[k],t)
-	end
-	return r
-end
-function smoothstep(t)
-	t=mid(t,0,1)
-	return t*t*(3-2*t)
 end
 function char_update(self)
 	local t=(time_t-self.dly)/(0.8*30)
@@ -1534,7 +1515,7 @@ function title_screen:update()
 		for s in all(scores) do
 			s[3]=false
 		end
-		sm:push(top_down_game)
+		sm:push(game_screen)
 	end
 	rooster:update()
 end
@@ -1563,7 +1544,7 @@ function title_screen:init()
 	time_t=0
 	starting=false
 	cam:init(96,-96)
-	cam:track({x=0,y=0,z=0})
+	cam:track(0,0,0)
 	rooster:clear()
 	for i=1,#ranks do
 		local s=ranks[i].."  "..scores[i][2].."  "..scores[i][1]
@@ -1661,7 +1642,7 @@ function game_over:init()
 	name_i=1
 	name_c=1
 	cam:init(72,-256)
-	cam:track({x=0,y=0,z=0})
+	cam:track(0,0,0)
 end
 
 -- game loop
@@ -1676,7 +1657,7 @@ function _init()
 	cls(0)
 	print("dip switch testing...")
 	sprint_init(chars)
-	sm:push(top_down_game)
+	sm:push(game_screen)
 end
 
 __gfx__
@@ -1736,14 +1717,14 @@ __gfx__
 33333333333333333333333333333333333333333333333330056003333333333300033335533000033333333333333300033333333333333333333597333333
 33333333333333333333333333333333333333333333333333000033333333333330333333333300003333333333333300033333333333333333333353333333
 33333333333333333333333333333333333333333333333333388333333333333333333333333300033333333333333300033333333333333333333353333333
-bd060006000060600600006000000000000000000000000000000000000000003333333333333330333333333333333000033333333333333377333300000000
-00000600046000000000000000000000000000000000000000000000000000003333333333333333333333333333333000033333333333333777773300000000
-00404080000004000006000600000000000000000000000000000000000000003333333333333333333333333333333333333333333333337777777300000000
-55555555555500005008008000000000000000000000000000000000000000003333333333333333333333333333333333333333333333333777777700000000
-00040086000055550580060000000000000000000000000000000000000000003333333333333333333333333333333333333333333333333777777700000000
-06006600040000000858008000000000000000000000000000000000000000003333333333333333333333333333333333333333333333333377777700000000
-00060060000604000085555500000000000000000000000000000000000000003333333333333333333333333333333333333333333333333377777300000000
-60000000060000066000060000000000000000000000000000000000000000003333333333333333333333333333333333333333333333333337773300000000
+bd060006940000000600006000000000000000000000000000000000000000003333333333333330333333333333333000033333333333333377333300000000
+00000600000000000000000000000000000000000000000000000000000000003333333333333333333333333333333000033333333333333777773300000000
+00404080000000000006000600000000000000000000000000000000000000003333333333333333333333333333333333333333333333337777777300000000
+55555555000000005008008000000000000000000000000000000000000000003333333333333333333333333333333333333333333333333777777700000000
+00040086555555550580060000000000000000000000000000000000000000003333333333333333333333333333333333333333333333333777777700000000
+06006600a00000020858008000000000000000000000000000000000000000003333333333333333333333333333333333333333333333333377777700000000
+00060060000000000085555500000000000000000000000000000000000000003333333333333333333333333333333333333333333333333377777300000000
+60000000000000006000060000000000000000000000000000000000000000003333333333333333333333333333333333333333333333333337773300000000
 33333333300033333333333333333033333300033333333333333330003333333333333333333301333333333333333331333333333333033333333300000000
 33333333300033333333333333300003333300033333333333333330003333000333333333333301333333333333333301333333333333013333333300000000
 33003333300033333003333333330003333300333333333333333333003333000033333333333301333333333333333301333333333333013333333300000000
