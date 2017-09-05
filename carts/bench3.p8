@@ -38,6 +38,16 @@ function bench_draw(name1,stat1,name2,stat2,y)
 	return y
 end
  
+function update()
+	local x=6/8
+end
+function update_async()
+	local x=0
+	while(true) do
+		x=6/8
+		yield()
+	end
+end
 local res={}
 local n=100
 function _update60()
@@ -98,17 +108,25 @@ function _update60()
 		j=shr(90,3)
 	end))
 
-	add(res,bench("local",n,function()
+	add(res,bench("abs",n,function()
+		j=abs(-90)
+	end))
+	add(res,bench("band(0x7fff)",n,function()
+		j=band(-90,0x7fff.ffff)
+	end))
+	--[[
+	add(res,bench("direct",n,function()
 		for i=1,50 do
-			local k=90/8
+			update()
 		end
 	end))
-	add(res,bench("global",n,function()
-		local k
+	local cor=cocreate(update_async)
+	add(res,bench("cor",n,function()
 		for i=1,50 do
-			k=90/8
+			coresume(cor)
 		end
 	end))
+	]]
 end
 
 function _draw()
