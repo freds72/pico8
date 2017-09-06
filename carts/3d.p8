@@ -7,8 +7,8 @@ local cam={}
 local blds={}
 local blds_c=0
 -- floor constants
-flr_n=6
-flr_h=8
+flr_n=7
+flr_h=10
 flr_w=24
 flr_zmax=(flr_n-1)*flr_h
 flr_ramp={6,5}
@@ -16,23 +16,24 @@ flr_ramp={6,5}
 hh=63
 hw=64
 -- player settings
+plyr_zmax=56
 local plyr={
 	x=0,
 	y=0,
-	z=56,
+	z=plyr_zmax,
 	zi=1,
 	vx=0,
 	vy=1,
 	lives=3,
 	hit=false,
 	crash_z=56,
-	crash_dly=0,
-	safe_dly=0,
+	playing=true,
+	crashing=false,
+	safe=false,
 	side=0,
 	cam_yoffset=24,
 	cam_zoffset=0
 }
-plyr_zmax=56
 plyr_r=12
 plyr_r2=plyr_r*plyr_r
 plyr_rotor={128,131,134}
@@ -585,12 +586,18 @@ function plyr:init()
 	self.z=plyr_zmax
 	self.lives=3
 	self.hit=false
-	self.safe_dly=time_t+3*30
 	self.fire_dly=0
+	self.crashing=false
+	self.playing=true
+	futures:add(function()
+		self.safe=true
+		for i=1,2*30 do yield() end
+		self.safe=false
+	end)
 end
 function plyr:draw(x,y,z,w)
-	if(self.crash_dly>time_t) return
-	if(self.safe_dly>time_t and band(time_t,1)==0) return
+	if(self.crashing) return
+	if(self.safe and band(time_t,1)==0) return
 	local idx=mid(flr(self.vx),-1,1)+2
 	if(cam:is_top_down()) then
 		spr(plyr_body[idx],x-8,y-9,2,3)
@@ -602,14 +609,14 @@ function plyr:draw(x,y,z,w)
 	end
 end
 function plyr:die()
+	-- avoid rentrancy
+	if(self.safe) assert()
 	sfx(1)
 	self.lives-=1
-	if(self.lives<=0) then
-		sm:push(game_over)
-	end
 	self.crash_z=self.z
-	self.crash_dly=time_t+1*30
-	self.safe_dly=time_t+3*30
+	self.crashing=true
+	self.safe=true
+	self.playing=false
 	futures:add(function()
 		for i=0,30 do
 			local t=i/30
@@ -622,9 +629,21 @@ function plyr:die()
 		end
 		self.z=0
 		self.vy=0
+		if(self.lives<=0) then
+			for i=1,30 do yield() end
+			sm:push(game_over)
+			return
+		end
+		self.crashing=false
+		self.playing=true
+		for i=1,3*30 do
+			yield()
+		end
+		self.safe=false
 	end)
 end
 function plyr:blt_hit(blt)
+	if(self.safe) return false
 	if(circ_coll(self,plyr_r,blt,blt_r)) then
 		self:die()
 		return true
@@ -632,7 +651,7 @@ function plyr:blt_hit(blt)
 	return false
 end
 function plyr:update()
-	if (self.crash_dly<time_t) then
+	if (self.playing) then
 		local dx=0
 		if (btn(0)) dx=-0.25
 		if (btn(1)) dx=0.25
@@ -677,7 +696,7 @@ function plyr:update()
 end
 function plyr:resolve_collisions()
 	-- just (re)spawned
-	if (self.safe_dly>=time_t) return
+	if (self.safe) return
 	-- against buildings
 	if (self.z<=flr_zmax) then
 		local b
