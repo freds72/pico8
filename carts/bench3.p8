@@ -114,6 +114,14 @@ function _update60()
 	add(res,bench("band(0x7fff)",n,function()
 		j=band(-90,0x7fff.ffff)
 	end))
+
+	add(res,bench("sget",n,function()
+		j=sget(12,12)
+	end))
+	add(res,bench("peek",n,function()
+		j=band(0xf,peek(ox6000))
+	end))
+
 	--[[
 	add(res,bench("direct",n,function()
 		for i=1,50 do
