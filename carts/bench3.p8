@@ -122,6 +122,11 @@ function _update60()
 		j=band(0xf,peek(ox6000))
 	end))
 
+	add(res,bench("nop",n,function()
+	end))
+	add(res,bench("pal",n,function()
+		pal()
+	end))
 	--[[
 	add(res,bench("direct",n,function()
 		for i=1,50 do

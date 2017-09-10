@@ -34,20 +34,20 @@ plyr_vmax=1
 local plyr={
 	x=0,
 	y=0,
-	z=plyr_zmax,
-	zi=1,
-	vx=0,
-	vy=1,
-	lives=3,
-	hit=false,
-	crash_z=56,
-	playing=true,
-	crashing=false,
-	safe=false,
-	side=0,
-	cam_yoffset=24,
-	cam_zoffset=0
+	z=plyr_zmax
 }
+plyr_zi=1
+plyr_vx=0
+plyr_vy=1
+plyr_lives=3
+plyr_hit=false
+plyr_crash_z=56
+plyr_playing=true
+plyr_crashing=false
+plyr_safe=false
+plyr_side=0
+plyr_cam_yoffset=24
+plyr_cam_zoffset=0
 plyr_r=12
 plyr_r2=plyr_r*plyr_r
 plyr_rotor={128,131,134}
@@ -64,11 +64,12 @@ local time_t=0
 local blts={}
 blts_c=0
 blts_n=32
-blt_w=4
-blt_r=blt_w
-blt_r2=blt_w*blt_w
+blt_r=4
+blt_r2=blt_r*blt_r
 -- zbuffer
 local zbuf={}
+zbuf_n=0
+zbuf_h=0
 -- enemies
 local nmies={}
 local nmies_c=0
@@ -113,7 +114,7 @@ _pl={"00000015d67",
      "0000015d677",
      "0000024ef77",
      "000013b7777",
-     "00009a777",
+     "0000049a777",
      "000015d6777",
      "0015d677777",
      "015d6777777",
@@ -134,6 +135,7 @@ end
 -- screen manager
 local sm_t,sm_cur,sm_next,sm_dly=0,nil,nil,0
 function sm_push(s)
+	sm_t=0
 	if(sm_cur) then
 		sm_dly=sm_t+8
 		sm_next=s
@@ -148,8 +150,8 @@ function sm_update()
 	if(sm_next) then 
 		if (sm_dly<sm_t) then
 			sm_cur=sm_next
-			sm_cur:init()
 			sm_next=nil
+			sm_cur:init()
 			fade(0,0,8)
 		end
 	else
@@ -526,7 +528,7 @@ function nmies_update()
 	for i=1,n do
 		local e=nmies[i]
 		if(e:update()) then
-			zbuf:write(e,e)
+			zbuf_write(e,e)
 			nmies_c+=1
 			if(i!=nmies_c) nmies[nmies_c]=e
 		end
@@ -608,7 +610,7 @@ function fxs:update()
 		local fx=self[i]
 		if(fx.t>=time_t) then
 		 fx:update()
-			zbuf:write(fx)
+			zbuf_write(fx)
 			fxs_c+=1
 			self[fxs_c]=fx
 		end
@@ -643,24 +645,24 @@ end
 ---------------------
 --- player ----------
 function plyr:init()
-	self.x=0
-	self.y=0
-	self.z=plyr_zmax
-	self.lives=3
-	self.hit=false
-	self.fire_dly=0
-	self.crashing=false
-	self.playing=true
+	plyr.x=0
+	plyr.y=0
+	plyr.z=plyr_zmax
+	plyr_lives=3
+	plyr_hit=false
+	plyr_fire_dly=0
+	plyr_crashing=false
+	plyr_playing=true
 	futures:add(function()
-		self.safe=true
+		plyr_safe=true
 		for i=1,3*30 do yield() end
-		self.safe=false
+		plyr_safe=false
 	end)
 end
 function plyr:draw(x,y,z,w)
-	if(self.crashing) return
-	if(self.safe and band(time_t,1)==0) return
-	local idx=mid(flr(self.vx),-1,1)+2
+	if(plyr_crashing) return
+	if(plyr_safe and band(time_t,1)==0) return
+	local idx=mid(flr(plyr_vx),-1,1)+2
 	if(cam_is_top_down()) then
 		spr(plyr_body[idx],x-8,y-9,2,3)
 		spr(plyr_rotor[time_t%3+1],x-10,y-11,3,3)
@@ -670,45 +672,43 @@ function plyr:draw(x,y,z,w)
 		spr(plyr_body3d[idx],x-8,y,2,3)
 	end
 end
-function plyr:die_async()
+function plyr_die_async()
 	for i=0,30 do
 		local t=i/30
-		self.z=lerp(self.crash_z,0,t)
-		self.vy=lerp(self.vy,0,t)
+		plyr.z=lerp(plyr_crash_z,0,t)
+		plyr_vy=lerp(plyr_vy,0,t)
 		if(i%4==0) then
-			fxs:make_blast(self.x,self.y,self.z,0,0,12)
+			fxs:make_blast(plyr.x,plyr.y,plyr.z,0,0,12)
 		end
 		yield()
 	end
-	self.z=0
-	self.vy=0
-	if(self.lives<=0) then
+	plyr.z=0
+	plyr_vy=0
+	if(plyr_lives<=0) then
 		for i=1,30 do yield() end
 		sm_push(game_over)
 		return
 	end
-	self.crashing=false
-	self.playing=true
+	plyr_crashing=false
+	plyr_playing=true
 	for i=1,3*30 do
 		yield()
 	end
-	self.safe=false
+	plyr_safe=false
 end
 function plyr:die()
 	-- avoid rentrancy
-	if(self.safe) assert()
+	if(plyr_safe) assert()
 	sfx(1)
 	--self.lives-=1
-	self.crash_z=self.z
-	self.crashing=true
-	self.safe=true
-	self.playing=false
-	futures:add(function()
-		self:die_async()
-	end)
+	plyr_crash_z=plyr.z
+	plyr_crashing=true
+	plyr_safe=true
+	plyr_playing=false
+	futures:add(plyr_die_async)
 end
 function plyr:blt_hit(blt)
-	if(self.safe) return false
+	if(plyr_safe) return false
 	if(circ_coll(self,plyr_r,blt,blt_r)) then
 		self:die()
 		return true
@@ -716,29 +716,29 @@ function plyr:blt_hit(blt)
 	return false
 end
 function plyr:update()
-	if (self.playing) then
+	if (plyr_playing) then
 		local dx=0
 		if (btn(0)) dx=-0.25
 		if (btn(1)) dx=0.25
 		if(dx==0) then
-			self.vx*=0.89
-			if(abs(self.vx)<0.3) self.vx=0
+			plyr_vx*=0.89
+			if(abs(plyr_vx)<0.3) plyr_vx=0
 		else
-			self.vx=mid(self.vx+dx,-4,4)
+			plyr_vx=mid(plyr_vx+dx,-4,4)
 		end
-		self.x=mid(self.x+self.vx,-64,64)
+		self.x=mid(self.x+plyr_vx,-64,64)
 		
-		if (btn(2)) self.z-=0.5
-		if (btn(3)) self.z+=0.5
-		self.z=mid(self.z,plyr_zmin,plyr_zmax)
+		if (btn(2)) plyr.z-=0.5
+		if (btn(3)) plyr.z+=0.5
+		plyr.z=mid(plyr.z,plyr_zmin,plyr_zmax)
 	
-		if(btn(5) or self.z==0) then
-			self.vy-=0.25
+		if(btn(5) or plyr.z==0) then
+			plyr_vy-=0.25
 		else
-			self.vy+=max(0.1, 0.1*self.vy)
+			plyr_vy+=max(0.1, 0.1*plyr_vy)
 		end
-		self.vy=mid(self.vy,0,plyr_vmax)
-		self.y+=self.vy
+		plyr_vy=mid(plyr_vy,0,plyr_vmax)
+		self.y+=plyr_vy
 	
 		-- debug
 		--if(btn(5)) then
@@ -747,23 +747,23 @@ function plyr:update()
 		--end
 		
 		-- fire 
-		if (btn(4) and self.fire_dly<=time_t and blts_c<blts_n) then
+		if (btn(4) and plyr_fire_dly<=time_t and blts_c<blts_n) then
 			blts:make(self.x,self.y+5,self.z-0.5,0,3,-3,self.side)
-			self.fire_dly=time_t+0.2*30
+			plyr_fire_dly=time_t+0.2*30
 		end
 	end
 	-- cam world position
 	cam_track(
 		self.x/2,
-		self.y+self.cam_yoffset,
-		max(8,self.z)+self.cam_zoffset)
-	self.zi=zbuf:write(self,self)
+		self.y+plyr_cam_yoffset,
+		max(8,plyr.z)+plyr_cam_zoffset)
+	plyr_zi=zbuf_write(self,self)
 end
 function plyr:resolve_collisions()
 	-- just (re)spawned
-	if (self.safe) return
+	if (plyr_safe) return
 	-- against buildings
-	if (self.z<=flr_zmax) then
+	if (plyr.z<=flr_zmax) then
 		local b
 		for i=1,blds_c do
 			b=blds[i]
@@ -775,7 +775,7 @@ function plyr:resolve_collisions()
 		end
 	end
 	-- against stuff
-	local zb=zbuf[plyr.zi]
+	local zb=zbuf[plyr_zi]
 	for i=1,zb.o do
 		local o=zb.objs[i]
 		if (o.plyr_hit and o:plyr_hit(self)) then
@@ -934,7 +934,7 @@ function blt_update(self)
 		return false
 end
 function blt_draw(self,x,y,z,w)
-	local we=flr(blt_w*w)+1
+	local we=flr(blt_r*w)+1
 	sspr(48,32,8,8,x-we,y-we,2*we,2*we)
 end
 function msl_update(self)
@@ -955,7 +955,7 @@ function msl_update(self)
 		return false
 end
 function msl_draw(self,x,y,z,w)
-	local we=flr(blt_w*w)+1
+	local we=flr(blt_r*w)+1
 	sspr(48,48,8,8,x-we,y-we,2*we,2*we)
 end
 function blts:make_tracker(x,y,z,dz,side)
@@ -1010,7 +1010,7 @@ function blts:update()
 			blts_c+=1
 			blts[blts_c]=b
 			--insert into zbuffer
-			b.zi=zbuf:write(b)
+			b.zi=zbuf_write(b)
 		end
 	end
 end
@@ -1093,9 +1093,9 @@ function boss:update()
 	for t in all(self.parts) do
 		t:update(self)
 	end
-	zbuf:write(self,self)
+	zbuf_write(self,self)
 	for i=1,#self.struct do
-		zbuf:write(self.struct[i])
+		zbuf_write(self.struct[i])
 	end
 end
 function boss:blt_hit(blt)
@@ -1110,7 +1110,7 @@ end
 function spawn_bship(x,y)
 	y+=218
 	futures:add(function()
-		plyr.playing=false
+		plyr_playing=false
 		local vmax=plyr_vmax
 		local z=plyr.z
 		for i=0,1*30 do
@@ -1118,7 +1118,7 @@ function spawn_bship(x,y)
 			plyr_vmax=lerp(vmax,0.5,t)
 			plyr.z=lerp(z,32,t)
 		end
-		plyr.playing=true
+		plyr_playing=true
 		plyr_zmax=32
 		plyr_zmin=32
 		plyr_vmax=0.5
@@ -1216,34 +1216,30 @@ end
 
 -------------------------
 -- zbuffer
-zbuf_class={}
-function make_zbuf(n,dist)
-	local zb={
-		n=n, -- number of layers (+1)
-		h=dist  -- dist between layers
-	}
-	setmetatable(zb,{__index=zbuf_class})
+function zbuf_init(n,dist)
+	zbuf_n=n -- number of layers (+1)
+	zbuf_h=dist  -- dist between layers
 	for i=1,n+1 do
-		zb[i]={}
-		zb[i].n=0
-		zb[i].elts={}
-		zb[i].pos={}
-		zb[i].o=0
-		zb[i].objs={}
+		zbuf[i]={}
+		zbuf[i].n=0
+		zbuf[i].elts={}
+		zbuf[i].pos={}
+		zbuf[i].o=0
+		zbuf[i].objs={}
 	end
 	return zb
 end
-function zbuf_class:clear()
-	for i=1,self.n+1 do
-		local zb=self[i]
+function zbuf_clear()
+	for i=1,zbuf_n+1 do
+		local zb=zbuf[i]
 		zb.n=0 
 		zb.o=0
 	end
 end
-function zbuf_class:write(obj,phy_obj,i)
+function zbuf_write(obj,phy_obj,i)
 	local x,y,z,w=cam_project(obj)
-	local zi=i or mid(flr((z-cam_zfar)/self.h+0.5),1,self.n+1)
-	local zb=self[zi]
+	local zi=i or mid(flr((z-cam_zfar)/zbuf_h+0.5),1,zbuf_n+1)
+	local zb=zbuf[zi]
 	zb.n+=1
 	zb.elts[zb.n]=obj
 	zb.pos[zb.n]={x,y,z,w}
@@ -1253,8 +1249,8 @@ function zbuf_class:write(obj,phy_obj,i)
 	end
 	return zi
 end
-function zbuf_class:draw()
-	for i=1,self.n+1 do
+function zbuf_draw()
+	for i=1,zbuf_n+1 do
 		local zb=zbuf[i]
 		for j=1,zb.n do
 			local pos=zb.pos[j]
@@ -1262,20 +1258,20 @@ function zbuf_class:draw()
 		end
 	end
 end
-function zbuf_class:print(x,y,c)
+function zbuf_print(x,y,c)
 	local col=c or 1
 	print("plyr:"..plyr.z,x,y,col)
 	y+=6
-	for i=1,self.n+1 do
+	for i=1,zbuf_n+1 do
 		local s="."
-		if(plyr.zi==i) s=">"
+		if(plyr_zi==i) s=">"
 		print(s..i..":"..zbuf[i].n,x,y+i*8,col)
 	end
 end
 
 game_screen={}
 function game_screen:update()
-	zbuf:clear()
+	zbuf_clear()
 	plyr:update()
 	world:update()
 
@@ -1289,7 +1285,7 @@ function game_screen:update()
 		if (b.y-plyr.y>-128) then
 			b.touch=0
 			for zi=1,#b.floors do
-				zbuf:write(b.floors[zi])
+				zbuf_write(b.floors[zi])
 			end
 			blds_c+=1
 			blds[blds_c]=b
@@ -1361,7 +1357,7 @@ function game_screen:draw_spd(x,y)
 		pset(x+13+4*i,y,8)
 		pset(x+13+4*i,y+4,8)		
 	end
-	rectfill(x+13,y+1,x+13+16*plyr.vy,y+3,11)
+	rectfill(x+13,y+1,x+13+16*plyr_vy,y+3,11)
 	
 	print("spd",x+1,y,8)
 	
@@ -1376,9 +1372,11 @@ function draw_shadow()
 	if (band(time_t,1)==0) then
 		local x,y,z,w=cam_project({x=plyr.x,y=plyr.y,z=0})
 		if(cam_is_top_down()) then
-			local ww=shl(w,3)
-			local wh=24*w
-			sspr(56,32,8,24,x-shr(ww,1),y-shr(wh,1),ww,wh)
+			if(w) then
+				local ww=shl(w,3)
+				local wh=24*w
+				sspr(56,32,8,24,x-shr(ww,1),y-shr(wh,1),ww,wh)
+			end
 		else
 			spr(189,x-8,y,1,1)
 			spr(189,x,y,1,1,true)
@@ -1392,8 +1390,8 @@ function game_screen:draw()
 	draw_floor()
 	draw_shadow()
 	--cls(0)
-	zbuf:draw()
-	for i=0,plyr.lives-1 do
+	zbuf_draw()
+	for i=0,plyr_lives-1 do
 		spr(2,2+i*9,128-9)
 	end
 	palt()
@@ -1406,7 +1404,7 @@ function game_screen:draw()
 	--print("tks :"..nmies_c,0,9,12)
 	--print("blts :"..blts_c,0,18,12)
 	--print_map(0,32)
-	--zbuf:print(0,16,1)
+	--zbuf_print(0,16,1)
 	--debug_draw()
 	--world:print(0,12)
 
@@ -1417,17 +1415,17 @@ end
 function to_chase()
 	futures:add(function()
 		nmies_c=0
-		zbuf=make_zbuf(32,flr_h)
+		zbuf_init(32,flr_h)
 		for i=0,30 do
 			local t=i/30
 			cam_rotate(lerp(0.75,1,t))
-			plyr.cam_yoffset=lerp(24,0,t)
-			plyr.cam_zoffset=lerp(0,12,t)
+			plyr_cam_yoffset=lerp(24,0,t)
+			plyr_cam_zoffset=lerp(0,12,t)
 			yield()
 		end
 		cam_init(96,-196-plyr_zmax,0)
-		plyr.cam_yoffset=0
-		plyr.cam_zoffset=12
+		plyr_cam_yoffset=0
+		plyr_cam_zoffset=12
 		flr_n=4
 	end)
 end
@@ -1439,8 +1437,8 @@ function game_screen:init()
 	blts_c=0
 	fxs_c=0
 	
-	--zbuf=make_zbuf(flr_n,flr_h)
-	zbuf=make_zbuf(8,flr_h)
+	--zbuf_init(flr_n,flr_h)
+	zbuf_init(8,flr_h)
 	
 	world
 		:init(0,56,6*8)
@@ -1477,7 +1475,7 @@ scores={
 	{"eee",500,false},
 }
 ranks={"1st","2nd","3rd","4th","5th"}
-starting=false
+game_starting=false
 chars="\13\8 abcdefghijklmnopqrstuvwxyz-0123456789\131\132\133\134\135\136\137\138\139\140"
 chars_mem={}
 rooster_rows={}
@@ -1526,7 +1524,7 @@ function char_update(self)
 	self.cur=lerpn(self.src,self.dst,smoothstep(t))
 end
 function char_draw(self)
-	local x,y,z,w=cam_project(self.cur)
+	local x,y,z,w=cam_project(self.cur or self.src)
 	if(w) sprint(self.c,x,y,self.col,w)
 end
 
@@ -1565,15 +1563,14 @@ end
 	
 function title_screen:update()
 	if(btnp(4) or btnp(5)) then
-		starting=true
+		game_starting=true
 		-- clear last score
 		for s in all(scores) do
 			s[3]=false
 		end
 		sm_push(game_screen)
-	 return
 	end
-	rooster_apply(char_update)
+ rooster_apply(char_update)
 end
 function title_screen:draw()	
 	local ret,res=coresume(self.str2mem_cor)
@@ -1596,7 +1593,7 @@ function title_screen:draw()
 end
 function title_screen:init()
 	time_t=0
-	starting=false
+	game_starting=false
 	cam_init(96,-96)
 	cam_track(0,0,0)
 	rooster_clear()
@@ -1626,14 +1623,14 @@ function title_screen:score(name,s)
 	end
 end
 
-game_over={
-	done=false,
-	cur_i=1,
-	next_i=1,
-	next_dly=0
-}
-name={}
-name_i=1
+game_over={}
+go_char_i=1
+go_cur_i=1
+go_next_i=1
+go_moving=false
+go_start_a=0
+go_char_anim=nil
+go_name={4,4,4}
 i2c={}
 for i=1,#chars do
  local c=sub(chars,i,i)
@@ -1641,59 +1638,61 @@ for i=1,#chars do
 end
 function game_over:get_name()
 	local s=""
-	for i=1,#name do
-		s=s..i2c[name[i]]
+	for i=1,#go_name do
+		s=s..i2c[go_name[i]]
 	end
 	return s
 end
+function game_over:close()
+	title_screen:score(self.get_name(),1450)
+	sm_push(title_screen)
+end
 function game_over:update()
-	if(time_t>30*30 or self.done) then
-		title_screen:score(self.get_name(),1450)
-		sm_push(title_screen)
-	end
+	if(time_t>30*30) self:close()
 	local moved=false
 	if(btnp(4) or btnp(5)) then
-		if(self.cur_i==1) then
-			self.done=true
-		elseif(self.cur_i==2) then
-			self.sel-=1
+		if(go_cur_i==1) then
+			self:close()
+		elseif(go_cur_i==2) then
+			go_char_i-=1
 	 else
-			local sel=self.sel
-	 	local ci=self.cur_i
+		local sel=go_char_i
+	 	local ci=go_cur_i
 	 	futures:add(function()
 	 	 local c0={x=56*cos(0.75),y=-48*sin(0.75),z=-16}
 	 	 local c1={x=8*sel-20,y=0,z=18}
 	 	 local t,dt=0,1/16
 	 	 for i=0,15 do
 					local x,y,z,w=cam_project(lerpn(c0,c1,t))
-				 self.anim={ci=ci,x=x,y=y,z=z,w=w}
+				 go_char_anim={ci=ci,x=x,y=y,z=z,w=w}
 				 yield()
 				 t+=dt
 				end
-				self.anim=nil
-			 name[sel]=ci self.sel=min(sel+1,3)
+				go_char_anim=nil
+				go_name[sel]=ci
+				go_char_i=min(sel+1,#go_name)
 	 	end)
 	 end		
 	end
-	self.sel=mid(self.sel,1,#name)
-	if(btnp(0)) self.next_i-=1 moved=true
-	if(btnp(1)) self.next_i+=1 moved=true
-	if(moved and self.moving==false) then
-			self.moving=true
-			local da=1/#chars
+	go_char_i=mid(go_char_i,1,#go_name)
+	if(btnp(0)) go_next_i-=1 moved=true
+	if(btnp(1)) go_next_i+=1 moved=true
+	if(moved and go_moving==false) then
+			go_moving=true
 			futures:add(function()
+				local da=1/#chars
 				local t,dt=0,1/16
 				for i=0,15 do
-					self.a=lerp((self.cur_i-1)*da,(self.next_i-1)*da,smoothstep(t))
+					go_start_a=lerp((go_cur_i-1)*da,(go_next_i-1)*da,smoothstep(t))
 					t+=dt	
 					yield()
 				end
-				local  i=self.next_i%#chars
+				local  i=go_next_i%#chars
 				if(i<1) i=#chars-i
-				self.cur_i=i
-				self.next_i=i
-				self.a=da*(i-1)
-				self.moving=false
+				go_cur_i=i
+				go_next_i=i
+				go_start_a=da*(i-1)
+				go_moving=false
 			end)
 		end
 end
@@ -1705,40 +1704,36 @@ function game_over:draw()
 		:centered()
 		:print("enter your name",64,24,8)
 	local x=96
-	for i=1,#name do
+	for i=1,#go_name do
 		local col=7
-		if(time_t%32>16 and i==self.sel) col=10
-		print(i2c[name[i]],64+8*i-8*3,44,col)
+		if(time_t%32>16 and i==go_char_i) col=10
+		print(i2c[go_name[i]],64+8*i-8*3,44,col)
 	end
 	
 	-- carousel
 	local da=1/#chars
-	local a=-0.25-self.a
+	local a=-0.25-go_start_a
 	local col=7
 	for i=1,#chars do
 		local c=sub(chars,i,i)
 		local x,y,z,w=cam_project({x=56*cos(a),y=-48*sin(a),z=-16})
-		if (i==self.cur_i) col=10 else col=7
+		if (i==go_cur_i) col=10 else col=7
 		if(w) sprint(c,x,y,col,w)
 		a+=da
 	end
-	if(self.anim) then
-		sprint(i2c[self.anim.ci],self.anim.x,self.anim.y,7,self.anim.w)
+	if(go_char_anim) then
+		sprint(i2c[go_char_anim.ci],go_char_anim.x,go_char_anim.y,7,go_char_anim.w)
 	end
 	print(30-flr(time_t/30),128-8,128-12,1)
 end
 function game_over:init()
 	time_t=0
-	self.done=false
-	self.sel=1
-	self.cur_i=1
-	self.next_i=1
-	self.moving=false
-	self.a=0
-	self.anim=nil
-	name={4,4,4}
-	name_i=1
-	name_c=1
+	go_char_i=1
+	go_cur_i=1
+	go_next_i=1
+	go_moving=false
+	go_start_a=0
+	go_char_anim=nil
 	cam_init(72,-256)
 	cam_track(0,0,0)
 end
@@ -1755,7 +1750,7 @@ end
 function _init()
 	cls(0)
 	sprint_init(chars)
-	sm_push(game_over)
+	sm_push(title_screen)
 end
 
 __gfx__
