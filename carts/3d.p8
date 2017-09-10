@@ -17,6 +17,14 @@ local flr_ramps={
 	{{9},{4,15}} -- brownish
 }
 -- camera
+cam_x=0
+cam_y=0
+cam_z=0
+cam_focal=96
+cam_zfar=-256
+cam_alpha=0
+cam_beta=0
+cam_sb,cam_cb=0,0
 hh=63
 hw=64
 -- player settings
@@ -370,6 +378,7 @@ function printer:print(s,x,y,col)
 	print(s,x,y,col)
 	self.center=false
 	self.shade=-1
+	return self
 end
 function printer:centered()
 	self.center=true
@@ -379,10 +388,9 @@ function printer:shaded(col)
 	self.shade=col
 	return self
 end
--- 
+---------------------------
 function nop()
 end
-
 ---------------------------
 -- world
 function world:init(sx,sy,sw)
@@ -472,56 +480,55 @@ function world:update()
 end
 ---------------------------
 -- camera
-function cam:init(focal,zfar,beta)
-	self.x=0
-	self.y=0
-	self.z=0
-	self.focal=focal
-	self.zfar=zfar
+function cam_init(focal,zfar,beta)
+	cam_x=0
+	cam_y=0
+	cam_z=0
+	cam_focal=focal
+	cam_zfar=zfar
 		-- pico8 trig is inverted!
-	self.alpha=1-atan2(focal,hh)
-	self:rotate(beta or 0)
+	cam_alpha=1-atan2(focal,hh)
+	cam_rotate(beta or 0)
 end
-function cam:rotate(beta)
-	self.beta=beta
-	self.cb=cos(self.beta)
-	self.sb=-sin(self.beta)
+function cam_rotate(beta)
+	cam_beta=beta
+	cam_cb=cos(cam_beta)
+	cam_sb=-sin(cam_beta)
 end
-function cam:is_top_down()
-	return self.beta>0.6 and self.beta<0.9
+function cam_is_top_down()
+	return cam_beta>0.6 and cam_beta<0.9
 end
-function cam:project(pos)
-	local cb,sb=self.cb,self.sb
-	local y=pos.y-self.y
-	local z=pos.z-self.z
-	local ze=-(y*cb+z*sb)
+function cam_project(pos)
+	local y=pos.y-cam_y
+	local z=pos.z-cam_z
+	local ze=-(y*cam_cb+z*cam_sb)
 	-- invalid projection?
-	if(ze<self.zfar or ze>=0) return nil,nil,z,nil
-	local w=-self.focal/ze
-	local xe=pos.x-self.x
-	local ye=-y*sb+z*cb
+	if(ze<cam_zfar or ze>=0) return nil,nil,z,nil
+	local w=-cam_focal/ze
+	local xe=pos.x-cam_x
+	local ye=-y*cam_sb+z*cam_cb
 	return hw+xe*w,hh-ye*w,ze,w
 end
-function cam:track(x,y,z)
-	self.x=x
-	self.y=y-self.cb*self.focal
-	self.z=z-self.sb*self.focal
+function cam_track(x,y,z)
+	cam_x=x
+	cam_y=y-cam_cb*cam_focal
+	cam_z=z-cam_sb*cam_focal
 end
 --------------------
 -- enemies
-function nmies:add(e)
+function nmies_add(e)
 	nmies_c+=1
-	self[nmies_c]=e
+	nmies[nmies_c]=e
 end
-function nmies:update()
+function nmies_update()
 	local n=nmies_c
 	nmies_c=0
 	for i=1,n do
-		local e=self[i]
+		local e=nmies[i]
 		if(e:update()) then
 			zbuf:write(e,e)
 			nmies_c+=1
-			if(i!=nmies_c) self[nmies_c]=e
+			if(i!=nmies_c) nmies[nmies_c]=e
 		end
 	end
 end
@@ -567,12 +574,12 @@ function spawn_tk(x,y)
 		blt_hit=tk_blt_collision,
 		update=tk_update
 	}
-	if(cam:is_top_down()) then
+	if(cam_is_top_down()) then
 		tk.draw=tk_draw
 	else
 		tk.draw=tk_chase_draw
 	end
-	nmies:add(tk)
+	nmies_add(tk)
 	return tk
 end
 
@@ -654,7 +661,7 @@ function plyr:draw(x,y,z,w)
 	if(self.crashing) return
 	if(self.safe and band(time_t,1)==0) return
 	local idx=mid(flr(self.vx),-1,1)+2
-	if(cam:is_top_down()) then
+	if(cam_is_top_down()) then
 		spr(plyr_body[idx],x-8,y-9,2,3)
 		spr(plyr_rotor[time_t%3+1],x-10,y-11,3,3)
 	else
@@ -677,7 +684,7 @@ function plyr:die_async()
 	self.vy=0
 	if(self.lives<=0) then
 		for i=1,30 do yield() end
-		sm:push(game_over)
+		sm_push(game_over)
 		return
 	end
 	self.crashing=false
@@ -735,8 +742,8 @@ function plyr:update()
 	
 		-- debug
 		--if(btn(5)) then
-		--	cam.beta+=0.01
-		--	if(cam.beta>1) cam.beta=0
+		--	cam_beta+=0.01
+		--	if(cam_beta>1) cam_beta=0
 		--end
 		
 		-- fire 
@@ -746,7 +753,7 @@ function plyr:update()
 		end
 	end
 	-- cam world position
-	cam:track(
+	cam_track(
 		self.x/2,
 		self.y+self.cam_yoffset,
 		max(8,self.z)+self.cam_zoffset)
@@ -824,7 +831,7 @@ function spawn_helo(x,y)
 		side=1,
 		hit=false,
 		update=helo_update}
-	if(cam:is_top_down()) then
+	if(cam_is_top_down()) then
 		h.draw=helo_draw
 		h.blt_hit=function(self,blt)
 			if(circ_coll(self,helo_r,blt,blt_r,helo_blt_r2)) then
@@ -843,7 +850,7 @@ function spawn_helo(x,y)
 	else
 		h.draw=helo_chase_draw
 	end
-	nmies:add(h)
+	nmies_add(h)
 	return h
 end
 
@@ -896,7 +903,7 @@ function spawn_building(x,y,ramps)
 		x=x,y=y,z=0,touch=0,
 		floors={}
 	}
-	if(cam:is_top_down()) then
+	if(cam_is_top_down()) then
 		for i=0,flr_n-1 do
 			add(b.floors,{x=x,y=y,z=i*flr_h,i=i,ramp=ramps[i%2+1],draw=flr_draw})
 		end
@@ -1049,6 +1056,7 @@ function boss:init(name,x,y,z)
 	boss.y=y
 	boss.z=z
 	boss.dy=0
+	boss.side=1
 	boss.name=name
 	boss.msg_dly=time_t+3*30
 	boss.parts={}
@@ -1085,10 +1093,16 @@ function boss:update()
 	for t in all(self.parts) do
 		t:update(self)
 	end
-	zbuf:write(self)
+	zbuf:write(self,self)
 	for i=1,#self.struct do
 		zbuf:write(self.struct[i])
 	end
+end
+function boss:blt_hit(blt)
+	for t in all(self.parts) do
+		if(t:blt_hit(blt)) return true
+	end
+	return false
 end
 
 ---------------------------
@@ -1114,12 +1128,12 @@ function spawn_bship(x,y)
 	boss.mark="marine fortress ba-001"
 	boss.draw=bship_draw
 	-- parts
-	local py=64+8
+	local py=72
 	for j=1,32 do
 		for i=0,3 do
 			local t=nil
 			local ptype=fget(mget(2+i,j))
-			local px=16*(i-1)-24
+			local px=8*(i-1)-16
 			if(ptype==1) then
 				t={
 					x=x+px,
@@ -1129,8 +1143,10 @@ function spawn_bship(x,y)
 					ly=py,
 					sx=16,
 					sy=112,
+					hit=false,
 					fire_dly=time_t+rnd(30)+1.2*30,
-					update=turret_update
+					update=turret_update,
+					blt_hit=turret_blt_hit
 				}
 			elseif(ptype==2) then
 				t={
@@ -1141,14 +1157,17 @@ function spawn_bship(x,y)
 					ly=py,
 					sx=48,
 					sy=112,
+					hit=false,
 					fire_dly=time_t+rnd(30)+1.2*30,
-					update=mslturret_update
+					update=mslturret_update,
+					blt_hit=turret_blt_hit
 				}
 			end
 			if(t) add(boss.parts,t)
 		end
 	 py-=8
 	end
+	-- structures
 	boss.struct[1]={x=x,y=y,z=6,s=233,draw=spr_draw}
 	boss.struct[2]={x=x,y=y,z=12,s=233,draw=spr_draw}
 	local i=0
@@ -1185,6 +1204,15 @@ function mslturret_update(self,p)
 		self.fire_dly=time_t+rnd(30)+3*30
 	end
 end
+function turret_blt_hit(self,blt)
+	if(self.hit) return false
+	if(circ_coll(self,8,blt,blt_r)) then
+		self.hit=true
+		fxs:make_blast(self.x,self.y,0.5)
+		return true
+	end
+	return false
+end
 
 -------------------------
 -- zbuffer
@@ -1213,8 +1241,8 @@ function zbuf_class:clear()
 	end
 end
 function zbuf_class:write(obj,phy_obj,i)
-	local x,y,z,w=cam:project(obj)
-	local zi=i or mid(flr((z-cam.zfar)/self.h+0.5),1,self.n+1)
+	local x,y,z,w=cam_project(obj)
+	local zi=i or mid(flr((z-cam_zfar)/self.h+0.5),1,self.n+1)
 	local zb=self[zi]
 	zb.n+=1
 	zb.elts[zb.n]=obj
@@ -1247,7 +1275,6 @@ end
 
 game_screen={}
 function game_screen:update()
-	futures:update()
 	zbuf:clear()
 	plyr:update()
 	world:update()
@@ -1268,7 +1295,7 @@ function game_screen:update()
 			blds[blds_c]=b
 		end
 	end
-	nmies:update()
+	nmies_update()
 	blts:update()
 	fxs:update()
  
@@ -1277,17 +1304,17 @@ function game_screen:update()
 end
 
 function draw_floor()
-	local da=cam.alpha/hh
-	local a=cam.beta-cam.alpha
-	local a_fix=-cam.alpha
+	local da=cam_alpha/hh
+	local a=cam_beta-cam_alpha
+	local a_fix=-cam_alpha
 	local imax=-1
-	local z=-cam.z
+	local z=-cam_z
 	for i=-hh,hh do
 		local sa=-sin(a)
 		if(abs(sa)>0.01) then
 		 local ca_fix=cos(a_fix)
 			local dist=z*ca_fix/sa
-			if(dist>0 and dist<-2*cam.zfar) then
+			if(dist>0 and dist<-2*cam_zfar) then
 			 local ca=cos(a)
 				-- find v coords 
 				local ydist=dist*ca+plyr.y
@@ -1297,9 +1324,9 @@ function draw_floor()
 				memset(0x6000+(64-i)*64,ramp[2*c+band(64-i,1)+1],64)
 				local xroad=world:roadx(ydist)
 				if(xroad) then
-					local w=cam.focal/dist
+					local w=cam_focal/dist
 					local ze=flr(32*w+0.5)
-					local xe=hw+(xroad-cam.x)*w
+					local xe=hw+(xroad-cam_x)*w
 					local v=flr(y)
 					if(ze<=8) then
 						sspr(16,band(v/2,7)+8,8,1,xe-ze/2,64-i,ze,1)
@@ -1347,8 +1374,8 @@ function game_screen:draw_spd(x,y)
 end
 function draw_shadow()
 	if (band(time_t,1)==0) then
-		local x,y,z,w=cam:project({x=plyr.x,y=plyr.y,z=0})
-		if(cam:is_top_down()) then
+		local x,y,z,w=cam_project({x=plyr.x,y=plyr.y,z=0})
+		if(cam_is_top_down()) then
 			local ww=shl(w,3)
 			local wh=24*w
 			sspr(56,32,8,24,x-shr(ww,1),y-shr(wh,1),ww,wh)
@@ -1393,12 +1420,12 @@ function to_chase()
 		zbuf=make_zbuf(32,flr_h)
 		for i=0,30 do
 			local t=i/30
-			cam:rotate(lerp(0.75,1,t))
+			cam_rotate(lerp(0.75,1,t))
 			plyr.cam_yoffset=lerp(24,0,t)
 			plyr.cam_zoffset=lerp(0,12,t)
 			yield()
 		end
-		cam:init(96,-196-plyr_zmax,0)
+		cam_init(96,-196-plyr_zmax,0)
 		plyr.cam_yoffset=0
 		plyr.cam_zoffset=12
 		flr_n=4
@@ -1406,7 +1433,7 @@ function to_chase()
 end
 function game_screen:init()
 	time_t=0
-	cam:init(96,-96-plyr_zmax,0.75)
+	cam_init(96,-96-plyr_zmax,0.75)
 	-- reset entities
 	nmies_c=0
 	blts_c=0
@@ -1451,17 +1478,15 @@ scores={
 }
 ranks={"1st","2nd","3rd","4th","5th"}
 starting=false
-rooster={
-	rows={}
-}
 chars="\13\8 abcdefghijklmnopqrstuvwxyz-0123456789\131\132\133\134\135\136\137\138\139\140"
 chars_mem={}
-function rooster:clear()
-	self.rows={}
+rooster_rows={}
+function rooster_clear()
+	rooster_rows={}
 end
-function rooster:apply(fn)
-	for i=1,#self.rows do
-		local row=self.rows[i]
+function rooster_apply(fn)
+	for i=1,#rooster_rows do
+		local row=rooster_rows[i]
 		if(row.dly<time_t) then
 			for j=1,#row.chars do
 				local c=row.chars[j]
@@ -1470,8 +1495,8 @@ function rooster:apply(fn)
 		end
 	end
 end
-function rooster:add(s,col)
-	local n=#self.rows
+function rooster_add(s,col)
+	local n=#rooster_rows
 	local row={
 		dly=time_t+n*0.5*30,
 		chars={}
@@ -1494,14 +1519,14 @@ function rooster:add(s,col)
 		end
 		x+=8
 	end
-	add(self.rows,row)
+	add(rooster_rows,row)
 end
 function char_update(self)
 	local t=(time_t-self.dly)/(0.8*30)
 	self.cur=lerpn(self.src,self.dst,smoothstep(t))
 end
 function char_draw(self)
-	local x,y,z,w=cam:project(self.cur)
+	local x,y,z,w=cam_project(self.cur)
 	if(w) sprint(self.c,x,y,self.col,w)
 end
 
@@ -1545,9 +1570,10 @@ function title_screen:update()
 		for s in all(scores) do
 			s[3]=false
 		end
-		sm:push(game_screen)
+		sm_push(game_screen)
+	 return
 	end
-	rooster:apply(char_update)
+	rooster_apply(char_update)
 end
 function title_screen:draw()	
 	local ret,res=coresume(self.str2mem_cor)
@@ -1563,7 +1589,7 @@ function title_screen:draw()
 	print("score",48,36,5)
 	print("name",76,36,5)
 
-	rooster:apply(char_draw)
+	rooster_apply(char_draw)
 	
 	local s="\151 or \145 to play"
 	if (time_t%32>16) printer:centered():shaded(9):print(s,64,120,10)
@@ -1571,14 +1597,14 @@ end
 function title_screen:init()
 	time_t=0
 	starting=false
-	cam:init(96,-96)
-	cam:track(0,0,0)
-	rooster:clear()
+	cam_init(96,-96)
+	cam_track(0,0,0)
+	rooster_clear()
 	for i=1,#ranks do
 		local s=ranks[i].."  "..scores[i][2].."  "..scores[i][1]
 		local col=7
 		if(scores[i][3]) col=10
-		rooster:add(s,col)
+		rooster_add(s,col)
 	end	
 	self.str2mem_cor=cocreate(function()
 			local s=dot2str(title_pic)
@@ -1623,42 +1649,81 @@ end
 function game_over:update()
 	if(time_t>30*30 or self.done) then
 		title_screen:score(self.get_name(),1450)
-		sm:push(title_screen)
+		sm_push(title_screen)
 	end
-	if(btnp(0)) then
-		self.next_i-=1
-		self.next_dly=time_t+0.25*30
-	elseif(btnp(1)) then
-		self.next_i+=1
-		self.next_dly=time_t+0.9*30
+	local moved=false
+	if(btnp(4) or btnp(5)) then
+		if(self.cur_i==1) then
+			self.done=true
+		elseif(self.cur_i==2) then
+			self.sel-=1
+	 else
+			local sel=self.sel
+	 	local ci=self.cur_i
+	 	futures:add(function()
+	 	 local c0={x=56*cos(0.75),y=-48*sin(0.75),z=-16}
+	 	 local c1={x=8*sel-20,y=0,z=18}
+	 	 local t,dt=0,1/16
+	 	 for i=0,15 do
+					local x,y,z,w=cam_project(lerpn(c0,c1,t))
+				 self.anim={ci=ci,x=x,y=y,z=z,w=w}
+				 yield()
+				 t+=dt
+				end
+				self.anim=nil
+			 name[sel]=ci self.sel=min(sel+1,3)
+	 	end)
+	 end		
 	end
-	if(self.next_i>#chars) self.next_i=1
-	if(self.next_i<=0) self.next_i=#chars
-	if(self.next_dly<time_t) then
-		self.next_dly=0
-		self.cur_i=self.next_i
-	end
+	self.sel=mid(self.sel,1,#name)
+	if(btnp(0)) self.next_i-=1 moved=true
+	if(btnp(1)) self.next_i+=1 moved=true
+	if(moved and self.moving==false) then
+			self.moving=true
+			local da=1/#chars
+			futures:add(function()
+				local t,dt=0,1/16
+				for i=0,15 do
+					self.a=lerp((self.cur_i-1)*da,(self.next_i-1)*da,smoothstep(t))
+					t+=dt	
+					yield()
+				end
+				local  i=self.next_i%#chars
+				if(i<1) i=#chars-i
+				self.cur_i=i
+				self.next_i=i
+				self.a=da*(i-1)
+				self.moving=false
+			end)
+		end
 end
 function game_over:draw()
 	cls(0)
-	local s="game over"
-	print(s,64-(#s*5)/2,24,8)
-	s="enter your name"
-	print(s,64-(#s*5)/2,48,8)
-	print(self.get_name(),48,64,10)
+	printer
+		:centered()
+		:print("game over",64,12,8)
+		:centered()
+		:print("enter your name",64,24,8)
+	local x=96
+	for i=1,#name do
+		local col=7
+		if(time_t%32>16 and i==self.sel) col=10
+		print(i2c[name[i]],64+8*i-8*3,44,col)
+	end
 	
 	-- carousel
-	local t=(self.next_dly-time_t)/(0.9*30)
-	t=smoothstep(1-t)
 	local da=1/#chars
-	local a=-0.25-da*lerp(self.cur_i,self.next_i,t)
+	local a=-0.25-self.a
 	local col=7
 	for i=1,#chars do
 		local c=sub(chars,i,i)
-		local x,y,z,w=cam:project({x=56*cos(a),y=-48*sin(a),z=-16})
+		local x,y,z,w=cam_project({x=56*cos(a),y=-48*sin(a),z=-16})
 		if (i==self.cur_i) col=10 else col=7
 		if(w) sprint(c,x,y,col,w)
 		a+=da
+	end
+	if(self.anim) then
+		sprint(i2c[self.anim.ci],self.anim.x,self.anim.y,7,self.anim.w)
 	end
 	print(30-flr(time_t/30),128-8,128-12,1)
 end
@@ -1666,16 +1731,22 @@ function game_over:init()
 	time_t=0
 	self.done=false
 	self.sel=1
-	name={1,1,1}
+	self.cur_i=1
+	self.next_i=1
+	self.moving=false
+	self.a=0
+	self.anim=nil
+	name={4,4,4}
 	name_i=1
 	name_c=1
-	cam:init(72,-256)
-	cam:track(0,0,0)
+	cam_init(72,-256)
+	cam_track(0,0,0)
 end
 
 -- game loop
 function _update60()
 	time_t+=1
+	futures:update()
 	sm_update()
 end
 function _draw()
@@ -1684,7 +1755,7 @@ end
 function _init()
 	cls(0)
 	sprint_init(chars)
-	sm_push(game_screen)
+	sm_push(game_over)
 end
 
 __gfx__
@@ -1744,14 +1815,14 @@ __gfx__
 33333333333333333333333333333333333333333333333330056003333333333300033335533000033333333333333300033333333333333333333597333333
 33333333333333333333333333333333333333333333333333000033333333333330333333333300003333333333333300033333333333333333333353333333
 33333333333333333333333333333333333333333333333333388333333333333333333333333300033333333333333300033333333333333333333353333333
-bd00d060b6d6660094000000bd000000000000000000000000000000000000003333333333333330333333333333333000033333333333333377333300000000
-00060407000880700084848000000000000000000000000000000000000000003333333333333333333333333333333000033333333333333777773300000000
-08040804604880080084848000000000000000000000000000000000000000003333333333333333333333333333333333333333333333337777777300070000
-80806040055444550084848000000000000000000000000000000000000000003333333333333333333333333333333333333333333333333777777700770000
-55555555544555445555548055555555000000000000000000000000000000003333333333333333333333333333333333333333333333333777777707777770
-80840480000484480084855500000000000000000000000000000000000000003333333333333333333333333333333333333333333333333377777700770000
-08608048008404080084848000000000000000000000000000000000000000003333333333333333333333333333333333333333333333333377777300070000
-d00404706d008d000084848000000000000000000000000000000000000000003333333333333333333333333333333333333333333333333337773300000000
+cd000000000000000000000000000000000000000000000000000000000000003333333333333330333333333333333000033333333333333377333300000000
+00000000000000000000000000000000000000000000000000000000000000003333333333333333333333333333333000033333333333333777773300000000
+00000000000000000000000000000000000000000000000000000000000000003333333333333333333333333333333333333333333333337777777300070000
+00000000000000000000000000000000000000000000000000000000000000003333333333333333333333333333333333333333333333333777777700770000
+90000000000000000000000000000000000000000000000000000000000000003333333333333333333333333333333333333333333333333777777707777770
+00000000000000000000000000000000000000000000000000000000000000003333333333333333333333333333333333333333333333333377777700770000
+00000000000000000000000000000000000000000000000000000000000000003333333333333333333333333333333333333333333333333377777300070000
+00000000000000000000000000000000000000000000000000000000000000003333333333333333333333333333333333333333333333333337773300000000
 33333333300033333333333333333033333300033333333333333330003333333333333333333301333333333333333331333333333333033333333300000000
 33333333300033333333333333300003333300033333333333333330003333000333333333333301333333333333333301333333333333013333333300000000
 33003333300033333003333333330003333300333333333333333333003333000033333333333301333333333333333301333333333333013333333300000000
@@ -1800,22 +1871,22 @@ d00404706d008d000084848000000000000000000000000000000000000000003333333333333333
 36505555333336505555555549655555000000000000000036505555000000000555555500000000555556943336000000006333333666666666633300000000
 65055555333365056666666644966666555555555555555565055555000000000576076000000000666669443336055555506333333666666666633300000000
 65055555333365050000000044499999666666666666666665055555000000000555555500000000999994443333666666663333333366666666333300000000
-3336504455555555444444444444444433365044444444444444303030344444055666667cc5cc5cc5cc5cc70000000000000000000000000000000000000000
-333650445555555544443333333344443336504444444444444430303034444405600000c7c5cc5cc5cc5c7c0000000000000000000000000000000000000000
-333650445555555544430303303034443336504444444444444033333330444405605555cc555555555555cc0000000000000000000000000000000000000000
-33365044555555554433030330303344333650444444444444407777777044440656666655555555555555550000000000000000000000000000000000000000
-3336504455555555443333333333334433365066666666664440b05b05b0444406000000cc555555555555cc0000000000000000000000000000000000000000
-3336504455555555443333367333334433365055555555554440b00b00b0444406055555cc555555555555cc0000000000000000000000000000000000000000
-33365044555555554033b060070b330433365055555555554440bbbbbbb044440656666655555555555555550000000000000000000000000000000000000000
-333650445555555540bb00600600bb0433365055550777554440b05b05b0444406000000cc555555555555cc0000000000000000000000000000000000000000
-4444444455555555407700566500770433336505550677554440b00b00b0444406055555cc555555555555cc0000000000000000000000000000000000000000
-444444445555555540bb06555570bb0433336505550667554440bbbbbbb044440656666600555555555555000000000000000000000000000000000000000000
-444444445555555540bb06555560bb04333365055550655544440000000444440600000055555555555555550000000000000000000000000000000000000000
-444444445555555540bb05655650bb04333336505550655544440000000444440605555555555555555555550000000000000000000000000000000000000000
-444444445555555540bb00566500bb04333336505550655544444444444444440656666600555555555555000000000000000000000000000000000000000000
-44444444555555554000000550000004333333650000000044444444444444444060000055555555555555550000000000000000000000000000000000000000
-44444444666666664400000000000044333333365555555544444444444444444060555555505505505505550000000000000000000000000000000000000000
-44444444000000004444444444444444333333336666666644444444444444444406666655505505505505550000000000000000000000000000000000000000
+3336504455555555444444444444444433365044444444444444303030344444055666667cc5cc5cc5cc5cc74444444444444444000000000000000000000000
+333650445555555544443333333344443336504444444444444430303034444405600000c7c5cc5cc5cc5c7c4444404004444444000000000000000000000000
+333650445555555544430303303034443336504444444444444033333330444405605555cc555555555555cc4454000000030444000000000000000000000000
+33365044555555554433030330303344333650444444444444407777777044440656666655555555555555554400000020330044000000000000000000000000
+3336504455555555443333333333334433365066666666664440b05b05b0444406000000cc555555555555cc4440055000500004000000000000000000000000
+3336504455555555443333367333334433365055555555554440b00b00b0444406055555cc555555555555cc4450050085800404000000000000000000000000
+33365044555555554033b060070b330433365055555555554440bbbbbbb044440656666655555555555555554000000000004444000000000000000000000000
+333650445555555540bb00600600bb0433365055550777554440b05b05b0444406000000cc555555555555cc40080008a0020044000000000000000000000000
+4444444455555555407700566500770433336505550677554440b00b00b0444406055555cc555555555555cc4030200050022304000000000000000000000000
+444444445555555540bb06555570bb0433336505550667554440bbbbbbb04444065666660055555555555500433022a555000334000000000000000000000000
+444444445555555540bb06555560bb04333365055550655544440000000444440600000055555555555555554333000050a05044000000000000000000000000
+444444445555555540bb05655650bb04333336505550655544440000000444440605555555555555555555554000000808055004000000000000000000000000
+444444445555555540bb00566500bb04333336505550655544444444444444440656666600555555555555004404055080405044000000000000000000000000
+44444444555555554000000550000004333333650000000044444444444444444060000055555555555555554444000504000404000000000000000000000000
+44444444666666664400000000000044333333365555555544444444444444444060555555505505505505554440004400404044000000000000000000000000
+44444444000000004444444444444444333333336666666644444444444444444406666655505505505505554444444444444444000000000000000000000000
 __label__
 88888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888
 88888888888888888888888888888888888888888888888888888888888888888888888888888888888ff8ff8888228822888222822888888822888888228888
@@ -1981,7 +2052,7 @@ __map__
 0000e0f0f0f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000e0f0f0f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000e4e5c4c50000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000f4f5d4d5000000fb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000f4f5d4d50000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __sfx__
 00020006136101c620226102d620376102e7200d7100b720000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 001000000167001650016300162001620016100160014000120001200015000150000e0000e0000e0000e0000e000000000000000000000000000000000000000000000000000000000000000000000000000000
