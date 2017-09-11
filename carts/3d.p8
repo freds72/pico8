@@ -51,6 +51,8 @@ plyr_safe=false
 plyr_side=0
 plyr_cam_yoffset=24
 plyr_cam_zoffset=0
+plyr_blt_dy=-3*cos(0.62)
+plyr_blt_dz=-3*sin(0.62)
 plyr_r=12
 plyr_r2=plyr_r*plyr_r
 plyr_rotor={128,131,134}
@@ -90,15 +92,14 @@ helo_r=12
 helo_r2=helo_r*helo_r
 helo_body={64,88}
 -- map
-local world={
-	scaley=96, -- 1 cell=1 half screen
-	scalex=32,
-	ymax=0,
-	cur=0,
-	funcs={}, -- entity spawners
-	road={}, -- road x-offset
-	floor={} -- floor color ramps
-}
+world_scaley=96 -- 1 cell=1 half screen
+world_scalex=32
+world_ymax=0
+world_cur=0
+world_factories={} -- entity spawners
+road={} -- road x-offset
+road_ymax=0
+world_floor={} -- floor color ramps
 
 -- special fx
 local fxs={}
@@ -247,7 +248,7 @@ function instr(a,b)
 end--instr
 
 ---------------------------
---- collision helpers -----
+-- collision helpers
 function circ_coll(a,ra,b,rb,r2)
 	local dz=b.z-a.z
 	if(abs(dz)>ra+rb) return
@@ -272,6 +273,7 @@ function box_coll(a,ah,aw,b,bw,bh)
 	return shl(abs(a.x-b.x),1)<(aw+bw) and shl(abs(a.y-b.y),1)<(ah+bh)
 end
 
+-------------------------
 -- futures
 function futures:update()
 	local n=self.c
@@ -337,9 +339,12 @@ function rectvhstrip(x0,y0,x1,y1,n,nv,cols)
 	for i=1,n do
 		local ramp=cols[i%#cols+1]
 		local y=y0
-		for j=1,nv do
-		rectfill(x0,y,x0+dx-1,y+dy-1,ramp[j%#ramp+1])
-			y+=dy
+		-- minor strip optimisation
+		if(x0<128 and x0+dx-1>0) then
+			for j=1,nv do
+				rectfill(x0,y,x0+dx-1,y+dy-1,ramp[j%#ramp+1])
+				y+=dy
+			end
 		end
 		x0+=dx
 	end
@@ -402,22 +407,22 @@ function nop()
 end
 ---------------------------
 -- world
-function world:init(sx,sy,sw)
-	self.road_ymax=(sw+1)*self.scaley
+function world_init(sx,sy,sw)
+	road_ymax=(sw+1)*world_scaley
 	for i=1,16 do
-		self.funcs[i]=nop
+		world_factories[i]=nop
 	end
 	for i=0,sw-1 do
 		local noroad=true
 		for j=0,7 do
 			if(sget(sx+i,sy+j)==5) then
-				self.road[i]=(j+1-4)*self.scalex
+				road[i]=(j+1-4)*world_scalex
 				noroad=false
 				break
 			end
 		end
 		if(noroad) then
-			self.road_ymax=(i-1)*self.scaley
+			road_ymax=(i-1)*world_scaley
 			break
 		end
 	end
@@ -436,55 +441,38 @@ function world:init(sx,sy,sw)
 			sset(sx+8*i,sy,0)
 			sset(sx+8*i+1,sy,0)
 		end
-		self.floor[i+1]=r
+		world_floor[i+1]=r
 	end
-	-- debug
-	self.print=function(self,x,y)
-		palt(0,false)
-		sspr(sx,sy,sw,8,x,y)
-		line(
-			x+self.cur,y,
-			x+self.cur,y+8,8)
-		palt()
-		y+=8
-		rectfill(x,y,x+48,y+40,0)
-		for ramp in all(self.floor) do
-			print(ramp[1]..ramp[2].."/"..ramp[3]..ramp[4],x,y,7)
-			y+=6
-		end
-	end
-	return self
 end
-function world:register(i,fn)
-	self.funcs[i+1]=fn
-	return self
+function world_register(i,fn)
+	world_factories[i+1]=fn
 end
-function world:roadx(y)
-	if(y<0 or y>=self.road_ymax) return
-	local t=y/self.scaley
+function road_xoffset(y)
+	if(y<0 or y>=road_ymax) return
+	local t=min(y/world_scaley,#road-1)
 	local i=flr(t)
 	-- fractional part
 	t-=i
 	return lerp(
-		self.road[i],
-		self.road[i+1],
+		road[i],
+		road[i+1],
 		smoothstep(t))
 end
-function world:floor_ramp(y)
-	y=flr(shr(max(0,y),3)/self.scaley)
-	return self.floor[min(y+1,#self.floor)]
+function world_floor_ramp(y)
+	y=flr(shr(max(0,y),3)/world_scaley)
+	return world_floor[min(y+1,#world_floor)]
 end
-function world:update()
+function world_update()
 	-- pick world items
-	local plyr_cur=flr((plyr.y+196)/self.scaley)
-	if (self.cur<plyr_cur) then
+	local plyr_cur=flr((plyr.y+196)/world_scaley)
+	if (world_cur<plyr_cur) then
 		local i=0
-		for i=self.cur,plyr_cur do
+		for i=world_cur,plyr_cur do
 			for j=0,7 do
-				self.funcs[sget(i,56+j)+1]((j+1-4)*self.scalex,i*self.scaley)
+				world_factories[sget(i,56+j)+1]((j+1-4)*world_scalex,i*world_scaley)
 			end
 		end
-		self.cur=plyr_cur+1
+		world_cur=plyr_cur+1
 	end
 end
 ---------------------------
@@ -547,8 +535,8 @@ function tk_update(self)
 	if(self.hit) return false
 	if (self.y-plyr.y>-128) then
 		if (self.dly<=time_t and self.y>plyr.y) then
-			blts:make_tracker(self.x,self.y,0.5,1,self.side)
-			self.dly=time_t+2*30+rnd(30)
+			spawn_tracker_blt(self.x,self.y,0.5,1,self.side)
+			self.dly=time_t+60+rnd(30)
 		end
 		return true
 	end
@@ -565,7 +553,7 @@ end
 function tk_blt_collision(self,blt)		
  if(circbox_coll(blt,blt_r,self,tk_w,tk_h,2)) then
 		self.hit=true
-		fxs:make_blast(self.x,self.y,self.z,0,0,4,1)
+		spawn_blast(self.x,self.y,self.z,0,0,4,1)
 		sfx(1)
 		return true
 	end
@@ -577,7 +565,7 @@ function spawn_tk(x,y)
 		x=x,
 		y=y,
 		z=0,
-		dly=2*30+rnd(2*30),
+		dly=60+rnd(60),
 		hit=false,
 		side=bad_side,
 		blt_hit=tk_blt_collision,
@@ -610,20 +598,20 @@ function smoke_draw(self,x,y,z,w)
 	--circfill(x,y,we,sget(8+t,0))
 	sspr(112,56,8,8,x-we/2,y-we/2,we,we,time_t%2==0,time_t%4==0)
 end
-function fxs:update()
+function fxs_update()
 	local n=fxs_c
 	fxs_c=0
 	for i=1,n do
-		local fx=self[i]
+		local fx=fxs[i]
 		if(fx.t>=time_t) then
-		 fx:update()
+			fx:update()
 			zbuf_write(fx)
 			fxs_c+=1
-			self[fxs_c]=fx
+			fxs[fxs_c]=fx
 		end
 	end
 end
-function fxs:make_blast(x,y,z,dy,dz,w,tmax)
+function spawn_blast(x,y,z,dy,dz,w,tmax)
 	local fx={x=x,y=y,z=z,
 		dy=dy or 0,
 		dz=dz or 0,
@@ -633,11 +621,11 @@ function fxs:make_blast(x,y,z,dy,dz,w,tmax)
 		draw=blast_draw
 	}
 	fxs_c+=1
-	self[fxs_c]=fx
+	fxs[fxs_c]=fx
 	return fx
 end
-function fxs:make_smoke(x,y,z)
-	local dly=0.5*30+rnd(10)
+function spawn_smoke(x,y,z)
+	local dly=15+rnd(10)
 	local fx={x=x,y=y,z=z,
 		dly=dly,
 		t=time_t+dly,
@@ -645,7 +633,7 @@ function fxs:make_smoke(x,y,z)
 		draw=smoke_draw
 	}
 	fxs_c+=1
-	self[fxs_c]=fx
+	fxs[fxs_c]=fx
 	return fx
 end
 
@@ -662,7 +650,7 @@ function plyr:init()
 	plyr_playing=true
 	futures:add(function()
 		plyr_safe=true
-		for i=1,3*30 do yield() end
+		for i=1,180 do yield() end
 		plyr_safe=false
 	end)
 end
@@ -675,17 +663,17 @@ function plyr:draw(x,y,z,w)
 		spr(plyr_rotor[time_t%3+1],x-10,y-11,3,3)
 	else
 		local pos=plyr_rotor3d[idx][band(time_t,1)+2]
-		spr(plyr_rotor3d[idx][1],x-8+pos[1],y+pos[2],2,1,pos[3],pos[4])
-		spr(plyr_body3d[idx],x-8,y,2,3)
+		spr(plyr_rotor3d[idx][1],x-8+pos[1],y+pos[2]-16,2,1,pos[3],pos[4])
+		spr(plyr_body3d[idx],x-8,y-16,2,3)
 	end
 end
 function plyr_die_async()
-	for i=0,30 do
-		local t=i/30
+	for i=0,75 do
+		local t=i/75
 		plyr.z=lerp(plyr_crash_z,0,t)
 		plyr_vy=lerp(plyr_vy,0,t)
 		if(i%4==0) then
-			fxs:make_blast(plyr.x,plyr.y,plyr.z,0,0,12)
+			spawn_blast(plyr.x,plyr.y,plyr.z,0,0,12)
 		end
 		yield()
 	end
@@ -698,7 +686,7 @@ function plyr_die_async()
 	end
 	plyr_crashing=false
 	plyr_playing=true
-	for i=1,3*30 do
+	for i=1,180 do
 		yield()
 	end
 	plyr_safe=false
@@ -755,13 +743,13 @@ function plyr:update()
 		
 		-- fire 
 		if (btn(4) and plyr_fire_dly<=time_t and blts_c<blts_n) then
-			blts:make(self.x,self.y+5,self.z-0.5,0,3,-3,self.side)
-			plyr_fire_dly=time_t+0.2*30
+			spawn_blt(self.x,self.y+5,self.z-0.5,0,plyr_blt_dy,plyr_blt_dz,self.side)
+			plyr_fire_dly=time_t+8
 		end
 	end
 	-- cam world position
 	cam_track(
-		self.x/2,
+		shr(self.x,1),
 		self.y+plyr_cam_yoffset,
 		max(8,plyr.z)+plyr_cam_zoffset)
 	plyr_zi=zbuf_write(self,self)
@@ -813,18 +801,20 @@ end
 function helo_chase_draw(self,x,y,z,w)
 	local we,he=helo_w*w,helo_h*w
 	sspr(104,0,16,16,x-8*w,y-8*w,16*w,16*w)
-	--[[
+ y-=10*w
+ w=shl(w,4)
 	if(time_t%2==0) then
-		sspr(64,120,16,8,pos.x-8*pos.w,pos.y-4*pos.w,16*pos.w,16*pos.w)
-		sspr(64,120,16,8,pos.x-16*pos.w,pos.y-4*pos.w,16*pos.w,16*pos.w,true)	
+		sspr(72,88,16,8,x-w,y,w,w/2)
+	else
+		sspr(72,88,16,8,x,y,w,w/2,true)
 	end
-	]]
 end
 helo_blt_r2=(blt_r+helo_r)*(blt_r+helo_r)
 helo_plyr_r2=(plyr_r+helo_r)*(plyr_r+helo_r)
+helo_chase_plyr_r2=(plyr_r+8)*(plyr_r+8)
 function helo_die(self)
 	self.hit=true
-	fxs:make_blast(self.x,self.y,self.z,0,-32/30,4,2)
+	spawn_blast(self.x,self.y,self.z,0,-32/30,4,1)
 	sfx(1)
 end
 
@@ -832,7 +822,7 @@ function spawn_helo(x,y)
 	local h={
 		x=x,y=y,z=0,
 		dy=0,dz=24/30,
-		dly=time_t+1.8*30,
+		dly=time_t+50,
 		die=helo_die,
 		side=bad_side,
 		hit=false,
@@ -856,6 +846,13 @@ function spawn_helo(x,y)
 		end
 	else
 		h.draw=helo_chase_draw
+		h.plyr_hit=function(self,p)
+			if(circ_coll(self,8,plyr,plyr_r,helo_plyr_r2)) then
+				self:die()
+				return true
+			end
+			return false
+		end
 	end
 	nmies_add(h)
 	return h
@@ -891,7 +888,7 @@ function roof_draw(self,x,y,z,w,i)
 end
 function flr_chase_draw(self,x,y,z,w)
 	local ww=flr_w*w
-	local wh=4*flr_w*w
+	local wh=flr_zmax*w
 	local k=flr(ww/4+0.5)
 	if(x<64) then
 		recthstrip(x+ww-k,y-wh,x+ww,y,16,self.ramp)
@@ -901,7 +898,7 @@ function flr_chase_draw(self,x,y,z,w)
 end
 function roof_chase_draw(self,x,y,z,w,i)
 	local ww=flr_w*w
-	local wh=4*flr_w*w
+	local wh=flr_zmax*w
  rectvhstrip(x-ww,y-wh,x+ww,y,9,16,self.ramps)
 end
 function spawn_building(x,y,ramps)
@@ -916,7 +913,7 @@ function spawn_building(x,y,ramps)
 		add(b.floors,{x=x,y=y,z=flr_n*flr_h,i=8,ramps=ramps,draw=roof_draw})
 	else
 		local t,dt=0,1/flr_n
-		for i=1,flr_n do
+		for i=0,flr_n do
 			local dy=lerp(-flr_w,flr_w,t)
 			if(i<flr_n) then
 				add(b.floors,{x=x,y=y-dy,z=0,i=i,ramp=ramps[i%2+1],draw=flr_chase_draw})
@@ -936,7 +933,7 @@ end
 function blt_update(self)
 		self.z+=self.dz
 		if(self.z<0) then
-			fxs:make_blast(self.x,self.y,0,0,0,8)
+			spawn_blast(self.x,self.y,0,0,0,8)
 			return false
 		elseif(self.t>time_t) then
 			self.x+=self.dx
@@ -947,7 +944,7 @@ function blt_update(self)
 end
 function blt_draw(self,x,y,z,w)
 	local we=flr(blt_r*w)+1
-	sspr(48,32,8,8,x-we,y-we,2*we,2*we)
+	sspr(self.sx,self.sy,8,8,x-we,y-we,2*we,2*we)
 end
 function msl_update(self)
 		self.z+=self.dz
@@ -958,25 +955,25 @@ function msl_update(self)
 				self.dx=dx*2
 				self.dy=dy*2
 			end	
-			if(time_t%3==0) fxs:make_smoke(self.x,self.y,self.z)
+			if(time_t%3==0) spawn_smoke(self.x,self.y,self.z)
 			self.x+=self.dx
 			self.y+=self.dy
 			return true
 		end
-		fxs:make_blast(self.x,self.y,0,0,0,8)
+		spawn_blast(self.x,self.y,0,0,0,8)
 		return false
 end
 function msl_draw(self,x,y,z,w)
 	local we=flr(blt_r*w)+1
 	sspr(48,48,8,8,x-we,y-we,2*we,2*we)
 end
-function blts:make_tracker(x,y,z,dz,side)
+function spawn_tracker_blt(x,y,z,dz,side)
 	local dx,dy=normz(plyr.x-x,plyr.y+20-y)
 	dx*=2
 	dy*=2
-	return self:make(x,y,z,dx,dy,dz,side)
+	return spawn_blt(x,y,z,dx,dy,dz,side)
 end
-function blts:make(x,y,z,dx,dy,dz,side)
+function spawn_blt(x,y,z,dx,dy,dz,side)
 	local b={
 		x=x,
 		y=y,
@@ -984,17 +981,20 @@ function blts:make(x,y,z,dx,dy,dz,side)
 		dx=dx,
 		dy=dy,
 		dz=dz,
-		t=time_t+3*30,
+		sx=48,
+		sy=32,
+		t=time_t+90,
 		side=side,
 		draw=blt_draw,
 		update=blt_update
 	}
+	if(side==good_side) b.sx=72 b.sy=0
 	blts_c+=1
-	self[blts_c]=b
+	blts[blts_c]=b
 	sfx(3)
 	return b
 end
-function blts:make_msl(x,y,z,dz,side)
+function spawn_msl(x,y,z,dz,side)
 	local b={
 		x=x,
 		y=y,
@@ -1002,17 +1002,17 @@ function blts:make_msl(x,y,z,dz,side)
 		dx=0,
 		dy=0,
 		dz=dz,
-		t=time_t+3.5*30,
+		t=time_t+120,
 		side=side,
 		draw=msl_draw,
 		update=msl_update
 	}
 	blts_c+=1
-	self[blts_c]=b
+	blts[blts_c]=b
 	sfx(3)
 	return b
 end
-function blts:update()
+function blts_update()
 	local n=blts_c
 	blts_c=0
 	local b
@@ -1026,26 +1026,18 @@ function blts:update()
 		end
 	end
 end
-
-function blts:resolve_collisions()
+function blts_resolve_collisions()
 	for j=1,blts_c do
-		local blt=self[j]
+		local blt=blts[j]
 		-- against buildings
-		if (blt.z<=flr_zmax) then
-			local b,dx,dy,d2
-			for i=1,blds_c do
-				b=blds[i]
-				dx=blt.x-mid(blt.x,b.x-flr_w,b.x+flr_w)
-				dy=blt.y-mid(blt.y,b.y-flr_w,b.y+flr_w)
-				dx/=8
-				dy/=8
-				d2=dx*dx+dy*dy
-				if (d2<blt_r2/64) then
-					blt.t=0
-					b.touch=1
-					fxs:make_blast(blt.x,blt.y,blt.z,0,0,8)
-					break
-				end
+		local b
+		for i=1,blds_c do
+			b=blds[i]
+			if(circbox_coll(blt,blt_r,b,flr_w,flr_w,flr_zmax)) then
+				blt.t=0
+				b.touch=1
+				spawn_blast(blt.x,blt.y,blt.z,0,0,8)
+				break
 			end
 		end
 		-- against entities
@@ -1070,7 +1062,7 @@ function boss_init(name,rev,x,y,z)
 	boss_dy=0
 	boss_name=name
 	boss_rev=rev
-	boss_msg_dly=time_t+3*30
+	boss_msg_dly=time_t+90
 end
 function boss_msg_draw(y)
 	printer
@@ -1123,15 +1115,14 @@ function spawn_bship(x,y)
 		plyr_playing=false
 		local vmax=plyr_vmax
 		local z=plyr.z
-		for i=0,1*30 do
-			local t=i/(1*30)
+		for i=0,60 do
+			local t=i/60
 			plyr_vmax=lerp(vmax,0.5,t)
 			plyr.z=lerp(z,32,t)
 		end
 		plyr_playing=true
 		plyr_zmax=32
 		plyr_zmin=32
-		plyr_vmax=0.5
 	end)
 	boss_init("mermaster","marine fortress ba-001",x,y,0.5)
 	--boss.dy=0.25
@@ -1202,14 +1193,14 @@ function turret_draw(self,x,y,z)
 end
 function turret_update(self,p)
 	if(self.fire_dly<time_t) then
-		--blts:make_tracker(self.x,self.y,0.5,1,self.side)
-		self.fire_dly=time_t+rnd(30)+2*30
+		--spawn_tracker_blt(self.x,self.y,0.5,1,self.side)
+		self.fire_dly=time_t+rnd(30)+60
 	end
 end
 function mslturret_update(self,p)
 	if(self.fire_dly<time_t) then
-		--blts:make_msl(self.x,self.y,0.5,1,self.side)
-		self.fire_dly=time_t+rnd(30)+3*30
+		--spawn_msl(self.x,self.y,0.5,1,self.side)
+		self.fire_dly=time_t+rnd(30)+120
 	end
 end
 function turret_blt_hit(self,blt)
@@ -1218,7 +1209,7 @@ function turret_blt_hit(self,blt)
 		self.hit=true
 		self.sx=88
 		self.sy=112
-		fxs:make_blast(self.x,self.y,0.5)
+		spawn_blast(self.x,self.y,0.5,4,1)
 		return true
 	end
 	return false
@@ -1283,7 +1274,7 @@ game_screen={}
 function game_screen:update()
 	zbuf_clear()
 	plyr:update()
-	world:update()
+	world_update()
 
 	if(boss_enabled) boss_update()
 
@@ -1294,19 +1285,19 @@ function game_screen:update()
 		local b=blds[i]
 		if (b.y-plyr.y>-128) then
 			b.touch=0
-			for zi=1,#b.floors do
-				zbuf_write(b.floors[zi])
+			for f=1,#b.floors do
+				zbuf_write(b.floors[f])
 			end
 			blds_c+=1
 			blds[blds_c]=b
 		end
 	end
 	nmies_update()
-	blts:update()
-	fxs:update()
+	blts_update()
+	fxs_update()
  
 	plyr:resolve_collisions()
-	blts:resolve_collisions()
+	blts_resolve_collisions()
 end
 
 function draw_floor()
@@ -1325,10 +1316,10 @@ function draw_floor()
 				-- find v coords 
 				local ydist=dist*ca+plyr.y
 				local y=band(band(0x7fff,ydist),31)
-				local ramp=world:floor_ramp(ydist)
+				local ramp=world_floor_ramp(ydist)
 				local c=band(band(flr(shr(y,4)),31),1)
 				memset(0x6000+(64-i)*64,ramp[2*c+band(64-i,1)+1],64)
-				local xroad=world:roadx(ydist)
+				local xroad=road_xoffset(ydist)
 				if(xroad) then
 					local w=cam_focal/dist
 					local ze=flr(32*w+0.5)
@@ -1360,7 +1351,7 @@ function draw_floor()
 	end
 end
 
-function game_screen:draw_spd(x,y)
+function draw_spd(x,y)
 	rectfill(x,y,x+12,y+4,1)
 	rectfill(x+13,y,x+30,y+4,0)	
 	for i=0,4 do
@@ -1408,7 +1399,7 @@ function game_screen:draw()
 	
 	rectfill(0,0,127,7,1)
 	print("\150:"..flr(100*stat(1)+0.5).."% \152:"..flr(stat(0)+0.5).."kb",1,1,7)
-	self:draw_spd(95,120)
+	draw_spd(95,120)
 	--print("blds:"..blds_c,64,120,0)
 	--rectfill(0,8,32,24,0)
 	--print("tks :"..nmies_c,0,9,12)
@@ -1416,7 +1407,7 @@ function game_screen:draw()
 	--print_map(0,32)
 	--zbuf_print(0,16,1)
 	--debug_draw()
-	--world:print(0,12)
+	--world_print(0,12)
 
 	if(boss_enabled and boss_msg_dly>time_t) then
 		boss_msg_draw(36)
@@ -1426,34 +1417,36 @@ function to_chase()
 	futures:add(function()
 		nmies_c=0
 		zbuf_init(32,flr_h)
-		for i=0,1.8*30 do
-			local t=i/55
+		for i=0,72 do
+			local t=i/72
 			cam_rotate(lerp(0.75,1,t))
 			plyr_cam_yoffset=lerp(24,0,t)
 			plyr_cam_zoffset=lerp(0,12,t)
 			yield()
 		end
 		cam_init(96,-196-plyr_zmax,0)
-		plyr_cam_yoffset=0
-		plyr_cam_zoffset=12
+		plyr_blt_dy=-3*cos(0.55)
+		plyr_blt_dz=-3*sin(0.55)
 		flr_n=4
+		flr_zmax=96
 	end)
 end
 function to_top_down()
 	futures:add(function()
 		nmies_c=0
 		zbuf_init(flr_n,flr_h)
-		for i=0,1.8*30 do
-			local t=i/55
+		for i=0,72 do
+			local t=i/72
 			cam_rotate(lerp(1,0.75,t))
 			plyr_cam_yoffset=lerp(0,24,t)
 			plyr_cam_zoffset=lerp(12,0,t)
 			yield()
 		end
 		cam_init(96,-96-plyr_zmax,0.75)
-		plyr_cam_yoffset=24
-		plyr_cam_zoffset=0
+		plyr_blt_dy=-3*cos(0.62)
+		plyr_blt_dz=-3*sin(0.62)
 		flr_n=8
+		flr_zmax=(flr_n-1)*flr_h
 	end)
 end
 function game_screen:init()
@@ -1467,16 +1460,15 @@ function game_screen:init()
 	--zbuf_init(flr_n,flr_h)
 	zbuf_init(8,flr_h)
 	
-	world
-		:init(0,56,6*8)
-		:register(4,spawn_tk)
-		:register(6,function(x,y) spawn_building(x,y,flr_ramps[1]) end)
-		:register(7,function(x,y) spawn_building(x,y,flr_ramps[2]) end)
-		:register(13,function(x,y) spawn_building(x,y,flr_ramps[3]) end)
-		:register(8,spawn_helo)
-		:register(9,spawn_bship)
-		:register(10,to_chase)
-		:register(11,to_top_down)
+	world_init(0,56,6*8)
+	world_register(4,spawn_tk)
+	world_register(6,function(x,y) spawn_building(x,y,flr_ramps[1]) end)
+	world_register(7,function(x,y) spawn_building(x,y,flr_ramps[2]) end)
+	world_register(13,function(x,y) spawn_building(x,y,flr_ramps[3]) end)
+	world_register(8,spawn_helo)
+	world_register(9,spawn_bship)
+	world_register(10,to_chase)
+	world_register(11,to_top_down)
 
 	--[[
 	spawn_building(0,0)
@@ -1781,14 +1773,14 @@ function _init()
 end
 
 __gfx__
-88888888a95566673333333305555555555555507777777777777777777777777777777700000000000000000000000000000000333333304333333300000000
-88000088000000003777655505555555555555507555557777755555555555777775555700000000000000000000000000000000333334304373333300000000
-80800808000000001333133305555555555555507566665555566666666666555556665700000000000000000000000000000000333330004463333300000000
-8008800800000000151111c305555555555555507566666666666666666666666666665700000000000000000000000000000000333330355353333300000000
-80088008000000003331111105555557755555507566666666666666666666666666665700000000000000000000000000000000333333066433333300000000
-80800808000000003335555305555557755555507566666666666666666666666666657700000000000000000000000000000000333330400943333300000000
-88000088000000003333333305555557755555507756666666666666666677777776657700000000000000000000000000000000333334c99793333300000000
-8888888800000000333333330555555775555550775666666666666666667557557665770000000000000000000000000000000033330cc99c79333300000000
+88888888a95566673333333305555555555555507777777777777777777777777777777733333333000000000000000000000000333333304333333300000000
+88000088000000003777655505555555555555507555557777755555555555777775555733333333000000000000000000000000333334304373333300000000
+80800808000000001333133305555555555555507566665555566666666666555556665738833883000000000000000000000000333330004463333300000000
+8008800800000000151111c305555555555555507566666666666666666666666666665789a889a8000000000000000000000000333330355353333300000000
+80088008000000003331111105555557755555507566666666666666666666666666665789988998000000000000000000000000333333066433333300000000
+80800808000000003335555305555557755555507566666666666666666666666666657738833883000000000000000000000000333330400943333300000000
+88000088000000003333333305555557755555507756666666666666666677777776657733333333000000000000000000000000333334c99793333300000000
+8888888800000000333333330555555775555550775666666666666666667557557665773333333300000000000000000000000033330cc99c79333300000000
 0040444444490440055755500555555775555550775666666666666666667777777665770000000000000000000000000000000034440cc99cc9999300000000
 00404444444904400557555005555557755555507756666666666666666675575576665700000000000000000000000000000000300004c94c99000300000000
 0040440000490440055555500555555555555550775666666666666666667777777666570000000000000000000000000000000034030c4999c4349300000000
@@ -1837,14 +1829,14 @@ __gfx__
 33333333333333333333333333333333333333333333333330056003333333333300033335533000033333333333333300033333333333333333333597333333
 33333333333333333333333333333333333333333333333333000033333333333330333333333300003333333333333300033333333333333333333353333333
 33333333333333333333333333333333333333333333333333388333333333333333333333333300033333333333333300033333333333333333333353333333
-4900000000dddd00077d7d770000000000000000c100000000000000000000003333333333333330333333333333333000033333333333333377333300000000
-00000000000000d00000000060000655000000000000000000000000000000003333333333333333333333333333333000033333333333333777773300000000
-000600060d0000000000000000600506000000000000000000000000000000003333333333333333333333333333333333333333333333337777777300070000
-00000000000000005555555500005000000000000000000000000000000000003333333333333333333333333333333333333333333333333777777700770000
-55555555000055500000000055550000000000000000000000000000000000003333333333333333333333333333333333333333333333333777777707777770
-a000000055550005007d7d7700000000000000000000000000000000000000003333333333333333333333333333333333333333333333333377777700770000
-0000060000000000000000006d66d6d6000000000000000000000000000000003333333333333333333333333333333333333333333333333377777300070000
-00000000077777707777777700000000000000000000000000000000000000003333333333333333333333333333333333333333333333333337773300000000
+bd00000000d00000070d0007000000000000000600060006cd000000000000003333333333333330333333333333333000033333333333333377333300000000
+00000400000000000000000060000655000600000080004000000000000000003333333333333333333333333333333000033333333333333777773300000000
+000600060d0006000000404400604500000004480084880000000000000000003333333333333333333333333333333333333333333333337777777300070000
+a0408480000088005555555500845440555555555555555500000000000000003333333333333333333333333333333333333333333333333777777700770000
+55555555000455540040440455554400b00004480084880900000000000000003333333333333333333333333333333333333333333333333777777707777770
+00008080555548450070007000080600000000000080004600000000000000003333333333333333333333333333333333333333333333333377777700770000
+00000600000088600000000060060000000600d00000000000000000000000003333333333333333333333333333333333333333333333333377777300070000
+00440000070000600000600700000000000000060060060600000000000000003333333333333333333333333333333333333333333333333337773300000000
 33333333300033333333333333333033333300033333333333333330003333333333333333333301333333333333333331333333333333033333333300000000
 33333333300033333333333333300003333300033333333333333330003333000333333333333301333333333333333301333333333333013333333300000000
 33003333300033333003333333330003333300333333333333333333003333000033333333333301333333333333333301333333333333013333333300000000
