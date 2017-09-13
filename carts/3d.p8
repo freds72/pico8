@@ -1,10 +1,8 @@
 pico-8 cartridge // http://www.pico-8.com
 version 8
 __lua__
-local futures={}
-futures_c=0
-before_update=0x1
-after_draw=0x2
+local before_update={c=0}
+local after_draw={c=0}
 -- active buildings
 local blds={}
 local blds_c=0
@@ -105,7 +103,6 @@ world_floor={} -- floor color ramps
 -- special fx
 local fxs={}
 local fxs_c=0
-local unit_sphere={}
 
 -- boss
 local boss={}
@@ -271,21 +268,25 @@ end
 
 -------------------------
 -- futures
-function futures_update(mask)
-	local n=futures_c
-	futures_c=0
-	mask=mask or before_update
+function futures_update(futures)
+	futures=futures or before_update
+	local n=futures.c
+	futures.c=0
 	for i=1,n do
 		local f=futures[i]
- 	if(coresume(f)) then
-			futures_c+=1
-			futures[futures_c]=f
+		local r,e=coresume(f)
+ 	if(r) then
+			futures.c+=1
+			futures[futures.c]=f
+		else
+			printh(e)
 		end
 	end
 end
-function futures_add(fn,mask)
-	futures_c+=1
-	futures[futures_c]=cocreate(fn)
+function futures_add(fn,futures)
+	futures=futures or before_update
+	futures.c+=1
+	futures[futures.c]=cocreate(fn)
 end
 
 ---------------------------
@@ -382,7 +383,7 @@ function txt_options(c,s)
 	txt_shade=s or -1
 end
 function txt_print(s,x,y,col)
-	if(text_center) then
+	if(txt_center) then
 		x-=flr((4*#s)/2+0.5)
 	end
 	if(txt_shade!=-1) then
@@ -611,22 +612,7 @@ function spawn_smoke(x,y,z)
 	fxs_c+=1
 	fxs[fxs_c]=fx
 end
-function spawn_blast2(x,y,z)
-	for i=1,4 do
-		local v=unit_sphere[flr(rnd(256))+1]
-		spawn_blast(x,y,z,v[1],v[2],v[3],rnd(12)+12,8)
-	end
-	spawn_blast(x,y,z,0,0,0,24,16)
-end
-function fxs_init()
-	for i=1,256 do
-		local a,b=band(i,31)/32,flr(i/8)/32
-		add(unit_sphere,{
-			sin(b)*cos(a),
-			sin(b)*sin(a),
-			cos(b)})
-	end
-end
+
 function fxs_update()
 	local n=fxs_c
 	fxs_c=0
@@ -809,7 +795,7 @@ helo_plyr_r2=(plyr_r+helo_r)*(plyr_r+helo_r)
 helo_chase_plyr_r2=(plyr_r+8)*(plyr_r+8)
 function helo_die(self)
 	self.hit=true
-	spawn_blast2(self.x,self.y,self.z)
+	spawn_blast(self.x,self.y,self.z)
 	sfx(1)
 end
 
@@ -1288,13 +1274,11 @@ function game_screen:update()
 	blts_update()
 	fxs_update()
 	
-	if(time_t%64==0) then
-		spawn_blast2(0,32,16)
-	end
 	plyr_resolve_collisions()
 	blts_resolve_collisions()
 end
 
+local road_ramp={6,13}
 function draw_floor()
 	local da=cam_alpha/hh
 	local a=cam_beta-cam_alpha
@@ -1320,8 +1304,10 @@ function draw_floor()
 					local ze=flr(32*w+0.5)
 					local xe=hw+(xroad-cam_x)*w
 					local v=flr(y)
+					pal(5,road_ramp[c+1])
 					if(ze<=8) then
 						sspr(16,band(v/2,7)+8,8,1,xe-ze/2,64-i,ze,1)
+						pal(5,5)
 					else					
 						sspr(24,band(v,15),16,1,xe-ze/2,64-i,ze,1)
 					end
@@ -1332,6 +1318,7 @@ function draw_floor()
 		a+=da
 		a_fix+=da
 	end
+	pal(5,5)
 	if(imax>=0) then
 		rectfill(0,0,127,imax-16,12)
 		map(16,1,0,imax-16,16,2)
@@ -1405,18 +1392,20 @@ function game_screen:draw()
 	--debug_draw()
 	--world_print(0,12)
 end
+function cam_rotate_async(from,to,steps)
+	for i=from,to,steps do
+		local t=i/72
+		cam_rotate(lerp(0.75,1,t))
+		plyr_cam_yoffset=lerp(24,0,t)
+		plyr_cam_zoffset=lerp(0,12,t)
+		yield()
+	end
+end
 function to_chase()
 	futures_add(function()
 		nmies_c=0
 		zbuf_init(32,flr_h)
-		for i=0,72 do
-			local t=i/72
-			cam_rotate(lerp(0.75,1,t))
-			plyr_cam_yoffset=lerp(24,0,t)
-			plyr_cam_zoffset=lerp(0,12,t)
-			printh(t)
-			yield()
-		end
+		cam_rotate_async(0,72,1)
 		cam_init(96,-196-plyr_zmax,0)
 		plyr_blt_dy=-3*cos(0.55)
 		plyr_blt_dz=-3*sin(0.55)
@@ -1430,13 +1419,7 @@ function to_top_down()
 	futures_add(function()
 		nmies_c=0
 		zbuf_init(flr_n,flr_h)
-		for i=0,72 do
-			local t=i/72
-			cam_rotate(lerp(1,0.75,t))
-			plyr_cam_yoffset=lerp(0,24,t)
-			plyr_cam_zoffset=lerp(12,0,t)
-			yield()
-		end
+		cam_rotate_asunc(72,0,-1)	
 		cam_init(96,-96-plyr_zmax,0.75)
 		plyr_blt_dy=-3*cos(0.62)
 		plyr_blt_dz=-3*sin(0.62)
@@ -1457,16 +1440,8 @@ function game_screen:init()
 	--zbuf_init(flr_n,flr_h)
 	zbuf_init(8,flr_h)
 	
-	world_init(0,56,6*8)
-	world_register(4,spawn_tk)
-	world_register(6,function(x,y) spawn_building(x,y,flr_ramps[1]) end)
-	world_register(7,function(x,y) spawn_building(x,y,flr_ramps[2]) end)
-	world_register(13,function(x,y) spawn_building(x,y,flr_ramps[3]) end)
-	world_register(8,spawn_helo)
-	world_register(9,spawn_bship)
-	world_register(10,to_chase)
-	world_register(11,to_top_down)
-
+	-- reset world factory cursor
+	world_cur=0
 	--[[
 	spawn_building(0,0)
 	spawn_building(-48,56)
@@ -1769,12 +1744,20 @@ end
 function _init()
 	cls(0)
 	sprint_init(chars)
-	fxs_init()
+	world_init(0,56,6*8)
+	world_register(4,spawn_tk)
+	world_register(6,function(x,y) spawn_building(x,y,flr_ramps[1]) end)
+	world_register(7,function(x,y) spawn_building(x,y,flr_ramps[2]) end)
+	world_register(13,function(x,y) spawn_building(x,y,flr_ramps[3]) end)
+	world_register(8,spawn_helo)
+	world_register(9,spawn_bship)
+	world_register(10,to_chase)
+	world_register(11,to_top_down)
 	sm_push(title_screen)
 end
 
 __gfx__
-88888888a95566673333333305555503305555507777777777777777777777777777777733333333000000000000000000000000333333304333333300000000
+888888887a9556663333333305555503305555507777777777777777777777777777777733333333000000000000000000000000333333304333333300000000
 88000088000000003777655505555503305555507555557777755555555555777775555733333333000000000000000000000000333334304373333300000000
 80800808000000001333133305555503305555507566665555566666666666555556665738833883000000000000000000000000333330004463333300000000
 8008800800000000151111c305555503305555507566666666666666666666666666665789a889a8000000000000000000000000333330355353333300000000
