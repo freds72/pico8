@@ -116,8 +116,8 @@ boss_enabled=false
 -- fade ramp + screen manager
 _shex={}
 _shexstr="0123456789abcdef"
-for i=1,#_shexstr do
-	_shex[sub(_shexstr,1,1)]=i-1
+for i=1,16 do
+	_shex[sub(_shexstr,i,i)]=i-1
 end
 _pl={"00000015d67",
      "0000015d677",
@@ -135,28 +135,30 @@ _pl={"00000015d67",
      "00015d67777",
      "00024ef7777",
      "0024ef77777"}
+_pl_from=0.5
 function fade(to,f)
-	if(f==0) pal() return
+	f=mid(f,1,32) -- sensible boundaries
+	to=mid(to,0,1)
 	futures_add(function()
-	for i=0,f do
-		local t=1/f
-		local pix=flr(lerp(5,10*to,t))+1
+		for i=0,f do
+			local t=i/f
+			local pix=flr(10*lerp(_pl_from,to,t))+1
 			for x=0,15 do
 				pal(x,_shex[sub(_pl[x+1],pix,pix)],1)
 			end
-		yield()
-	end
-	pal()
+			yield()
+		end
+		_pl_from=to
 	end,after_draw)
 end
 -- screen manager
 local sm_t,sm_cur,sm_next,sm_dly=0,nil,nil,0
 function sm_push(s)
 	sm_t=0
-	if(sm_cur) then
+	if sm_cur then
 		sm_dly=sm_t+8
 		sm_next=s
-		fade(0,16)
+		fade(0,8)
 	else
 		sm_cur=s
 		sm_cur:init()
@@ -164,12 +166,12 @@ function sm_push(s)
 end
 function sm_update()
 	sm_t+=1
-	if(sm_next) then 
-		if (sm_dly<sm_t) then
+	if sm_next then 
+		if sm_dly<sm_t then
 			sm_cur=sm_next
 			sm_next=nil
 			sm_cur:init()
-			fade(1,16)
+			fade(0.5,8)
 		end
 	else
 		sm_cur:update()
@@ -199,7 +201,7 @@ function str2mem_async(t,m)
 			poke(m,c)
 			b2=0 c=0 m+=1
 		end
-		if(band(m,255)==0) then 
+		if band(m,255)==0 then 
 			yield(m)
 		end
 	until p>=#t
@@ -277,7 +279,7 @@ function futures_update(futures)
 	for i=1,n do
 		local f=futures[i]
 		local r,e=coresume(f)
-		if(r) then
+		if r then
 			futures.c+=1
 			futures[futures.c]=f
 		--[[else
@@ -341,7 +343,7 @@ function rectvhstrip(x0,y0,x1,y1,n,nv,cols)
 		local ramp=cols[i%#cols+1]
 		local y=y0
 		-- minor strip optimisation
-		if(x0<128 and x0+dx-1>0) then
+		if x0<128 and x0+dx-1>0 then
 			for j=1,nv do
 				rectfill(x0,y,x0+dx-1,y+dy-1,ramp[j%#ramp+1])
 				y+=dy
@@ -355,7 +357,7 @@ function normz(dx,dy)
 	dx/=128
 	dy/=128
 	local dist=dx*dx+dy*dy
-	if(dist>0) then
+	if dist>0 then
 		dist=sqrt(dist)
 		dx/=dist
 		dy/=dist
@@ -443,13 +445,13 @@ function world_init(sx,sy,sw)
 	for i=0,sw-1 do
 		local noroad=true
 		for j=0,7 do
-			if(sget(sx+i,sy+j)==5) then
+			if sget(sx+i,sy+j)==5 then
 				road[i]=(j+1-4)*world_scalex
 				noroad=false
 				break
 			end
 		end
-		if(noroad) then
+		if noroad then
 			road_ymax=(i-1)*world_scaley
 			break
 		end
@@ -458,7 +460,7 @@ function world_init(sx,sy,sw)
 	local r={0x33,0x33,0xb3,0x3b}
 	for i=0,flr(sw/8+0.5) do
 		local c1=sget(sx+8*i,sy)
-		if(c1!=0) then
+		if c1!=0 then
 			local c2=sget(sx+8*i+1,sy)
 			r={
 				bor(shl(c1,4),c1),
@@ -493,7 +495,7 @@ end
 function world_update()
 	-- pick world items
 	local plyr_cur=flr((plyr.y+world_far)/world_scaley)
-	if (world_cur<=plyr_cur) then
+	if world_cur<=plyr_cur then
 		local i=0
 		for i=world_cur,plyr_cur do
 			for j=0,7 do
@@ -557,7 +559,7 @@ function nmies_update()
 	nmies_c=0
 	for i=1,n do
 		local e=nmies[i]
-		if(e:update()) then
+		if e:update() then
 			zbuf_write(e,e)
 			nmies_c+=1
 			if(i!=nmies_c) nmies[nmies_c]=e
@@ -568,8 +570,8 @@ end
 -- tank
 function tk_update(self)
 	if(self.hit) return false
-	if (self.y-plyr.y>world_out) then
-		if (self.dly<=time_t and self.y>plyr.y) then
+	if self.y-plyr.y>world_out then
+		if self.dly<=time_t and self.y>plyr.y then
 			spawn_tracker_blt(self.x,self.y,0.5,1,self.side)
 			self.dly=time_t+60+rnd(30)
 		end
@@ -586,7 +588,7 @@ function tk_chase_draw(self,x,y,z,w)
 	sspr(104,16,16,16,x-we/2,y-we/2,we,he)
 end
 function tk_blt_collision(self,blt)		
- if(circbox_coll(blt,blt_r,self,tk_w,tk_h,2)) then
+ if circbox_coll(blt,blt_r,self,tk_w,tk_h,2) then
 		self.hit=true
 		spawn_blast(self.x,self.y,self.z)
 		sfx(1)
@@ -606,7 +608,7 @@ function spawn_tk(x,y)
 		blt_hit=tk_blt_collision,
 		update=tk_update
 	}
-	if(cam_is_top_down()) then
+	if cam_is_top_down() then
 		tk.draw=tk_draw
 	else
 		tk.draw=tk_chase_draw
@@ -667,7 +669,7 @@ function fxs_update()
 	fxs_c=0
 	for i=1,n do
 		local fx=fxs[i]
-		if(fx.t>=time_t) then
+		if fx.t>=time_t then
 			fx:update()
 			zbuf_write(fx)
 			fxs_c+=1
@@ -697,7 +699,7 @@ function plyr:draw(x,y,z,w)
 	if(plyr_crashing) return
 	if(plyr_safe and band(time_t,1)==0) return
 	local idx=mid(flr(plyr_vx),-1,1)+2
-	if(cam_is_top_down()) then
+	if cam_is_top_down() then
 		spr(plyr_body[idx],x-8,y-9,2,3)
 		spr(plyr_rotor[time_t%3+1],x-10,y-11,3,3)
 	else
@@ -716,7 +718,7 @@ function plyr_die_async()
 	end
 	plyr.z=0
 	plyr_vy=0
-	if(plyr_lives<=0) then
+	if plyr_lives<=0 then
 		for i=1,30 do yield() end
 		sm_push(game_over)
 		return
@@ -741,18 +743,18 @@ function plyr_die()
 end
 function plyr:blt_hit(blt)
 	if(plyr_safe) return false
-	if(circ_coll(self,plyr_r,blt,blt_r)) then
+	if circ_coll(self,plyr_r,blt,blt_r) then
 		plyr_die()
 		return true
 	end
 	return false
 end
 function plyr_update()
-	if (plyr_playing) then
+	if plyr_playing then
 		local dx=0
 		if (btn(0)) dx=-0.125
 		if (btn(1)) dx=0.125
-		if(dx==0) then
+		if dx==0 then
 			plyr_vx*=0.89
 			if(abs(plyr_vx)<0.3) plyr_vx=0
 		else
@@ -764,7 +766,7 @@ function plyr_update()
 		if (btn(3)) plyr.z+=0.5
 		plyr.z=mid(plyr.z,plyr_zmin,plyr_zmax)
 	
-		if(btn(5) or plyr.z==0) then
+		if btn(5) or plyr.z==0 then
 			plyr_vy-=0.25
 		else
 			plyr_vy+=max(0.1, 0.1*plyr_vy)
@@ -773,7 +775,7 @@ function plyr_update()
 		plyr.y+=plyr_vy
 
 		-- fire 
-		if (btn(4) and plyr_fire_dly<=time_t and blts_c<blts_n) then
+		if btn(4) and plyr_fire_dly<=time_t and blts_c<blts_n then
 			spawn_blt(plyr.x,plyr.y+8,plyr.z-0.5,0,plyr_blt_dy,plyr_blt_dz,plyr.side)
 			plyr_fire_dly=time_t+8
 		end
@@ -790,11 +792,11 @@ function plyr_resolve_collisions()
 	-- just (re)spawned
 	if (plyr_safe) return
 	-- against buildings
-	if (plyr.z<=flr_zmax) then
+	if plyr.z<=flr_zmax then
 		local b
 		for i=1,blds_c do
 			b=blds[i]
-			if(circbox_coll(plyr,plyr_r,b,flr_w,flr_w,flr_zmax)) then
+			if circbox_coll(plyr,plyr_r,b,flr_w,flr_w,flr_zmax) then
 				plyr_die()
 				b.touch=1
 				return
@@ -804,7 +806,7 @@ function plyr_resolve_collisions()
 	-- against stuff
 	for i=1,zbuf_phys_n do
 		local o=zbuf_phys[i]
-		if (o.plyr_hit and o:plyr_hit(plyr)) then
+		if o.plyr_hit and o:plyr_hit(plyr) then
 			plyr_die()
 			return
 		end
@@ -817,8 +819,8 @@ function helo_update(self)
 	if(self.hit) return false
 	if (self.dly<=time_t) self.z+=self.dz
 	self.y+=self.dy
-	if (self.y-plyr.y>world_out) then
-		if(self.z>plyr_zmax-8) then
+	if self.y-plyr.y>world_out then
+		if self.z>plyr_zmax-8 then
 			self.dy=-0.75
 			self.dz=0
 		end
@@ -835,7 +837,7 @@ function helo_chase_draw(self,x,y,z,w)
 	sspr(104,0,16,16,x-8*w,y-8*w,16*w,16*w)
  y-=10*w
  w=shl(w,4)
-	if(time_t%2==0) then
+	if time_t%2==0 then
 		sspr(72,88,16,8,x-w,y,w,w/2)
 	else
 		sspr(72,88,16,8,x,y,w,w/2,true)
@@ -860,17 +862,17 @@ function spawn_helo(x,y)
 		hit=false,
 		update=helo_update,
 		blt_hit=function(self,blt)
-			if(circ_coll(self,helo_r,blt,blt_r,helo_blt_r2)) then
+			if circ_coll(self,helo_r,blt,blt_r,helo_blt_r2) then
 				self:die()
 				return true
 			end
 			return false
 		end
 	}
-	if(cam_is_top_down()) then
+	if cam_is_top_down() then
 		h.draw=helo_draw
 		h.plyr_hit=function(self,p)
-			if(circ_coll(self,helo_r,plyr,plyr_r,helo_plyr_r2)) then
+			if circ_coll(self,helo_r,plyr,plyr_r,helo_plyr_r2) then
 				self:die()
 				return true
 			end
@@ -879,7 +881,7 @@ function spawn_helo(x,y)
 	else
 		h.draw=helo_chase_draw
 		h.plyr_hit=function(self,p)
-			if(circ_coll(self,8,plyr,plyr_r,helo_plyr_r2)) then
+			if circ_coll(self,8,plyr,plyr_r,helo_plyr_r2) then
 				self:die()
 				return true
 			end
@@ -894,7 +896,7 @@ end
 -- building
 function flr_draw(self,xe,ye,z,w)
 	local we=flr_w*w
-	if(self.i==1) then
+	if self.i==1 then
 		-- shadow
 		local se=1.2*we
 		rectfill(xe-se,ye-se,xe+se,ye+se,3)
@@ -903,12 +905,12 @@ function flr_draw(self,xe,ye,z,w)
 	local k=flr(we/4+0.5)
 	we*=2
 	local c=self.ramp
-	if(ye>64) then
+	if ye>64 then
 		rectvstrip(x,y,x+we,y+k,9,c)
 	else
 		rectvstrip(x,y+we-k,x+we,y+we,9,c)
 	end
-	if(xe<64) then
+	if xe<64 then
 		recthstrip(x+we-k,y,x+we,y+we,9,c)
 	else
 		recthstrip(x,y,x+k,y+we,9,c)
@@ -922,7 +924,7 @@ function flr_chase_draw(self,x,y,z,w)
 	local ww=flr_w*w
 	local wh=flr_zmax*w
 	local k=flr(ww/4+0.5)
-	if(x<64) then
+	if x<64 then
 		recthstrip(x+ww-k,y-wh,x+ww,y,16,self.ramp)
 	else
 		recthstrip(x-ww,y-wh,x-ww+k,y,16,self.ramp)
@@ -938,7 +940,7 @@ function spawn_building(x,y,ramps)
 		x=x,y=y,z=0,touch=0,
 		floors={}
 	}
-	if(cam_is_top_down()) then
+	if cam_is_top_down() then
 		for i=0,flr_n-1 do
 			add(b.floors,{x=x,y=y,z=i*flr_h,i=i,ramp=ramps[i%2+1],draw=flr_draw})
 		end
@@ -947,7 +949,7 @@ function spawn_building(x,y,ramps)
 		local t,dt=0,1/flr_n
 		for i=0,flr_n do
 			local dy=lerp(-flr_w,flr_w,t)
-			if(i<flr_n) then
+			if i<flr_n then
 				add(b.floors,{x=x,y=y-dy,z=0,i=i,ramp=ramps[i%2+1],draw=flr_chase_draw})
 			else
 				add(b.floors,{x=x,y=y-dy,z=0,i=i,ramps=ramps,draw=roof_chase_draw})
@@ -964,10 +966,10 @@ end
 -- bullet
 function blt_update(self)
 		self.z+=self.dz
-		if(self.z<0) then
+		if self.z<0 then
 			spawn_blast(self.x,self.y,0,0,0,0,8)
 			return false
-		elseif(self.t>time_t) then
+		elseif self.t>time_t then
 			self.x+=self.dx
 			self.y+=self.dy
 			return true
@@ -981,8 +983,8 @@ end
 function msl_update(self)
 		self.z+=self.dz
 		local dt=self.t-time_t
-		if(dt>0 and self.z>0) then
-			if(flr(dt)%2==0 and plyr.z>self.z) then
+		if dt>0 and self.z>0 then
+			if flr(dt)%2==0 and plyr.z>self.z then
 				local dx,dy=normz(plyr.x-self.x,plyr.y-self.y)
 				self.dx=dx*2
 				self.dy=dy*2
@@ -1051,7 +1053,7 @@ function blts_update()
 	local b
 	for i=1,n do
 		b=blts[i]
-		if(b:update()) then
+		if b:update() then
 			blts_c+=1
 			blts[blts_c]=b
 			--insert into zbuffer
@@ -1066,7 +1068,7 @@ function blts_resolve_collisions()
 		local b
 		for i=1,blds_c do
 			b=blds[i]
-			if(circbox_coll(blt,blt_r,b,flr_w,flr_w,flr_zmax)) then
+			if circbox_coll(blt,blt_r,b,flr_w,flr_w,flr_zmax) then
 				blt.t=0
 				b.touch=1
 				spawn_blast(blt.x,blt.y,blt.z,0,0,0,4)
@@ -1076,7 +1078,7 @@ function blts_resolve_collisions()
 		-- against entities
 		for i=1,zbuf_phys_n do
 			local o=zbuf_phys[i]
-			if (o.side!=blt.side and o:blt_hit(blt)) then
+			if o.side!=blt.side and o:blt_hit(blt) then
 				if(blt.side==good_side) plyr_score+=10
 		 	blt.t=0
 		 	break
@@ -1119,7 +1121,7 @@ function boss_update()
 	zbuf_write(boss)
 	for i=1,#boss_parts do
 		local t=boss_parts[i]
-		if(t.hit==false) then
+		if t.hit==false then
 			t:update(self)
 			zbuf_write(t,t)
 		else
@@ -1170,14 +1172,14 @@ function spawn_bship(x,y)
 			local t=nil
 			local ptype=fget(mget(2+i,j))
 			local px=-scale*(4-i)*8
-			if(ptype==1) then
+			if ptype==1 then
 				t={
 					sx=16,
 					sy=112,
 					update=turret_update,
 					fire_dly=time_t+rnd(30)+1.2*30
 				}
-			elseif(ptype==2) then
+			elseif ptype==2 then
 				t={
 					sx=48,
 					sy=112,
@@ -1185,7 +1187,7 @@ function spawn_bship(x,y)
 					fire_dly=time_t+rnd(30)+2*30
 				}
 			end
-			if(t) then
+			if t then
 				t.x=x+px
 				t.y=y+py
 				t.z=0
@@ -1228,20 +1230,20 @@ function turret_draw(self,x,y,z)
 	pal(8,8)
 end
 function turret_update(self,p)
-	if(self.fire_dly<time_t) then
+	if self.fire_dly<time_t then
 		--spawn_tracker_blt(self.x,self.y,0.5,1,self.side)
 		self.fire_dly=time_t+rnd(30)+60
 	end
 end
 function mslturret_update(self,p)
-	if(self.fire_dly<time_t) then
+	if self.fire_dly<time_t then
 		--spawn_msl(self.x,self.y,0.5,1,self.side)
 		self.fire_dly=time_t+rnd(30)+120
 	end
 end
 function turret_blt_hit(self,blt)
 	if(self.hit) return false
-	if(circ_coll(self,8,blt,blt_r)) then
+	if circ_coll(self,8,blt,blt_r) then
 		self.hit=true
 		self.sx=88
 		self.sy=112
@@ -1261,11 +1263,11 @@ function zbuf_clear()
 end
 function zbuf_write(obj,phy_obj,i)
 	local x,y,z,w=cam_project(obj)
-	if(w) then
+	if w then
 		zbuf_n+=1
 		zbuf[zbuf_n]={obj,{x,y,z,w}}
 	end
-	if (phy_obj) then
+	if phy_obj then
 		zbuf_phys_n+=1
 		zbuf_phys[zbuf_phys_n]=phy_obj
 	end
@@ -1296,7 +1298,7 @@ function game_screen:update()
 	blds_c=0
 	for i=1,n do
 		local b=blds[i]
-		if (b.y-plyr.y>-128) then
+		if b.y-plyr.y>-128 then
 			b.touch=0
 			for f=1,#b.floors do
 				zbuf_write(b.floors[f])
@@ -1315,6 +1317,50 @@ function game_screen:update()
 end
 
 local road_ramp={6,13}
+local floor_y=0
+function draw_floor()
+	floor_y-=plyr_vy
+	floor_y=band(dy,31)
+	local p0={x=0,y=floor_y+world_far+cam_y,z=0}
+	local p1={x=0,y=floor_y+world_out+cam_y,z=0}
+	local x0,y0,z0,w0=cam_project(p0)
+	local x1,y1,z1,w1=cam_project(p1)
+	if w0 and w1 then
+		y0=flr(y0)
+		y1=flr(y1)
+		local dy=y1-y0
+		local dw=(w1-w0)/dy
+		local u,du=p0.y*w0,(p1.y*w1-p0.y*w0)/dy	
+		for i=0,dy do
+			if(y0>=0 and y0<128) then
+				local y=u/w0
+				local ydist=band(band(0x7fff,y),31)
+				local ramp=world_floor_ramp(ydist)
+				local c=band(band(flr(shr(ydist,4)),31),1)
+				memset(0x6000+shl(y0,6),ramp[2*c+band(i,1)+1],64)
+				-- road
+				local xroad=road_xoffset(ydist)
+				if xroad then
+					local we=shl(w0,5)+0.5
+					local xe=hw+(xroad-cam_x)*w0
+					local v=flr(y)
+					pal(5,road_ramp[c+1])
+					if we<=8 then
+						sspr(16,band(v/2,7)+8,8,1,xe-we/2,y0,we,1)
+					else					
+						sspr(24,band(v,15),16,1,xe-we/2,y0,we,1)
+					end
+				end
+			end
+			u+=du
+			w0+=dw
+			y0+=1
+			if(y0>127) return
+		end
+	end
+	pal(5,5)
+end
+--[[
 function draw_floor()
 	local da=cam_alpha/hh
 	local a=cam_beta-cam_alpha
@@ -1323,10 +1369,10 @@ function draw_floor()
 	local z=-cam_z
 	for i=-hh,hh do
 		local sa=-sin(a)
-		if(abs(sa)>0.01) then
+		if abs(sa)>0.01 then
 		 local ca_fix=cos(a_fix)
 			local dist=z*ca_fix/sa
-			if(dist>0 and dist<-2*cam_zfar) then
+			if dist>0 and dist<-2*cam_zfar then
 			 local ca=cos(a)
 				-- find v coords 
 				local ydist=dist*ca+plyr.y
@@ -1335,13 +1381,13 @@ function draw_floor()
 				local c=band(band(flr(shr(y,4)),31),1)
 				memset(0x6000+(64-i)*64,ramp[2*c+band(64-i,1)+1],64)
 				local xroad=road_xoffset(ydist)
-				if(xroad) then
+				if xroad then
 					local w=cam_focal/dist
 					local ze=flr(shl(w,5)+0.5)
 					local xe=hw+(xroad-cam_x)*w
 					local v=flr(y)
 					pal(5,road_ramp[c+1])
-					if(ze<=8) then
+					if ze<=8 then
 						sspr(16,band(v/2,7)+8,8,1,xe-ze/2,64-i,ze,1)
 					else					
 						sspr(24,band(v,15),16,1,xe-ze/2,64-i,ze,1)
@@ -1354,7 +1400,7 @@ function draw_floor()
 		a_fix+=da
 	end
 	pal(5,5)
-	if(imax>=0) then
+	if imax>=0 then
 		rectfill(0,0,127,imax-16,12)
 		map(16,1,0,imax-16,16,2)
 		for i=1,24,2 do		
@@ -1367,7 +1413,7 @@ function draw_floor()
 		end
 	end
 end
-
+]]
 function draw_spd(x,y)
 	rectfill(x,y,x+12,y+4,1)
 	rectfill(x+13,y,x+30,y+4,0)	
@@ -1389,16 +1435,16 @@ function draw_top_banner(x,y)
 	end
 end
 function draw_shadow()
-	if (band(time_t,1)==0) then
+	if band(time_t,1)==0 then
 		local x,y,z,w=cam_project({x=plyr.x,y=plyr.y,z=0})
-		if(cam_is_top_down()) then
-			if(w) then
+		if cam_is_top_down() then
+			if w then
 				local ww=shl(w,3)
 				local wh=24*w
 				sspr(56,32,8,24,x-shr(ww,1),y-shr(wh,1),ww,wh)
 			end
 		else
-			if(w) then
+			if w then
 				spr(189,x-8,y,1,1)
 				spr(189,x,y,1,1,true)
 			end
@@ -1409,7 +1455,7 @@ end
 function game_screen:draw()
 	palt(0,false)
 	palt(3,true)
- draw_floor()
+	draw_floor()
 	--local x,y,z,w=cam_project({x=0,y=plyr.y+world_far,z=0})
 	--line(0,y,127,y,8)
 	draw_shadow()
@@ -1419,7 +1465,7 @@ function game_screen:draw()
 	--draw_spd(8,120)
 	palt()
 	
-	if(plyr.z==0 and band(time_t,31)>15) then
+	if plyr.z==0 and band(time_t,31)>15 then
 		txt_options(true,9)
 		txt_print("take off",64,100,10)
 		txt_options()
@@ -1521,7 +1567,7 @@ end
 function rooster_apply(fn)
 	for i=1,#rooster_rows do
 		local row=rooster_rows[i]
-		if(row.dly<time_t) then
+		if row.dly<time_t then
 			for j=1,#row.chars do
 				local c=row.chars[j]
 				if (c.dly<time_t) fn(c)
@@ -1540,7 +1586,7 @@ function rooster_add(s,col)
 	for i=1,#s do
 		local c=sub(s,i,i)
 		-- no need to display space
-		if(c!=" ") then
+		if c!=" " then
 			local char={
 				c=c,
 				col=col or 7,
@@ -1569,8 +1615,8 @@ function sprint_init(chars)
 	for i=1,#chars do
 		local c=sub(chars,i,i)
 		cls(0)
-		if(c=="\13") then spr(86,0,0)
-		elseif(c=="\8") then spr(127,0,0)
+		if c=="\13" then spr(86,0,0)
+		elseif c=="\8" then spr(127,0,0)
 		else print(c,0,0,7) end
 		local mem=0x4300+shl(i-1,5)
 		for y=0,7 do
@@ -1581,11 +1627,11 @@ function sprint_init(chars)
 	cls(0)
 end
 function sprint(c,x,y,col,size)
-	if(abs(size-1)<0.01) then
+	if abs(size-1)<0.01 then
 		print(c,x-4,y-4,col)
 	else
 		local mem=chars_mem[c]
-		if(mem!=sprint_lastm) then
+		if mem!=sprint_lastm then
 			for m=0,7 do
 				memcpy(0x0+64*m,mem+4*m,4)
 			end
@@ -1598,7 +1644,7 @@ function sprint(c,x,y,col,size)
 end
 	
 function title_screen:update()
-	if(btnp(4) or btnp(5)) then
+	if btnp(4) or btnp(5) then
 		game_starting=true
 		-- clear last score
 		for s in all(scores) do
@@ -1610,7 +1656,7 @@ function title_screen:update()
 end
 function title_screen:draw()	
 	local ret,res=coresume(self.str2mem_cor)
-	if(ret and res) then
+	if ret and res then
 		res=res-0x6000
 		local y=flr(res/64+0.5)
 		line(0,y,127,y,7)
@@ -1625,7 +1671,7 @@ function title_screen:draw()
 	rooster_apply(char_draw)
 	
 	local s="\151 or \145 to play"
-	if (time_t%32>16) then
+	if time_t%32>16 then
 		txt_options(true,9)
 		txt_print(s,64,120,10)
 	end
@@ -1650,7 +1696,7 @@ end
 function title_screen:score(name,s)
 	local c=1
 	for i=1,#ranks do
-		if(s>=scores[i][2]) then
+		if s>=scores[i][2] then
 		 local j=#ranks
 			while(j!=i) do
 				scores[j]=scores[j-1]
@@ -1689,10 +1735,10 @@ end
 function game_over:update()
 	if(time_t>30*30) self:close()
 	local moved=false
-	if(btnp(4) or btnp(5)) then
-		if(go_cur_i==1) then
+	if btnp(4) or btnp(5) then
+		if go_cur_i==1 then
 			self:close()
-		elseif(go_cur_i==2) then
+		elseif go_cur_i==2 then
 			go_char_i-=1
 	 else
 		local sel=go_char_i
@@ -1716,7 +1762,7 @@ function game_over:update()
 	go_char_i=mid(go_char_i,1,#go_name)
 	if(btnp(0)) go_next_i-=1 moved=true
 	if(btnp(1)) go_next_i+=1 moved=true
-	if(moved and go_moving==false) then
+	if moved and go_moving==false then
 			go_moving=true
 			futures_add(function()
 				local da=1/#chars
@@ -1759,7 +1805,7 @@ function game_over:draw()
 		if(w) sprint(c,x,y,col,w)
 		a+=da
 	end
-	if(go_char_anim) then
+	if go_char_anim then
 		sprint(i2c[go_char_anim.ci],go_char_anim.x,go_char_anim.y,7,go_char_anim.w)
 	end
 	print(30-flr(time_t/30),128-8,128-12,1)
@@ -1858,11 +1904,11 @@ __gfx__
 33333333333333333333333333333333333333333333333330056003333333333300033335533000033333333333333300033333333333333333333597333333
 33333333333333333333333333333333333333333333333333000033333333333330333333333300003333333333333300033333333333333333333353333333
 33333333333333333333333333333333333333333333333333388333333333333333333333333300033333333333333300033333333333333333333353333333
-1d0000000000000000000000000000000000000600060006cd000000000000003333333333333330333333333333333000033333333333333377333300000000
+bd0000000000000000000000000000000000000600060006cd000000000000003333333333333330333333333333333000033333333333333377333300000000
 00000000000000000000000060000655000600000080004000000000000000003333333333333333333333333333333000033333333333333777773300000000
 00000000000000000000555000600500000004480084880b00000000000000003333333333333333333333333333333333333333333333337777777300070000
 55555555555555555555000500845006555555555555555500000000000000003333333333333333333333333333333333333333333333333777777700770000
-90000000000000000000000055554400a00004480084880900000000000000003333333333333333333333333333333333333333333333333777777707777770
+00000000000000000000000055554400a00004480084880900000000000000003333333333333333333333333333333333333333333333333777777707777770
 00000000000000000000000000080600000000000080004600000000000000003333333333333333333333333333333333333333333333333377777700770000
 00000000000000000000000060060000000600d00000000000000000000000003333333333333333333333333333333333333333333333333377777300070000
 00000000000000000000000000000000000000060060060600000000000000003333333333333333333333333333333333333333333333333337773300000000
