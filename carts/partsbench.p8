@@ -1,136 +1,194 @@
 pico-8 cartridge // http://www.pico-8.com
 version 8
 __lua__
-local ramp={7,6,5,0}
-function ipset(x,y,i)
- i=flr(abs(4*i))
-	local c=ramp[mid(i,0,3)+1]
-	pset(x,y,c)
+-- mini benchmark to compare various collection patterns
+-- coll: index buffer
+-- parts: add/del
+-- memparts: index buffer using user memory
+
+-- global time
+local time_t=0
+-- target particle count
+local n=128
+
+
+local coll={c=0}
+function coll:len()
+	return coll.c
 end
-function shadepix(m,i)
-	if(m<0 or m>127*127) return
-	-- local m=0x6000+shl(flr(y),6)+flr(shr(x,1))
-	local x=m%2
-	m=0x6000+shr(m,1)
-	i=flr(abs(shl(i,2)))
-	local c=ramp[mid(i,0,3)+1]
-	if band(x,1)==0 then
-		poke(m,bor(
-			c,
-			band(0xf0,peek(m))))
-	else
-		poke(m,bor(
-			shl(c,4),
-			band(0x0f,peek(m))))
-	end
+function coll:spawn(x,y)
+	coll.c+=1
+	coll[coll.c]={
+		x=x,y=y,
+		t=time_t+120+rnd(16),
+		dx=rnd(2)>1 and 1 or -1,
+		dy=rnd(2)>1 and 1 or -1}
 end
-
-function aaline(x1,y1,x2,y2,c)
-	local dx=x2-x1
-	local ix=dx>0 and 1 or -1
-	dx=shl(abs(dx),1)
-
-	local dy=y2-y1
-	local iy=dy>0 and 1 or -1
-	dy=shl(abs(dy),1)
-
-	shadepix(x1+shl(y1,7),c)
-	
-	if(dx==0 and dy==0) return
-	
-	if dx>=dy then
-		error=dy-dx/2
- 	while x1!=x2 do
-   if (error>0) or ((error==0) and (ix>0)) then
-	   error-=dx
- 	  y1+=iy
-			end
-
- 	 error+=dy
- 	 x1+=ix
-	 	shadepix(x1+shl(y1,7),c)
- 	end
-	else
- 	error=dx-dy/2
-
- 	while y1!=y2 do
-  	if (error>0) or ((error==0) and (iy > 0)) then
-  	 error-=dy
-  	 x1+=ix
-		 end
-	
-  	error+=dx
-  	y1+=iy
-
-			shadepix(x1+shl(y1,7),c)
- 	end
- end
-end
-
--- http://jamesarich.weebly.com/uploads/1/4/0/3/14035069/480xprojectreport.pdf
-function gupta(x0,y0,x1,y1)
-	local du=x1-x0
-	local dv=y1-y0
-	if(du==0 and dv==0) return
-	local addr=x0+128*y0
-	local u,v,uincr,vincr
-	-- x-major
-	if abs(du)>=abs(dv) then
-		u=x1
-		uincr=du<0 and -1 or 1
-		vincr=dv<0 and -128 or 128
-		du,dv=abs(du),abs(dv)
-	else
-		u=y1
-		uincr=dv<0 and -128 or 128
-		vincr=du<0 and -1 or 1
-		du,dv=abs(dv),abs(du)
-	end
-
-	local uend=u+du
-	local d=2*dv-du
-	local incrs=2*dv
-	local incrd=2*(dv-du)
-	local twovdu=0
-	local invd=1/(2*sqrt(du*du+dv*dv))
-	local invd2du=2*du*invd
-	for i=u,uend do
-		shadepix(addr,twovdu*invd)
-		shadepix(addr+vincr,invd2du-twovdu*invd)
-		shadepix(addr-vincr,invd2du+twovdu*invd)
-		if d<0 then
-			twovdu=d+du
-			d+=incrs
+function coll:update()
+	local k=coll.c
+	coll.c=0
+	for i=1,k do
+		local p=coll[i]
+		if p.t<time_t then
 		else
-			twovdu=d-du
-			d+=incrd			
-			addr+=vincr
+			p.x+=p.dx
+			if(p.x<1 or p.x>127) p.dx=-p.dx
+			p.y+=p.dy
+			if(p.y<1 or p.y>127) p.dy=-p.dy
+			coll.c+=1
+			coll[coll.c]=p
 		end
-		addr+=uincr
+	end
+end
+function coll:draw()
+	for i=1,coll.c do
+		local p=coll[i]
+		pset(p.x,p.y,7)
 	end
 end
 
-local x,y=64,64
+local parts={}
+function parts:len()
+	return #parts
+end
+function parts:spawn(x,y)
+	add(parts,{
+		x=x,y=y,
+		t=time_t+120+rnd(16),
+		dx=rnd(2)>1 and 1 or -1,
+		dy=rnd(2)>1 and 1 or -1})
+end
+
+function parts:update()
+	for p in all(parts) do
+		if p.t<time_t then
+			del(parts,p)
+		else
+			p.x+=p.dx
+			if(p.x<1 or p.x>127) p.dx=-p.dx
+			p.y+=p.dy
+			if(p.y<1 or p.y>127) p.dy=-p.dy
+		end
+	end
+end
+
+function parts:draw()
+	for p in all(parts) do
+		pset(p.x,p.y,7)
+	end
+end
+
+function readbyte(m)
+	return peek(m)-128
+end
+function writebyte(m,i)
+	poke(m,i+128)
+end
+function readint(m)
+	return bor(peek(m),shl(peek(m+1),8))
+end
+function writeint(m,i)
+	poke(m,i)
+	poke(m+1,shr(i,8))
+end
+local c=0
+local xm=0x4300
+local ym=xm+n*2
+local tm=ym+n*2
+local dxm=tm+n*2
+local dym=dxm+n
+local memparts={}
+function memparts:len()
+ return c
+end
+function memparts:update()
+	local x,y,t,dx,dy
+	local ii=c-1
+	c=0
+	for i=0,ii do
+		x=readint(xm+i*2)
+		y=readint(ym+i*2)
+		t=readint(tm+i*2)
+		if t>time_t then
+			dx=readbyte(dxm+i)
+			dy=readbyte(dym+i)
+			x+=dx
+			if(x<1 or x>127) dx=-dx
+			y+=dy
+			if(y<1 or y>127) dy=-dy
+			writeint(xm+c*2,x)
+			writeint(ym+c*2,y)
+			writeint(tm+c*2,t)
+			writebyte(dxm+c,dx)
+			writebyte(dym+c,dy)
+			c+=1
+		end
+	end
+end
+function memparts:draw()
+	local x,y,t
+	for i=0,c-1 do
+		x=readint(xm+i*2)
+		y=readint(ym+i*2)
+		t=readint(tm+i*2)
+		pset(x,y,7)
+	end
+end
+function memparts:spawn(x,y)
+	writeint(xm+c*2,x)
+	writeint(ym+c*2,y)
+	writeint(tm+c*2,time_t+120+rnd(16))
+	writebyte(dxm+c,rnd(2)>1 and 1 or -1)
+	writebyte(dym+c,rnd(2)>1 and 1 or -1)
+	c+=1
+end
+
+local mode={
+	coll,parts,memparts}
+local mode_i=1
+local particles=mode[mode_i]
+local perf={}
+local perf_ramp={8,11,5}
+local perf_name={"cpu","mem","n"}
 function _update60()
-	if(btn(0)) x-=1
-	if(btn(1)) x+=1
-	if(btn(2)) y-=1
-	if(btn(3)) y+=1
+	if btnp(4) or btnp(5) then
+		mode_i=(mode_i+1)%(#mode+1)
+		if(mode_i==0) mode_i=1
+		particles=mode[mode_i]
+	end
+	if particles:len()<n then
+		particles:spawn(rnd(127),rnd(127))
+	end
+
+	particles:update()
+	perf[time_t%64+1]={
+		stat(1),
+		stat(0)/1024,
+		particles:len()/n}
+
+	time_t+=1
 end
 
 function _draw()
 	cls(0)
-	--print(x.."/"..y,2,2,7)
-	-- aaline(64,64,x,y,0)
-	for i=1,50 do
-		--gupta(64,64,flr(rnd(128)),flr(rnd(128)),7)
-		aaline(64,64,flr(rnd(127)),flr(rnd(127)),0)
-	end
-	--shadepix(x+128*y,0)
-	--pset(x,y+1,8)
+	particles:draw()
+
+	print("mode:"..mode_i,2,120,7)
 	
-	rectfill(0,0,127,8,1)
-	print(stat(1),2,1,7)
+	rectfill(0,0,64,32,1)
+	local t=64-time_t%64
+	line(t,0,t,32,6)
+	for k=1,3 do
+		local scale=32
+		if(perf[1][k]<0.5) scale=64
+		if(perf[1][k]<0.25) scale=128
+		color(perf_ramp[k])
+		for i=1,#perf do
+			local p=perf[i]
+			pset(64-i,32-scale*p[k])
+		end
+		print(perf_name[k]..":"..(flr(1000*perf[1][k])/10).."%",2,28+6*k)
+	end
 end
 __gfx__
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
