@@ -1,14 +1,6 @@
 pico-8 cartridge // http://www.pico-8.com
 version 8
 __lua__
--- thunderblade remake by freds72
--- source code: https://github.com/freds72/pico8
--- thanks:
--- chris butler  (gfx rip off!)
--- gamax92 for midi to pico-8
--- pico-8 community
-
--- futures set
 local before_update={c=0}
 local after_draw={c=0}
 -- active buildings
@@ -16,8 +8,7 @@ local blds={}
 local blds_c=0
 -- floor constants
 local flr_n,flr_zmax
-flr_h=10
-flr_w=24
+local flr_h,flr_w=10,24
 local flr_ramps={
 	{{6,5},{12,13}}, -- grey
 	{{13},{12,13}}, -- violet
@@ -27,7 +18,7 @@ local flr_ramps={
 local cam_x,cam_y,cam_z
 local cam_focal,cam_zfar
 cam_beta=0
-cam_sb,cam_cb=0,0
+local cam_sb,cam_cb=0,0
 local hh,hw=64,64
 -- player settings
 good_side=0
@@ -40,8 +31,7 @@ local plyr={
 	z=16,
 	side=good_side
 }
-plyr_vx=0
-plyr_vy=1
+local plyr_vx,plyr_vy=0,1
 plyr_lives=3
 plyr_score=0
 plyr_hit=false
@@ -66,43 +56,34 @@ plyr_rotor3d={
 local time_t=0
 -- bullets
 local blts={}
-blts_c=0
-blts_n=32
-blt_r=4
-blt_r2=blt_r*blt_r
+local blts_c,blts_n=0,32
+local blt_r,blt_r2=4,16
 -- zbuffer
-local zbuf={}
-local zbuf_n
-local zbuf_phys={}
-local zbuf_phys_n
+local zbuf,zbuf_n={}
+local zbuf_phys,zbuf_phys_n={}
 -- enemies
-local nmies={}
-local nmies_c
+local nmies,nmies_c={}
 -- tank constants
-tk_w=16
-tk_h=24
+local tk_w,tk_h=16,24
 tk_chase_w=16
 tk_chase_h=16
 -- helos constants
-helo_w=24
-helo_h=32
+local helo_w,helo_h=24,32
 helo_r=12
 helo_r2=helo_r*helo_r
 helo_body={64,88}
 -- map
-world_scaley=96 -- 1 cell=1 half screen
-world_scalex=32
-world_ymax=0
+local world_scaley=96 -- 1 cell=1 half screen
+local world_scalex=32
+local world_ymax=0
 local world_in,world_out  -- in/out of world
 local world_cur
-world_factories={} -- entity spawners
-local road={} -- road x-offset
-road_ymax=0
+local world_factories={} -- entity spawners
+local road,road_ymax={},0 -- road x-offset
 local world_floor={} -- floor color ramps
 local floor_ymax,floor_ymin
 -- special fx
-local fxs={}
-local fxs_c=0
+local fxs,fxs_c={},0
 
 -- boss
 local boss={}
@@ -179,10 +160,7 @@ function sm_draw()
 	sm_cur:draw()
 end
 
--- decompress pic --
--- written by dw817 (david w)
--- http://writerscafe.org/dw817
-set="abcdefghijklmnopqrstuvwxyz()[]{}"
+local set="abcdefghijklmnopqrstuvwxyz()[]{}"
 function str2mem_async(t,m)
 	local b1,b2,c,n,p=0,0,0,0,1
 	repeat
@@ -242,7 +220,6 @@ function instr(a,b)
 	return r
 end--instr
 
----------------------------
 -- collision helpers
 function circ_coll(a,ra,b,rb,r2)
 	local dz=b.z-a.z
@@ -265,7 +242,6 @@ function circbox_coll(a,ra,b,bw,bh,bz)
 	return (d2<ra*ra)
 end
 
--------------------------
 -- futures
 function futures_update(futures)
 	futures=futures or before_update
@@ -290,7 +266,6 @@ function futures_add(fn,futures)
 	futures[futures.c]=cocreate(fn)
 end
 
----------------------------
 -- helpers
 function nop() end
 
@@ -417,7 +392,6 @@ function sort(t,n,cmp)
  end
 end
 
------------------------
 -- print text helper
 txt_center=false
 txt_shade=-1
@@ -434,7 +408,7 @@ function txt_print(s,x,y,col)
 	end
 	print(s,x,y,col)
 end
----------------------------
+
 -- world
 function world_init(sx,sy,sw)
 	road_ymax=(sw+1)*world_scaley
@@ -504,7 +478,7 @@ function world_update()
 		world_cur=plyr_cur+1
 	end
 end
----------------------------
+
 -- camera
 function cam_init(focal,zfar,beta)
 	cam_x=0
@@ -542,7 +516,7 @@ function cam_track(x,y,z,scale)
 	cam_y=y-cam_cb*cam_focal/scale
 	cam_z=z-cam_sb*cam_focal/scale
 end
---------------------
+
 -- enemies
 function nmies_add(e)
 	nmies_c+=1
@@ -560,7 +534,7 @@ function nmies_update()
 		end
 	end
 end
---------------------
+
 -- tank
 function tk_update(self)
 	if(self.hit) return false
@@ -610,7 +584,7 @@ function spawn_tk(x,y)
 	return tk
 end
 
----------------------
+
 -- special effects
 local blast_spr={{88,16},{72,16},{72,0},{88,0}}
 function blast_draw(self,x,y,z,w)
@@ -675,7 +649,7 @@ function fxs_update()
 		end
 	end
 end
----------------------
+
 -- player
 function plyr_init()
 	sfx(63,1)
@@ -736,7 +710,7 @@ end
 function plyr_die()
 	-- avoid rentrancy
 	if(plyr_safe) assert()
-	--plyr_lives-=1
+	plyr_lives-=1
 	plyr_crash_z=plyr.z
 	plyr_crashing=true
 	plyr_safe=true
@@ -752,7 +726,7 @@ function plyr:blt_hit(blt)
 	return false
 end
 function plyr_update()
-	plyr_score+=1
+	plyr_score+=1*(plyr_vy>0 and 1 or 0)
 	if plyr_playing then
 		local dx=0
 		if (btn(0)) dx=-0.125
@@ -779,13 +753,11 @@ function plyr_update()
 		sfx_speed(63,lerp(8,6,plyr_vy/plyr_vmax))
 		plyr.y+=plyr_vy
 
-		-- fire 
 		if btn(4) and plyr_fire_dly<=time_t and blts_c<blts_n then
 			spawn_blt(plyr.x,plyr.y+8,plyr.z-0.5,0,plyr_blt_dy,plyr_blt_dz,plyr.side)
 			plyr_fire_dly=time_t+8
 		end
-	end
-	-- cam world position
+	end	
 	cam_track(
 		shr(plyr.x,1),
 		plyr.y+plyr_cam_yoffset,
@@ -796,7 +768,6 @@ end
 function plyr_resolve_collisions()
 	-- just (re)spawned
 	if (plyr_safe) return
-	-- against buildings
 	if plyr.z<=flr_zmax then
 		local b
 		for i=1,blds_c do
@@ -808,9 +779,9 @@ function plyr_resolve_collisions()
 			end
 		end
 	end
-	-- against stuff
+	local o
 	for i=1,zbuf_phys_n do
-		local o=zbuf_phys[i]
+		o=zbuf_phys[i]
 		if o.plyr_hit and o:plyr_hit(plyr) then
 			plyr_die()
 			return
@@ -818,7 +789,6 @@ function plyr_resolve_collisions()
 	end
 end
 
--------------------------------
 -- helo
 function helo_update(self)
 	if(self.hit) return false
@@ -896,12 +866,10 @@ function spawn_helo(x,y)
 	return h
 end
 
------------------------------
 -- building
 function flr_draw(self,xe,ye,z,w)
 	local we=flr_w*w
 	if self.i==0 then
-		-- shadow
 		local se=1.2*we
 		rectfill(xe-se,ye-se,xe+se,ye+se,3)
 	end
@@ -964,7 +932,6 @@ function spawn_building(x,y,ramps)
 	return b
 end
 
-------------------------------
 -- bullet
 function blt_update(self)
 		self.z+=self.dz
@@ -1058,7 +1025,6 @@ function blts_update()
 		if b:update() then
 			blts_c+=1
 			blts[blts_c]=b
-			--insert into zbuffer
 			zbuf_write(b)
 		end
 	end
@@ -1066,7 +1032,6 @@ end
 function blts_resolve_collisions()
 	for j=1,blts_c do
 		local blt=blts[j]
-		-- against buildings
 		local b
 		for i=1,blds_c do
 			b=blds[i]
@@ -1077,7 +1042,6 @@ function blts_resolve_collisions()
 				break
 			end
 		end
-		-- against entities
 		for i=1,zbuf_phys_n do
 			local o=zbuf_phys[i]
 			if o.side!=blt.side and o:blt_hit(blt) then
@@ -1089,7 +1053,6 @@ function blts_resolve_collisions()
 	end
 end
 
---------------------------
 -- boss helpers
 function boss_init(x,y,z)
 	boss_enabled=true
@@ -1134,7 +1097,6 @@ function boss_update()
 	end
 end
 
----------------------------
 -- battleship boss (level 1)
 function spawn_bship(x,y)
  y+=256
@@ -1166,7 +1128,7 @@ function spawn_bship(x,y)
 	for j=1,32 do
 		local py=-32*(j-15)/3
 		for i=0,3 do
-			local t=nil
+			local t=nillocal t=nil
 			local ptype=fget(mget(2+i,j))
 			local px=32*(i-3)/3
 			if ptype==1 then
@@ -1281,7 +1243,6 @@ function turret_blt_hit(self,blt)
 	return false
 end
 
--------------------------
 -- zbuffer
 function zbuf_clear()
 	zbuf_n=0
@@ -1311,7 +1272,6 @@ function zbuf_draw()
 	end
 end
 
----------------------------
 -- game loop
 local game_screen={}
 function game_screen:update()
@@ -1326,7 +1286,7 @@ function game_screen:update()
 	blds_c=0
 	for i=1,n do
 		local b=blds[i]
-		if b.y-plyr.y>-128 then
+		if b.y-plyr.y>world_out then
 			b.touch=0
 			for f=1,#b.floors do
 				zbuf_write(b.floors[f])
@@ -1440,11 +1400,11 @@ function game_screen:draw()
 	palt(0,false)
 	palt(3,true)
 	draw_floor()
-	--draw_shadow()
+	draw_shadow()
 
 	zbuf_draw()
-	--draw_top_banner(8,2)
-	--draw_spd(8,120)
+	draw_top_banner(8,2)
+	draw_spd(8,120)
 	palt()
 	
 	if plyr_zmin!=plyr_zmax and plyr.z==plyr_zmin and band(time_t,31)>15 then
@@ -1452,17 +1412,6 @@ function game_screen:draw()
 		txt_print("take off",64,100,10)
 		txt_options()
 	end
-	
-	rectfill(0,0,127,7,1)
-	print("\150:"..flr(100*stat(1)+0.5).."% \152:"..flr(stat(0)+0.5).."kb",1,1,7)
-
-	--[[
-	txt_options(false,0)
-	txt_print("blds :"..blds_c,2,16,7)
-	txt_print("nmies:"..nmies_c,2,24,7)
-	txt_options()
-	--print("blts :"..blts_c,0,18,12)
-	]]
 end
 function cam_rotate_async(from,to,steps)
 	local z=plyr.z
@@ -1532,11 +1481,11 @@ title_screen={}
 title_pic=".a163.cecriekbafcr.a13.fcrk.a12.qqkvkvkvkvklnvkd.a24.kv(.a18.ijvkljv(givkn.a12.uukfb.a12.cvkvkkvklvkuvkn.a24.ivkf.a18.fvk)fvkvbvkvb.a11.rskve.a15.rijvknvkvwkvvkb.a22.vkvf.a17.uukvwvkvwvkvg.a10.iymkvs.a15.emgvkvgtzukvwnn.a22.ukvwb.a16.qskvuwkv(wkv(.a11.bllvkc.a14.qiuukv(m]ajv(wvb.a8.qskve.a7.rqkv(gacriecbiukfaukaaakkvskkvk)kvkdqivkvkvaaivmkvkjaivkvkvk.a8.qqkvktvdevkjpvskpvskpvskkvsikvsabskjkvk)askjkvkbev{jkvcaaijvkcjvkklvknuukfjvknuukfrukfbikvsukvc.a8.ckvknwoquknlvkkjvkkjvkkjvkvkvkcquknivkntuknqukfqukvsieaaaevkvkvklnvkvbskjfskvfskvntkvuskvuskvk.a8.iivkvz(bskvnvkvnvkjnvkvnvkvevkvnvkvgvkvnskvnvkvfskvuwvdaaquknsukvwvkvwiecvvkvsukvw)kvk)kvs(kvkb.a9.vkvgldikvwvkvwvkvwvkv(ukv(ukv(ukv(ukvwjkvwtkvwikvwnglaaqskv(wkv(wkv(wkv(ukv(wkv({lvknlvknlvkf.a9.ukv(mnajv(wkv(wkvzwkv(wkvktkvktkvktkvzgjv(gjv(cjv(ovkaaaikvg)kvk)kvkljvk)evk)jvk)evkjnvkjnvkt.a9.ikvjtvbevk)jvg)kvs(kvg)kvsmjvsmjvgnjvg)evgjjvglevkl.a6.jvjkft(mhvknhvzuru(mhv(mtszevtzmsszmc.a9.zmgnwgqszmtsjkhtjkhtjkhtjsftjsftjsftjktszeriekrszmb.a5.umgjvmgt]mgt]mgtgkgtnkgtnkgtekgtecrif.a9.etjsz(akgtnkgj]mgj]mgj]mgjwmgjgkgjwmgjnkgt]crifkgtf.a5.qszevszevtzmwjzezizmwjzmwjzmsizmsmwg.a11.kgjgldizmwjzevtzevtzevtzezizezizezizevjzevjzevizmw.a6.kgtukgtugftugftedftugftugftjcftjkxlqqiec.a6.ieczmnariugriugriecriugriedriedriecriugriugriucrieb.a5.eecriecr(ecr(ecriecr(ecriecriecriaaaeecr.a7.rietvbccr(ecr(ecriecr(ecrmecrmccriccr(ecriecrkccrk.a5.iriecriejtiejtiebriejtiebriebriecriecriec.a6.crqmwgaabtz(ftzkgtz(gtv)gtvk]wf(gtvnglh(]ox(]ovmglb.a5.ntzmgtzkntzkgtzmgtzkgtzmgtvlwoxlvkv)]ofc.a8.btz(aae(]ov(]ov)]ox)]kv)]k)mwiv)]ox)fqzmgtzm]ix)f.a5.u(]ox)]ou(]ou(]ox)]ku)]ox)]kzmgtzmgtzmf.a9.ekvkb.a21.vkv.a9.vkvkvkf.a37.qiecriecri.a312"
 scores={
 	--name/score/last?
-	{"aaa",4000,true},
-	{"bbb",3000,false},
-	{"ccc",2000,false},
-	{"ddd",1500,false},
-	{"eee",1000,false},
+	{"cat",4000,true},
+	{"jlt",3000,false},
+	{"pol",2000,false},
+	{"ben",1500,false},
+	{"frd",1000,false},
 }
 ranks={"1st","2nd","3rd","4th","5th"}
 game_starting=false
@@ -1886,13 +1835,13 @@ __gfx__
 33333333333333333333333333333333333333333333333333000033333333333330333333333300003333333333333300033333333333333333333353333333
 33333333333333333333333333333333333333333333333333388333333333333333333333333300033333333333333300033333333333333333333353333333
 3b000000000600a006000000000b000000000000000d0560cd000000000000003333333333333330333333333333333000033333333333333377333300000000
-00606060606000800040700000000006060007000600500000000000000000003333333333333333333333333333333000033333333333333777773300000000
-00000004008555555554048000000600000000004845000000000000000000003333333333333333333333333333333333333333333333337777777300070000
-00004440445800800045555500000004600700555554000900000000000000f03333333333333333333333333333333333333333333333333777777700770000
-55555555558400000004048055500400004055804840000000000000000000003333333333333333333333333333333333333333333333333777777707777770
-00004440006000000600700000055555005580060870700000000000000000003333333333333333333333333333333333333333333333333377777700770000
-0060000400060000000080000000004055400000d000000000000000000000003333333333333333333333333333333333333333333333333377777300070000
-00000600600000000000060000000606000606000000007000000000000000003333333333333333333333333333333333333333333333333337773300000000
+00606060606000000040700000000006060007070600500000000000000000003333333333333333333333333333333000033333333333333777773300000000
+00000004008555555554848000000600000000404845000000000000000000003333333333333333333333333333333333333333333333337777777300070000
+00004440445848000045555500000004600704555554000900000000000000f03333333333333333333333333333333333333333333333333777777700770000
+55555555558480000604848055500400004055804840000000000000000000003333333333333333333333333333333333333333333333333777777707777770
+00004440006000000000700000055555045584060807000000000000000000003333333333333333333333333333333333333333333333333377777700770000
+0060000400060000006000000000004055408040d070000000000000000000003333333333333333333333333333333333333333333333333377777300070000
+00000600600000000000000000000606000606000000007000000000000000003333333333333333333333333333333333333333333333333337773300000000
 33333333300033333333333333333033333300033333333333333330003333333333333333333301333333333333333331333333333333033333333300000000
 33333333300033333333333333300003333300033333333333333330003333000333333333333301333333333333333301333333333333013333333300000000
 33003333300033333003333333330003333300333333333333333333003333000033333333333301333333333333333301333333333333013333333300000000
