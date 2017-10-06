@@ -10,20 +10,82 @@ local plyr_acc=0.05
 local frames_lr={17,18,19,18,17}
 local frames_up={33,34,35}
 local frames_dn={49,50,51}
--- weapon sprite
-local wp_spr={
-	20 --uzi
+-- weapons catalog
+local uzi={
+	id=1,
+	frames={
+		20, --east
+		21 --north
+	},
+	blt_frames={
+		10, --east
+		11 --north
+	},
+	v=0.4, -- velocity
+	xy={
+		{1,0},
+		{0,0.5},
+		{-1,0},
+		{0,-0.5}},
+	ttl=30,
+	dly=4,
+	ammo=50, --max ammo
+	shake=0.1
 }
-local wp_xy={
-	{8,0},
-	{0,-6},
-	{-8,0},
-	{0,4}}
+-- modifiers
+--[[
+	weapon bounce
+	reduce fire dly
+	multiple bullets
 	
-local blts,blts_n={},0
+]]
+
+local blts={len=0}
+local parts={len=0}
 
 local time_t=0
 
+local face2unit={
+	{1,0}, --east
+	{0,1}, --north
+	{-1,0},
+	{0,-1}
+}
+local face2strip={
+	{strip=1,flipx=false,flipy=false}, --east
+	{strip=2,flipx=false,flipy=false}, --north
+	{strip=1,flipx=true,flipy=false},
+	{strip=2,flipx=false,flipy=true}
+}
+
+-- helper
+function foreach_update(a)
+	local n,c=a.len,0
+	a.len=0
+	local elt
+	for i=1,n do
+		elt=a[i]
+		if elt:update() then
+			c+=1
+			a[c]=elt
+		end
+	end
+	a.len=c
+end
+
+-- zbuffer
+function zbuf_write()
+end
+
+-- camera
+function cam_project(x,y)
+ local sx=x*8-4
+ local sy=y*8-4
+ local x,y=(plyr.x*8)-4,(plyr.y*8)-4
+ return 64+sx-x,64+sy-y
+end
+
+-- bullets
 function blt_update(self)
 	if self.t>time_t then
 			self.x+=self.dx
@@ -32,66 +94,27 @@ function blt_update(self)
 		end
 		return false
 end
-function blts_update()
-	local n=blts_n
-	blts_n=0
-	local b
-	for i=1,n do
-		b=blts[i]
-		if b:update() then
-			blts_n+=1
-			blts[blts_n]=b
-		end
-	end
-end
-function spawn_blt(x,y,dx,dy,side)
+function make_blt(a,wp)
+	local wpxy=wp.xy[a.facing+1]
+	local d=face2unit[a.facing+1]
 	local b={
-		x=x,y=y,
-		dx=dx,dy=dy,
-		t=time_t+30,
-		side=side or bad_side,
+		x=a.x+wpxy[1],y=a.y+wpxy[2],
+		wp=wp,
+		dx=wp.v*d[1],dy=wp.v*d[2],
+		t=time_t+wp.ttl,
+		side=a.side,
+		facing=a.facing,
 		update=blt_update
 	}
-	if dy<-0.01 then
-		b.facing=1
-		b.frames={11}
-	elseif dy>0.01 then
-		b.facing=3
-		b.frames={11}
-	else
-		b.facing=dx<-0.01 and 2 or 0
-		b.frames={10}
-	end
-	blts_n+=1
-	blts[blts_n]=b
+	blts.len+=1
+	blts[blts.len]=b
+end
+function draw_blt(b)
+	local sx,sy=cam_project(b.x,b.y)
+	local spr_options=face2strip[b.facing+1]
+	spr(b.wp.blt_frames[spr_options.strip],sx,sy,1,1,spr_options.flipx,spr_options.flipy)
 end
 
--- make an actor
--- and add to global collection
--- x,y means center of the actor
--- in map tiles (not pixels)
-function make_actor(x,y)
- local a={
-	 x=x,
-	 y=y,
-	 dx=0,
-	 dy=0,
-	 frames={0},
-	 frame=0,
-	 inertia=0.6,
-	 bounce=1,
-	 wp=0,
-	 fire_t=0,
-	 w=0.4,
-	 h=0.4,
-	 facing=0 -- trig order e/n/w/s
- }
- add(actors,a)
- 
- return a
-end
-
-----------------------
 -- map
 function solid(x, y)
  return fget(mget(x,y),7)
@@ -148,14 +171,31 @@ function solid_a(a, dx, dy)
  return solid_actor(a, dx, dy) 
 end
 
-----------------------
 -- actor
+-- x,y in map tiles (not pixels)
+function make_actor(x,y)
+ local a={
+	 x=x,
+	 y=y,
+	 dx=0,
+	 dy=0,
+	 frames={},
+	 frame=0,
+	 inertia=0.6,
+	 bounce=1,
+	 wp=0,
+	 fire_dly=0,
+	 w=0.4,
+	 h=0.4,
+	 facing=0, -- trig order e/n/w/s
+	 side=bad_side,
+	 draw=draw_actor
+ }
+ add(actors,a) 
+ return a
+end
+
 function move_actor(a)
-
- -- only move actor along x
- -- if the resulting position
- -- will not overlap with a wall
-
  if not solid_a(a,a.dx,0) then
   a.x+=a.dx
  else   
@@ -178,58 +218,44 @@ function move_actor(a)
  
  a.frame += abs(a.dx) * 4
  a.frame += abs(a.dy) * 4
- a.frame %= #a.frames
-end
-function cam_project(x,y)
- local sx=x*8-4
- local sy=y*8-4
- local x,y=(plyr.x*8)-4,(plyr.y*8)-4
- return 64+sx-x,64+sy-y
 end
 
 function draw_actor(a)
 	local sx,sy=cam_project(a.x,a.y)
 	local wp=a.wp
-	if wp and wp!=0 then
-		local wxy=wp_xy[a.facing+1]
-		if a.facing==1 or a.facing==3 then
-			spr(wp_spr[a.wp]+1,sx+wxy[1],sy+wxy[2],1,1,false,a.facing==3)			
-		else
-			spr(wp_spr[a.wp],sx+wxy[1],sy+wxy[2],1,1,a.facing==2)			
-		end
-	end	
- spr(a.frames[flr(a.frame)+1],sx,sy,1,1,a.facing==2)
- -- shadow
- spr(16,sx,sy+8)
+	local spr_options=face2strip[a.facing+1]
+	if wp then
+		local wxy=wp.xy[a.facing+1]
+		spr(wp.frames[spr_options.strip],sx+8*wxy[1],sy+8*wxy[2],1,1,spr_options.flipx,spr_options.flipy)
+	end
+	local frames=a.frames[spr_options.strip]
+	spr(frames[flr(a.frame%#frames)+1],sx,sy,1,1,a.facing==2)
+	-- shadow
+	spr(16,sx,sy+8)
 end
 
 function control_player()
 
  -- how fast to accelerate
- local d={1,0}
- if (btn(0)) plyr.dx-=plyr_acc d={-1,0}
- if (btn(1)) plyr.dx+=plyr_acc d={1,0} 
- if (btn(2)) plyr.dy-=plyr_acc d={0,-1}
- if (btn(3)) plyr.dy+=plyr_acc d={0,1}
+ local facing=plyr.facing
+ if (btn(0)) plyr.dx-=plyr_acc facing=2
+ if (btn(1)) plyr.dx+=plyr_acc facing=0
+ if (btn(2)) plyr.dy-=plyr_acc facing=3
+ if (btn(3)) plyr.dy+=plyr_acc facing=1
 
 	if btn(4) then
 		plyr.fire_t=time_t+4
-		spawn_blt(plyr.x,plyr.y,0.2*d[1],0.2*d[2])
+		make_blt(plyr,plyr.wp)
+	else
+		plyr.facing=facing
 	end
 	
 	-- keep fire direction a little bit
-	if plyr.fire_t<time_t then
-		if plyr.dy<-0.01 then
-			plyr.facing=1
-			plyr.frames=frames_up
-		elseif plyr.dy>0.01 then
-			plyr.facing=3
-			plyr.frames=frames_dn
-		else
-			plyr.frames=frames_lr
-			plyr.facing=plyr.dx<-0.01 and 2 or 0
-		end
+	--[[
+	if plyr.fire_dly<time_t then
+		plyr.facing=facing
 	end
+	]]
 	
  -- play a sound if moving
  -- (every 4 ticks)
@@ -242,9 +268,9 @@ end
 
 function _update60()
 	time_t+=1
- control_player(plyr)
- foreach(actors,move_actor)
- blts_update()
+	control_player(plyr)
+	foreach(actors,move_actor)
+	foreach_update(blts)
 end
 
 function _draw()
@@ -254,9 +280,9 @@ function _draw()
  palt(0,false)
  palt(14,true)
  foreach(actors,draw_actor)
- for i=1,blts_n do
+ for i=1,blts.len do
  	local b=blts[i]
- 	draw_actor(b)
+ 	draw_blt(b)
  end
  palt(0,false)
  map(0,0,64-x,64-y,32,32,2)
@@ -267,9 +293,12 @@ end
 
 function _init() 
  plyr=make_actor(7,6)
- plyr.frames=frames_lr
- plyr.wp=1 --uzi
- plyr_wp_frames=uzi_frames
+ plyr.frames={
+	 frames_lr,
+	 frames_up,
+	 frames_lr,
+	 frames_dn}
+ plyr.wp=uzi
 end
 
 
@@ -282,14 +311,14 @@ __gfx__
 00700700055555500555555005555550000000000000000000000000000000000000000000000000ee9999eeee9999ee00000000000000000000000000000000
 0000000005000050e050050ee005500e000000000000000000000000000000000000000000000000eeeeeeeeeee99eee00000000000000000000000000000000
 00000000e0eeee0eee0ee0eeeee00eee000000000000000000000000000000000000000000000000eeeeeeeeeeeeeeee00000000000000000000000000000000
-55555555ee00000eee00000eee00000eeeeeeeeeeeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
-5e5e5e5ee0999aa0e09999a0e0999990eeeeeeeeeeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
-eeeeeeee099414100999414009999410eeeeeeeeeeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
+55555555ee00000eee00000eee00000eeeeeeeeeeee00eee00000000000000000000000000000000000000000000000000000000000000000000000000000000
+5e5e5e5ee0999aa0e09999a0e0999990eeeeeeeeeee00eee00000000000000000000000000000000000000000000000000000000000000000000000000000000
+eeeeeeee099414100999414009999410eeeeeeeeeee00eee00000000000000000000000000000000000000000000000000000000000000000000000000000000
 eeeeeeee09444440099444400999444000000eeeeee0eeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
 eeeeeeee044455500444455004444450000eeeeeeee0eeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
-eeeeeeee0333bab003333ba0033333b0e0eeeeeeeee00eee00000000000000000000000000000000000000000000000000000000000000000000000000000000
-eeeeeeee05000050e050050ee005500ee0eeeeeeeee00eee00000000000000000000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeee0eeee0eee0ee0eeeee00eeeeeeeeeeeeee00eee00000000000000000000000000000000000000000000000000000000000000000000000000000000
+eeeeeeee0333bab003333ba0033333b0e0eeeeeeeeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
+eeeeeeee05000050e050050ee005500ee0eeeeeeeeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeee0eeee0eee0ee0eeeee00eeeeeeeeeeeeeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
 88888888ee0000eeee0000eeee0000ee000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 88888888e0999a0ee099aa0ee0999a0e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 88888888099999a009999aa0099999a0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
