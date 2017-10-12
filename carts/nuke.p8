@@ -102,7 +102,7 @@ local uzi={
 
 local blts={len=0}
 local parts={len=0}
-
+local zbuf={len=0}
 local time_t=0
 
 local face2unit={
@@ -111,6 +111,17 @@ local face2unit={
 	{-1,0},
 	{0,-1}
 }
+local face2rndunit={}
+for i=0,#face2unit-1 do
+	local rndunit={}
+	for k=1,32 do
+		local ang=i/#face2unit+0.1*(rnd(1)-0.5)
+		local dx,dy=cos(ang),-sin(ang)
+		add(rndunit,{dx,dy})
+	end
+	add(face2rndunit,rndunit)
+end
+
 local face1strip={
 	{strip=1,flipx=false,flipy=false}, --east
 	{strip=1,flipx=false,flipy=false}, --north
@@ -142,11 +153,57 @@ function foreach_update(a)
 			a[c]=elt
 		end
 	end
+	-- avoid mlk
+	for i=c+1,n do
+		a[i]=nil
+	end
 	a.len=c
 end
 function lerp(a,b,t)
 	return a*(1-t)+b*t
 end
+function smoothstep(t)
+	t=mid(t,0,1)
+	return t*t*(3-2*t)
+end
+-- https://github.com/morgan3d/misc/tree/master/p8sort
+function sort(t,n)
+	if (n<2) return
+ local i,j,temp
+ local lower = flr(n/2)+1
+ local upper = n
+ while 1 do
+  if lower>1 then
+   lower-=1
+   temp=t[lower]
+  else
+   temp=t[upper]
+   t[upper]=t[1]
+   upper-=1
+   if upper==1 then
+    t[1]=temp
+    return
+   end
+  end
+
+  i=lower
+  j=lower*2
+  while j<=upper do
+   if j<upper and t[j].key<t[j+1].key then
+    j += 1
+   end
+   if temp.key<t[j].key then
+    t[i] = t[j]
+    i = j
+    j += i
+   else
+    j = upper + 1
+   end
+  end
+  t[i] = temp
+ end
+end
+
 -- collision
 function circline_coll(x,y,r,x0,y0,x1,y1)
 	local dx,dy=x1-x0,y1-y0
@@ -159,7 +216,20 @@ function circline_coll(x,y,r,x0,y0,x1,y1)
 	return (ix*ix+iy*iy)<r*r	
 end
 -- zbuffer
-function zbuf_write()
+function zbuf_clear()
+	zbuf.len=0
+end
+function zbuf_write(obj)
+	local xe,ye=cam_project(obj.x,obj.y)
+	zbuf.len+=1
+	zbuf[zbuf.len]={obj,{xe,ye},key=ye}
+end
+function zbuf_draw()
+	sort(zbuf,zbuf.len)
+	for i=1,zbuf.len do
+		local o,pos=zbuf[i][1],zbuf[i][2]
+		o:draw(pos[1],pos[2])
+	end
 end
 
 -- camera
@@ -202,12 +272,12 @@ function update_part(self)
 	self.y+=self.dy
 	self.dx*=self.inertia
 	self.dy*=self.inertia
+	zbuf_write(self)
 	return true
 end
-function draw_circpart(self)
+function draw_circpart(self,x,y)
 	local t=flr(#self.ramp*(self.t-time_t)/self.dly)
 	local c=self.ramp[t+1]
-	local x,y=cam_project(self.x,self.y)
 	circfill(x,y,8*self.r,c)
 end
 
@@ -229,6 +299,7 @@ function blt_update(self)
 		end
 		self.prevx,self.prevy=x0,y0
 		self.x,self.y=x1,y1
+		zbuf_write(self)
 		return true
 		end
 	return false
@@ -236,27 +307,28 @@ end
 function make_blt(a,wp)
 	local wpxy=wp.xy[a.facing+1]
 	-- todo: randomized "facing" vectors
-	local d=face2unit[a.facing+1]
-	local ang=a.facing/4+0.1*rnd(1)-0.05
-	local dx,dy=cos(ang),-sin(ang)
+	local d=face2rndunit[a.facing+1][flr(rnd(32))+1]
 	local b={
 		x=a.x+wpxy[1],y=a.y+wpxy[2],
 		wp=wp,
-		dx=wp.v*d[1]+dx/4,dy=wp.v*d[2]+dy/4,
+		dx=wp.v*d[1],
+		dy=wp.v*d[2],
 		t=time_t+wp.ttl,
 		side=a.side,
 		facing=a.facing,
-		update=blt_update
+		update=blt_update,
+		draw=draw_blt
 	}
 	-- for fast collision
 	b.prevx,b.prevy=b.x,b.y
 	blts.len+=1
 	blts[blts.len]=b
 end
-function draw_blt(b)
-	local sx,sy=cam_project(b.x,b.y)
+function draw_blt(b,x,y)
+	palt(0,false)
+	palt(14,true)
 	local spr_options=face2strip[b.facing+1]
-	spr(b.wp.blt_frames[spr_options.strip],sx,sy,1,1,spr_options.flipx,spr_options.flipy)
+	spr(b.wp.blt_frames[spr_options.strip],x,y,1,1,spr_options.flipx,spr_options.flipy)
 end
 
 -- map
@@ -365,9 +437,8 @@ function solid_a(a, dx, dy)
 end
 
 -- custom actors
-function draw_anim_spr(self)
-	local i=flr(#self.ramp*(1-(self.t-time_t)/self.dly))
-	local x,y=cam_project(self.x,self.y)
+function draw_anim_spr(self,x,y)
+	local i=flr(#self.frames*(1-(self.t-time_t)/self.dly))
 	spr(a.frames[i+1],x-8,y-8)
 end
 
@@ -375,7 +446,9 @@ function make_blast(x,y)
 	pause_t=4
 	local p=make_actor(x,y,4)
 	p.w=0.8
-	p.spr={}
+	p.dmg=bor(dmg_phys,15)
+	p.side=all_side
+	p.spr={196,198,200,202,204}
 	p.draw=draw_anim_spr
 	return p
 end
@@ -431,10 +504,11 @@ function move_actor(a)
  
  a.frame += abs(a.dx) * 4
  a.frame += abs(a.dy) * 4
+ 
+ zbuf_write(a)
 end
 
-function draw_actor(a)
-	local sx,sy=cam_project(a.x,a.y)
+function draw_actor(a,sx,sy)
 	local sw=flr(a.w)+1
 	sx,sy=sx-4*sw,sy-4*sw
 	local wp=a.wp
@@ -502,6 +576,7 @@ function _update60()
 	
 	time_t+=1
 	
+	zbuf_clear()
 	control_player(plyr)
 	
 	foreach(actors,move_actor)
@@ -514,17 +589,8 @@ function _draw()
  cls(1)
  local x,y=(plyr.x*8)-4,(plyr.y*8)-4
  map(0,0,64-x,64-y,32,32,1)
-	for a in all(actors) do
-		a:draw()
-	end
- for i=1,blts.len do
- 	local b=blts[i]
- 	draw_blt(b)
- end
- for i=1,parts.len do
- 	local p=parts[i]
- 	p:draw()
- end
+ zbuf_draw()
+ 
  palt()
  map(0,0,64-x,64-y,32,32,2)
  
@@ -573,7 +639,7 @@ function _init()
 	
 	spawner(5,function(x,y)
 	 local bad_guy=make_actor(x,y)
-	 bad_guy.wp=uzi
+	 bad_guy.wp=base_gun
 	 bad_guy.frames={
 	 	{4,5,6}
 	 }
@@ -589,7 +655,7 @@ function _init()
 				dx/=d
 				dy/=d
 				self.dx=0.02*dx
-				self.dy=0.02*dy				
+				self.dy=0.02*dy
 				bad_guy.facing=flr(4*atan2(-dy,-dx))
 				if bad_guy.fire_dly<time_t then				
 					make_blt(bad_guy,bad_guy.wp)		
