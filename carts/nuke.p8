@@ -3,11 +3,10 @@ version 8
 __lua__
 local actors = {} --all actors in world
 
--- side masks
-local no_side=  0x0
+-- side
 local good_side=0x1
 local bad_side= 0x2
-local all_side= 0x3
+local any_side= 0x3
 -- damage type mask
 local dmg_phys=   0x0100
 local dmg_contact=0x0200
@@ -32,10 +31,7 @@ local base_gun={
 		20, --east
 		21 --north
 	},
-	blt_frames={
-		10, --east
-		11 --north
-	},
+	blt_frames={42,42},
 	dmg=bor(dmg_phys,1),
 	v=0.1, -- velocity
 	xy={
@@ -53,10 +49,7 @@ local acid_gun={
 		20, --east
 		21 --north
 	},
-	blt_frames={
-		10, --east
-		11 --north
-	},
+	blt_frames={26,27},
 	bounce=true,
 	dmg=bor(dmg_poison,5),
 	v=0.1, -- velocity
@@ -83,9 +76,9 @@ local uzi={
 	v=0.4, -- velocity
 	xy={
 		{1,0},
-		{0,0.8},
+		{0,-0.8},
 		{-1,0},
-		{0,-0.8}},
+		{0,0.8}},
 	ttl=30,
 	dly=5,
 	ammo=50, --max ammo
@@ -98,6 +91,7 @@ local uzi={
 	multiple bullets
 	reduced spread
 	reduced damage
+	world inertia
 ]]
 
 local blts={len=0}
@@ -107,9 +101,9 @@ local time_t=0
 
 local face2unit={
 	{1,0}, --east
-	{0,1}, --north
+	{0,-1}, --north
 	{-1,0},
-	{0,-1}
+	{0,1}
 }
 local face2rndunit={}
 for i=0,#face2unit-1 do
@@ -124,15 +118,15 @@ end
 
 local face1strip={
 	{strip=1,flipx=false,flipy=false}, --east
-	{strip=1,flipx=false,flipy=false}, --north
+	{strip=1,flipx=false,flipy=true},
 	{strip=1,flipx=true,flipy=false},
-	{strip=1,flipx=false,flipy=true}
+	{strip=1,flipx=false,flipy=false} --north
 }
 local face2strip={
 	{strip=1,flipx=false,flipy=false},
-	{strip=1,flipx=false,flipy=false},
-	{strip=2,flipx=true,flipy=false},
-	{strip=1,flipx=false,flipy=true}
+	{strip=2,flipx=false,flipy=true},
+	{strip=1,flipx=true,flipy=false},
+	{strip=2,flipx=false,flipy=false}
 }
 local face3strip={
 	{strip=1,flipx=false,flipy=false},
@@ -292,7 +286,7 @@ function blt_update(self)
 		-- actors hit?
 		-- todo:get all hitable actors in range
 		for a in all(actors) do
-			if band(self.side,a.side)!=0 and circline_coll(a.x,a.y,a.w,x0,y0,x1,y1) then
+			if (self.side!=a.side or a.side==any_side) and circline_coll(a.x,a.y,a.w,x0,y0,x1,y1) then
 				a:hit(self.dmg)
 				return false
 			end
@@ -306,13 +300,12 @@ function blt_update(self)
 end
 function make_blt(a,wp)
 	local wpxy=wp.xy[a.facing+1]
-	-- todo: randomized "facing" vectors
-	local d=face2rndunit[a.facing+1][flr(rnd(32))+1]
+	--local d=face2rndunit[a.facing+1][flr(rnd(32))+1]
+	local d=face2unit[a.facing+1]
 	local b={
 		x=a.x+wpxy[1],y=a.y+wpxy[2],
 		wp=wp,
-		dx=wp.v*d[1],
-		dy=wp.v*d[2],
+		dx=wp.v*d[1],dy=wp.v*d[2],
 		t=time_t+wp.ttl,
 		side=a.side,
 		facing=a.facing,
@@ -437,9 +430,11 @@ function solid_a(a, dx, dy)
 end
 
 -- custom actors
-function draw_anim_spr(self,x,y)
-	local i=flr(#self.frames*(1-(self.t-time_t)/self.dly))
-	spr(a.frames[i+1],x-8,y-8)
+function draw_anim_spr(a,x,y)
+	palt(0,false)
+	palt(14,true)	
+	local i=lerp(1,#a.frames,(a.t-time_t)/a.dly)
+	spr(a.frames[i],x-8,y-8,2,2)
 end
 
 function make_blast(x,y)
@@ -448,8 +443,14 @@ function make_blast(x,y)
 	p.w=0.8
 	p.dmg=bor(dmg_phys,15)
 	p.side=all_side
-	p.spr={196,198,200,202,204}
+	p.t=time_t+12
+	p.dly=12
+	p.frames={192,194,196,198,200,202}
 	p.draw=draw_anim_spr
+	p.update=function(a)
+		if(a.t<time_t) del(actors,a)
+	end
+	p.hit=function() end
 	return p
 end
 
@@ -516,7 +517,7 @@ function draw_actor(a,sx,sy)
  palt(14,true)
 	if wp then
 		local wxy=wp.xy[a.facing+1]
-		local spr_options=face1strip[a.facing+1]
+		local spr_options=face2strip[a.facing+1]
 		spr(wp.frames[spr_options.strip],sx+8*wxy[1],sy+8*wxy[2],1,1,spr_options.flipx,spr_options.flipy)
 	end
 	-- shadow
@@ -536,6 +537,8 @@ function draw_actor(a,sx,sy)
 	spr(s,sx,sy,sw,sw,a.facing==2)
 	palt(a.palt or 14,false)
 	pal()
+	print(a.hp,sx+1,sy-12,0)
+	print(a.hp,sx,sy-12,7)
 end
 
 function control_player()
@@ -543,8 +546,8 @@ function control_player()
  -- how fast to accelerate
  if(btn(0)) plyr.dx-=plyr_acc facing=2
  if(btn(1)) plyr.dx+=plyr_acc facing=0
- if(btn(2)) plyr.dy-=plyr_acc facing=3
- if(btn(3)) plyr.dy+=plyr_acc facing=1
+ if(btn(2)) plyr.dy-=plyr_acc facing=1
+ if(btn(3)) plyr.dy+=plyr_acc facing=3
 
 	if wp and btn(4) and plyr.fire_dly<time_t then
 		plyr.fire_t=time_t+8
@@ -627,10 +630,10 @@ function _init()
 	 barrel.spr=128
 	 barrel.side=all_side
 	 barrel.hit=function(self,dmg)
-			if(band(dmg_contact,dmg)==0) return
-			self.hp-=band(dmg_mask,dmg)
+			if(band(dmg_contact,dmg)!=0) return
+			self.hit_t=time_t+8
+			self.hp-=1 --band(dmg_mask,dmg)
 			if self.hp<=0 then
-				self.hit_t=time_t+8
 				make_blast(self.x,self.y)
 				del(actors,self)
 			end
@@ -727,14 +730,14 @@ eeeeeeee044455500444455004444450000eeeeeeee0eeeee02820ee000000000000000000000000
 eeeeeeee0333bab003333ba0033333b0e0eeeeeeeeeeeeeeee020eee000000000000000000000000ee3bb3eeee3bb3ee00000000000000000000000000000000
 eeeeeeee05000050e050050ee005500ee0eeeeeeeeeeeeeeeee0eeee000000000000000000000000eeeeeeeeeee33eee00000000000000000000000000000000
 eeeeeeeee0eeee0eee0ee0eeeee00eeeeeeeeeeeeeeeeeeeeeeeeeee000000000000000000000000eeeeeeeeeeeeeeee00000000000000000000000000000000
-ee000eeeee0000eeee0000eeee0000ee000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-e0bbb0eee0999a0ee099aa0ee0999a0e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-e07770ee099999a009999aa0099999a0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-e03330ee099999a009999aa0099999a0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-e03a30ee044444400444444004444440000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-e03930ee03333bb00333bbb003333bb0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-e00000ee050000500500000000000050000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-e11111eee0eeee0ee0eeeeeeeeeeee0e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+ee000eeeee0000eeee0000eeee0000ee000000000000000000000000000000000000000000000000eeeeeeee0000000000000000000000000000000000000000
+e0bbb0eee0999a0ee099aa0ee0999a0e000000000000000000000000000000000000000000000000eeeeeeee0000000000000000000000000000000000000000
+e07770ee099999a009999aa0099999a0000000000000000000000000000000000000000000000000eeeaaeee0000000000000000000000000000000000000000
+e03330ee099999a009999aa0099999a0000000000000000000000000000000000000000000000000eea77aee0000000000000000000000000000000000000000
+e03a30ee044444400444444004444440000000000000000000000000000000000000000000000000eea77aee0000000000000000000000000000000000000000
+e03930ee03333bb00333bbb003333bb0000000000000000000000000000000000000000000000000eeeaaeee0000000000000000000000000000000000000000
+e00000ee050000500500000000000050000000000000000000000000000000000000000000000000eeeeeeee0000000000000000000000000000000000000000
+e11111eee0eeee0ee0eeeeeeeeeeee0e000000000000000000000000000000000000000000000000eeeeeeee0000000000000000000000000000000000000000
 ee000eeeee0000eeee0000eeee0000ee000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 e06660eee0999a0ee0999a0ee0999a0e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 e07770ee094141a0091414a0094141a0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
