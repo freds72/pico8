@@ -21,6 +21,9 @@ local frames_lr={17,18,19,18,17}
 local frames_up={33,34,35}
 local frames_dn={49,50,51}
 local pause_t=0
+-- blast
+local blast_frames={
+	192,194,196,198,200,202}
 -- camera
 local shkx,shky=0,0
 local cam_x,cam_y
@@ -39,8 +42,8 @@ local base_gun={
 		{0,0.8},
 		{-1,0},
 		{0,-0.8}},
-	ttl=30,
-	dly=5,
+	ttl=90,
+	dly=32,
 	ammo=50 --max ammo
 }
 local acid_gun={
@@ -153,6 +156,7 @@ function foreach_update(a)
 	end
 	a.len=c
 end
+function nop() end
 function lerp(a,b,t)
 	return a*(1-t)+b*t
 end
@@ -180,8 +184,7 @@ function sort(t,n)
    end
   end
 
-  i=lower
-  j=lower*2
+  i,j=lower,lower*2
   while j<=upper do
    if j<upper and t[j].key<t[j+1].key then
     j += 1
@@ -226,17 +229,56 @@ function zbuf_draw()
 	end
 end
 
+-- smart map
+local cmap={}
+local cmap_cells={0,1,129,128,127,-1,-129,-128,-127}
+function cmap_clear()
+	cmap={}
+end
+function cmap_write(obj)
+	local h=flr(obj.x)+128*flr(obj.y)
+	cmap[h]=cmap[h] or {}
+	add(cmap[h],obj)
+end
+local cmap_i,cmap_cell,cmap_h
+function cmap_near_iterator(x,y)
+	cmap_i,cmap_cell=0,1
+	cmap_h=flr(x)+128*flr(y)
+end
+function cmap_near_next()
+	if(cmap_cell==nil) assert()
+	while(cmap_cell<=9) do
+		local objs=cmap[cmap_h+cmap_cells[cmap_cell]]
+		if objs and cmap_i<=#objs then
+			local obj=objs[cmap_i]
+			cmap_i+=1
+			return obj
+		end
+		cmap_i=1
+		cmap_cell+=1
+	end
+	return nil
+end
+function cmap_draw()
+	local h=flr(plyr.x)+128*flr(plyr.y)
+
+	for k,v in pairs(cmap) do
+		local s=(h==k and "*" or "")
+		local x,y=cam_project(k%128,flr(k/128))
+		print(s..(#v),x,y,7)
+	end
+end
+
 -- camera
 function cam_shake(facing,pow)
-	facing/=4
-	local a=lerp(facing-0.1,facing+0.1,rnd(1))
-	shkx=pow*cos(a)
-	shky=pow*sin(a)
+	local u=face2rndunit[facing+1][flr(rnd(32))+1]
+	shkx=pow*u[1]
+	shky=pow*u[2]
 end
 function cam_update()
 	shkx*=-0.7-rnd(0.2)
 	shky*=-0.7-rnd(0.2)
-	if(abs(shkx)>0.5 and abs(shky)>0.5) camera(shkx,shky)
+	if(abs(shkx)>0.5 or abs(shky)>0.5) camera(shkx,shky)
 end
 function cam_track(x,y)
  cam_x,cam_y=(x*8)-4,(y*8)-4
@@ -260,6 +302,18 @@ function make_part(x,y,dly)
 	parts[parts.len]=p
 	return p
 end
+function make_static_part(x,y,spr,sw)
+	local p={
+		x=x,y=y,
+		sw=sw or 1,
+		update=zbuf_write,
+		draw=draw_spr_part
+	}
+	parts.len+=1
+	parts[parts.len]=p
+	return p
+end
+
 function update_part(self)
 	if(self.t<time_t) return false
 	self.x+=self.dx
@@ -269,10 +323,14 @@ function update_part(self)
 	zbuf_write(self)
 	return true
 end
-function draw_circpart(self,x,y)
+function draw_circ_part(self,x,y)
 	local t=flr(#self.ramp*(self.t-time_t)/self.dly)
 	local c=self.ramp[t+1]
 	circfill(x,y,8*self.r,c)
+end
+function draw_spr_part(self,x,y)
+	local sw=self.sw
+	spr(self.spr,x-4*sw,y-4*sw,sw,sw)
 end
 
 -- bullets
@@ -281,7 +339,10 @@ function blt_update(self)
 		local x0,y0=self.x,self.y
 		local x1,y1=x0+self.dx,y0+self.dy
 		local s=solid(x1,y0) or solid(x0,y1) or solid(x1,y1)
-		if(s) return false
+		if s then
+			-- todo: blt hit wall
+			return false
+		end
 		
 		-- actors hit?
 		-- todo:get all hitable actors in range
@@ -295,7 +356,7 @@ function blt_update(self)
 		self.x,self.y=x1,y1
 		zbuf_write(self)
 		return true
-		end
+	end
 	return false
 end
 function make_blt(a,wp)
@@ -386,7 +447,9 @@ end
 -- true if a will hit another
 -- actor after moving dx,dy
 function solid_actor(a,dx,dy)
- for a2 in all(actors) do
+	cmap_near_iterator(a.x,a.y)
+	local a2=cmap_near_next()
+	while a2 do
   if a2 != a then
    local x=(a.x+dx)-a2.x
    local y=(a.y+dy)-a2.y
@@ -419,6 +482,7 @@ function solid_actor(a,dx,dy)
     end    
    end
   end
+		a2=cmap_near_next()
  end
  return false
 end
@@ -433,7 +497,7 @@ end
 function draw_anim_spr(a,x,y)
 	palt(0,false)
 	palt(14,true)	
-	local i=lerp(1,#a.frames,(a.t-time_t)/a.dly)
+	local i=flr(lerp(1,#a.frames,1-(a.t-time_t)/a.ttl))
 	spr(a.frames[i],x-8,y-8,2,2)
 end
 
@@ -442,10 +506,10 @@ function make_blast(x,y)
 	local p=make_actor(x,y,4)
 	p.w=0.8
 	p.dmg=bor(dmg_phys,15)
-	p.side=all_side
+	p.side=any_side
 	p.t=time_t+12
-	p.dly=12
-	p.frames={192,194,196,198,200,202}
+	p.ttl=12
+	p.frames=blast_frames
 	p.draw=draw_anim_spr
 	p.update=function(a)
 		if(a.t<time_t) del(actors,a)
@@ -482,7 +546,7 @@ function move_actor(a)
 	if a.update then
 		a:update()
 	end
-	
+
  if not solid_a(a,a.dx,0) then
   a.x+=a.dx
  else   
@@ -505,8 +569,9 @@ function move_actor(a)
  
  a.frame += abs(a.dx) * 4
  a.frame += abs(a.dy) * 4
- 
+
  zbuf_write(a)
+	cmap_write(a)
 end
 
 function draw_actor(a,sx,sy)
@@ -537,8 +602,9 @@ function draw_actor(a,sx,sy)
 	spr(s,sx,sy,sw,sw,a.facing==2)
 	palt(a.palt or 14,false)
 	pal()
-	print(a.hp,sx+1,sy-12,0)
-	print(a.hp,sx,sy-12,7)
+	-- debug
+	-- print(a.hp,sx+1,sy-12,0)
+	-- print(a.hp,sx,sy-12,7)
 end
 
 function control_player()
@@ -578,7 +644,8 @@ function _update60()
 	pause_t=0
 	
 	time_t+=1
-	
+
+	cmap_clear()	
 	zbuf_clear()
 	control_player(plyr)
 	
@@ -590,15 +657,25 @@ end
 
 function _draw()
  cls(1)
- local x,y=(plyr.x*8)-4,(plyr.y*8)-4
- map(0,0,64-x,64-y,32,32,1)
+ map(0,0,64-cam_x,64-cam_y,32,32,1)
  zbuf_draw()
  
  palt()
- map(0,0,64-x,64-y,32,32,2)
- 
+ map(0,0,64-cam_x,64-cam_y,32,32,2)
+
+	--cmap_draw() 
+	local c=0
+	cmap_near_iterator(plyr.x,plyr.y)
+	local a2=cmap_near_next()
+	while a2 do
+		c+=1
+		a2=cmap_near_next()
+	end
+	print(c,2,9,7)
+	
  rectfill(0,0,127,8,1)
- print(stat(1),2,2,7)
+ local cpu=flr(1000*stat(1))/10
+ print(""..cpu.."% "..stat(4).."kb",2,2,7)
 end
 
 function spawner(n,fn)
@@ -632,7 +709,7 @@ function _init()
 	 barrel.hit=function(self,dmg)
 			if(band(dmg_contact,dmg)!=0) return
 			self.hit_t=time_t+8
-			self.hp-=1 --band(dmg_mask,dmg)
+			self.hp-=1--band(dmg_mask,dmg)
 			if self.hp<=0 then
 				make_blast(self.x,self.y)
 				del(actors,self)
