@@ -4,15 +4,13 @@ __lua__
 local actors = {} --all actors in world
 
 -- side
-local good_side=0x1
-local bad_side= 0x2
-local any_side= 0x3
+local good_side,bad_side,any_side=0x1,0x2,0x3
 -- damage type mask
 local dmg_phys=   0x0100
 local dmg_contact=0x0200
 local dmg_energy= 0x0400
 local dmg_poison= 0x0800
-local dmg_mask=   0x00ff
+local dmg_mask=   0xff
 
 -- player settings
 local plyr
@@ -30,60 +28,60 @@ local cam_x,cam_y
 -- weapons catalog
 local base_gun={
 	id=1,
-	frames={
-		20, --east
-		21 --north
-	},
-	blt_frames={42,42},
+	sx=32,sy=8,
+	blt_frames={42,42,42},
 	dmg=bor(dmg_phys,1),
+	spread=0.05,
 	v=0.1, -- velocity
-	xy={
-		{1,0},
-		{0,0.8},
-		{-1,0},
-		{0,-0.8}},
 	ttl=90,
 	dly=32,
 	ammo=50 --max ammo
 }
 local acid_gun={
 	id=1,
-	frames={
-		20, --east
-		21 --north
-	},
-	blt_frames={26,27},
+	blt_frames={26,27,28},
+	blts=3,
+	spread=0.1,
 	bounce=true,
 	dmg=bor(dmg_poison,5),
 	v=0.1, -- velocity
-	xy={
-		{1,0},
-		{0,0.8},
-		{-1,0},
-		{0,-0.8}},
+	xy={1,0},
 	ttl=30,
 	dly=5,
 	ammo=50 --max ammo
 }
 local uzi={
 	id=2,
-	frames={
-		20, --east
-		21 --north
-	},
+	sx=32,sy=8,
 	blt_frames={
 		10, --east
+		12,
 		11 --north
 	},
+	spread=0.05,
 	dmg=bor(dmg_phys,2),
 	v=0.4, -- velocity
-	xy={
-		{1,0},
-		{0,-0.8},
-		{-1,0},
-		{0,0.8}},
 	ttl=30,
 	dly=5,
+	ammo=50, --max ammo
+	shk_pow=2 -- shake power
+}
+local shotgun={
+	id=2,
+	icon=37,
+	sx=32,sy=16,
+	blt_frames={
+		10, --east
+		12,
+		11 --north
+	},
+	spread=0.1,
+	blts=3,
+	dmg=bor(dmg_phys,2),
+	inertia=0.95,
+	v=0.3, -- velocity
+	ttl=30,
+	dly=56,
 	ammo=50, --max ammo
 	shk_pow=2 -- shake power
 }
@@ -102,17 +100,13 @@ local parts={len=0}
 local zbuf={len=0}
 local time_t=0
 
-local face2unit={
-	{1,0}, --east
-	{0,-1}, --north
-	{-1,0},
-	{0,1}
-}
+local face2unit={}
 local face2rndunit={}
-for i=0,#face2unit-1 do
+for i=0,7 do
+	add(face2unit,{cos(i/7),-sin(i/7)})
 	local rndunit={}
 	for k=1,32 do
-		local ang=i/#face2unit+0.1*(rnd(1)-0.5)
+		local ang=i/7+0.05*(rnd(1)-0.5)
 		local dx,dy=cos(ang),-sin(ang)
 		add(rndunit,{dx,dy})
 	end
@@ -120,21 +114,33 @@ for i=0,#face2unit-1 do
 end
 
 local face1strip={
-	{strip=1,flipx=false,flipy=false}, --east
-	{strip=1,flipx=false,flipy=true},
-	{strip=1,flipx=true,flipy=false},
-	{strip=1,flipx=false,flipy=false} --north
+	{flipx=false,flipy=false}, --east
+	{flipx=false,flipy=false},
+	{flipx=false,flipy=false},
+	{flipx=true,flipy=false},
+	{flipx=true,flipy=false},
+	{flipx=true,flipy=false},
+	{flipx=false,flipy=false}, --north
+	{flipx=false,flipy=false} --north
 }
 local face2strip={
 	{strip=1,flipx=false,flipy=false},
-	{strip=2,flipx=false,flipy=true},
+	{strip=2,flipx=false,flipy=false},
+	{strip=2,flipx=false,flipy=false},
 	{strip=1,flipx=true,flipy=false},
-	{strip=2,flipx=false,flipy=false}
+	{strip=2,flipx=false,flipy=true},
+	{strip=2,flipx=false,flipy=true},
+	{strip=2,flipx=false,flipy=true},
+	{strip=2,flipx=false,flipy=true}
 }
 local face3strip={
 	{strip=1,flipx=false,flipy=false},
 	{strip=2,flipx=false,flipy=false},
+	{strip=2,flipx=false,flipy=false},
+	{strip=3,flipx=false,flipy=false},
 	{strip=1,flipx=true,flipy=false},
+	{strip=3,flipx=false,flipy=false},
+	{strip=3,flipx=true,flipy=false},
 	{strip=3,flipx=false,flipy=false}
 }
 
@@ -163,6 +169,21 @@ end
 function smoothstep(t)
 	t=mid(t,0,1)
 	return t*t*(3-2*t)
+end
+function rspr(sx,sy,x,y,a)
+	local ca,sa=cos(a),sin(a)
+ local dx,dy,dx0,dy0
+ for ix=0,7 do
+  dx=ix-4
+  dx0,dy0=dx*ca+4,dx*sa+4
+  for iy=0,7 do
+   dy=iy-4
+   local c=sget(sx+band(dx0-dy*sa,7),sy+band(dy0+dy*ca,7))
+   if c!=14 then
+   	pset(x+ix,y+iy,c)
+   end
+  end
+ end
 end
 -- https://github.com/morgan3d/misc/tree/master/p8sort
 function sort(t,n)
@@ -232,8 +253,15 @@ end
 -- smart map
 local cmap={}
 local cmap_cells={0,1,129,128,127,-1,-129,-128,-127}
-function cmap_clear()
+function cmap_clear(objs)
+	local h,obj
 	cmap={}
+	for i=1,#objs do
+		obj=objs[i]
+		h=flr(obj.x)+128*flr(obj.y)
+		cmap[h]=cmap[h] or {}
+		add(cmap[h],obj)
+	end
 end
 function cmap_write(obj)
 	local h=flr(obj.x)+128*flr(obj.y)
@@ -242,15 +270,17 @@ function cmap_write(obj)
 end
 local cmap_i,cmap_cell,cmap_h
 function cmap_near_iterator(x,y)
-	cmap_i,cmap_cell=0,1
+	cmap_i,cmap_cell=1,1
 	cmap_h=flr(x)+128*flr(y)
 end
 function cmap_near_next()
 	if(cmap_cell==nil) assert()
 	while(cmap_cell<=9) do
-		local objs=cmap[cmap_h+cmap_cells[cmap_cell]]
+		local h=cmap_h+cmap_cells[cmap_cell]
+		local objs=cmap[h]
 		if objs and cmap_i<=#objs then
 			local obj=objs[cmap_i]
+			if(not obj) assert()
 			cmap_i+=1
 			return obj
 		end
@@ -270,10 +300,9 @@ function cmap_draw()
 end
 
 -- camera
-function cam_shake(facing,pow)
-	local u=face2rndunit[facing+1][flr(rnd(32))+1]
-	shkx=pow*u[1]
-	shky=pow*u[2]
+function cam_shake(u,v,pow)
+	shkx=pow*u
+	shky=pow*v
 end
 function cam_update()
 	shkx*=-0.7-rnd(0.2)
@@ -302,16 +331,37 @@ function make_part(x,y,dly)
 	parts[parts.len]=p
 	return p
 end
-function make_static_part(x,y,spr,sw)
+function make_static_spr_part(x,y,spr,sw)
 	local p={
 		x=x,y=y,
 		sw=sw or 1,
-		update=zbuf_write,
+		update=update_part,
 		draw=draw_spr_part
 	}
 	parts.len+=1
 	parts[parts.len]=p
 	return p
+end
+function make_flash_part(x,y,r)
+	local p={
+		x=x,y=y,
+		r=r or 1,
+		t=time_t+4,
+		update=update_static_part,
+		draw=function(self,x,y)
+			local r=self.r*(self.t-time_t)/4
+			circfill(x,y,8*r,7)
+		end
+	}
+	parts.len+=1
+	parts[parts.len]=p
+	return p
+end
+
+function update_static_part(self)
+	if(self.t<time_t) return false
+	zbuf_write(self)
+	return true
 end
 
 function update_part(self)
@@ -338,6 +388,11 @@ function blt_update(self)
 	if self.t>time_t then
 		local x0,y0=self.x,self.y
 		local x1,y1=x0+self.dx,y0+self.dy
+		local inertia=self.wp.inertia
+		if inertia then
+			self.dx*=inertia
+			self.dy*=inertia			
+		end
 		local s=solid(x1,y0) or solid(x0,y1) or solid(x1,y1)
 		if s then
 			-- todo: blt hit wall
@@ -360,29 +415,33 @@ function blt_update(self)
 	return false
 end
 function make_blt(a,wp)
-	local wpxy=wp.xy[a.facing+1]
-	--local d=face2rndunit[a.facing+1][flr(rnd(32))+1]
-	local d=face2unit[a.facing+1]
-	local b={
-		x=a.x+wpxy[1],y=a.y+wpxy[2],
-		wp=wp,
-		dx=wp.v*d[1],dy=wp.v*d[2],
-		t=time_t+wp.ttl,
-		side=a.side,
-		facing=a.facing,
-		update=blt_update,
-		draw=draw_blt
-	}
-	-- for fast collision
-	b.prevx,b.prevy=b.x,b.y
-	blts.len+=1
-	blts[blts.len]=b
+	local n=wp.blts or 1
+	for i=1,n do 
+		local ang=a.angle+wp.spread*(rnd(2)-1)
+		local u,v=cos(ang),sin(ang)
+		local b={
+			x=a.x+0.5*u,y=a.y+0.5*v,
+			wp=wp,
+			dx=wp.v*u,dy=wp.v*v,
+			t=time_t+wp.ttl,
+			side=a.side,
+			facing=flr(8*(ang%1)),
+			update=blt_update,
+			draw=draw_blt
+		}
+		-- muzzle flash
+		if(i==1) make_flash_part(b.x,b.y,0.8)
+		-- for fast collision
+		b.prevx,b.prevy=b.x,b.y
+		blts.len+=1
+		blts[blts.len]=b
+	end
 end
 function draw_blt(b,x,y)
 	palt(0,false)
 	palt(14,true)
-	local spr_options=face2strip[b.facing+1]
-	spr(b.wp.blt_frames[spr_options.strip],x,y,1,1,spr_options.flipx,spr_options.flipy)
+	local spr_options=face3strip[b.facing+1]
+	spr(b.wp.blt_frames[spr_options.strip],x-4,y-4,1,1,spr_options.flipx,spr_options.flipy)
 end
 
 -- map
@@ -447,14 +506,14 @@ end
 -- true if a will hit another
 -- actor after moving dx,dy
 function solid_actor(a,dx,dy)
-	cmap_near_iterator(a.x,a.y)
-	local a2=cmap_near_next()
+	cmap_near_iterator(a.x+dx,a.y+dy)
+ local a2=cmap_near_next()
 	while a2 do
+ --for a2 in all(actors) do
   if a2 != a then
-   local x=(a.x+dx)-a2.x
-   local y=(a.y+dy)-a2.y
-   if ((abs(x)<(a.w+a2.w)) and
-      (abs(y)<(a.w+a2.w)))
+   local x,y=(a.x+dx)-a2.x,(a.y+dy)-a2.y
+   if abs(x)<(a.w+a2.w) and
+      abs(y)<(a.w+a2.w)
    then 
     -- collision damage?
     if a2.dmg and band(a.side,a2.side)!=0 and a.hit then
@@ -534,6 +593,7 @@ function make_actor(x,y)
 	 fire_t=0,
 	 fire_dly=0,
 	 w=0.4, -- actors are round!
+	 angle=0,
 	 facing=0, -- trig order e/n/w/s
 	 side=bad_side,
 	 draw=draw_actor
@@ -547,6 +607,12 @@ function move_actor(a)
 		a:update()
 	end
 
+ -- static? no collision check
+	if a.dx==0 and a.dy==0 then
+	 zbuf_write(a)
+		return
+	end
+	
  if not solid_a(a,a.dx,0) then
   a.x+=a.dx
  else   
@@ -571,60 +637,60 @@ function move_actor(a)
  a.frame += abs(a.dy) * 4
 
  zbuf_write(a)
-	cmap_write(a)
 end
 
 function draw_actor(a,sx,sy)
 	local sw=flr(a.w)+1
 	sx,sy=sx-4*sw,sy-4*sw
 	local wp=a.wp
- palt(0,false)
- palt(14,true)
-	if wp then
-		local wxy=wp.xy[a.facing+1]
-		local spr_options=face2strip[a.facing+1]
-		spr(wp.frames[spr_options.strip],sx+8*wxy[1],sy+8*wxy[2],1,1,spr_options.flipx,spr_options.flipy)
-	end
 	-- shadow
 	spr(16,sx,sy+7)
+	-- hit effecit
 	if a.hit_t>time_t then
 		for i=0,15 do pal(i,7) end
 	end
- local s=a.spr
+ local s,flipx,flipy=a.spr,false,false
  if a.frames then 
  	local spr_options=(#a.frames==3 and face3strip or face1strip)[a.facing+1]
-		local frames=a.frames[spr_options.strip]
+		local frames=a.frames[spr_options.strip or 1]
 		s=frames[flr(a.frame%#frames)+1]
+		flipx,flipy=spr_options.flipx,spr_options.flipy
 	end
 	-- actor
-	palt(14,false)
 	palt(a.palt or 14,true)
-	spr(s,sx,sy,sw,sw,a.facing==2)
+	spr(s,sx,sy,sw,sw,flipx,flipy)
 	palt(a.palt or 14,false)
 	pal()
-	-- debug
-	-- print(a.hp,sx+1,sy-12,0)
-	-- print(a.hp,sx,sy-12,7)
+ palt(0,false)
+ palt(14,true)
+	if wp then
+		local u={cos(a.angle),sin(a.angle)}
+		-- recoil animation
+		local f=-2*max(0,a.fire_t-time_t)/8
+		rspr(wp.sx,wp.sy,sx+4*u[1]+f*u[1],sy+4*u[2]+f*u[2],1-a.angle)
+	end
 end
 
 function control_player()
-	local wp,facing=plyr.wp,plyr.facing
+	local wp,angle=plyr.wp,plyr.angle
  -- how fast to accelerate
- if(btn(0)) plyr.dx-=plyr_acc facing=2
- if(btn(1)) plyr.dx+=plyr_acc facing=0
- if(btn(2)) plyr.dy-=plyr_acc facing=1
- if(btn(3)) plyr.dy+=plyr_acc facing=3
-
+ if(btn(0)) plyr.dx-=plyr_acc angle=0.5
+ if(btn(1)) plyr.dx+=plyr_acc angle=0
+ if(btn(2)) plyr.dy-=plyr_acc angle=0.25
+ if(btn(3)) plyr.dy+=plyr_acc angle=0.75
+	
 	if wp and btn(4) and plyr.fire_dly<time_t then
+	 -- todo: rename recoil
 		plyr.fire_t=time_t+8
 		plyr.fire_dly=time_t+wp.dly
 		make_blt(plyr,wp)
 		local u=face2unit[plyr.facing+1]
 		plyr.dx-=0.05*u[1]
 		plyr.dy-=0.05*u[2]
-		cam_shake(plyr.facing,wp.shk_pow)
+		cam_shake(u[1],u[2],wp.shk_pow)
 	elseif plyr.fire_dly<time_t then
-		plyr.facing=facing
+		plyr.facing=flr(8*angle)
+		plyr.angle=angle
 	end
 	
  -- play a sound if moving
@@ -645,7 +711,7 @@ function _update60()
 	
 	time_t+=1
 
-	cmap_clear()	
+	cmap_clear(actors)	
 	zbuf_clear()
 	control_player(plyr)
 	
@@ -663,19 +729,22 @@ function _draw()
  palt()
  map(0,0,64-cam_x,64-cam_y,32,32,2)
 
-	--cmap_draw() 
-	local c=0
-	cmap_near_iterator(plyr.x,plyr.y)
-	local a2=cmap_near_next()
-	while a2 do
-		c+=1
-		a2=cmap_near_next()
-	end
-	print(c,2,9,7)
-	
- rectfill(0,0,127,8,1)
- local cpu=flr(1000*stat(1))/10
- print(""..cpu.."% "..stat(4).."kb",2,2,7)
+
+	rectfill(1,1,34,9,0)
+	rect(2,2,33,8,6)
+	local hp=max(0,plyr.hp)
+	rectfill(3,3,flr(32*hp/plyr.hpmax),7,8)	
+ print(hp.."/"..plyr.hpmax,13,3,0)
+ print(hp.."/"..plyr.hpmax,12,3,7)
+
+	palt(14,true)
+	palt(0,false)
+	spr(plyr.wp.icon,2,11)
+	print("34",15,12,0)
+	print("34",14,12,7)
+ --rectfill(0,0,127,8,1)
+ --local cpu=flr(1000*stat(1))/10
+ --print(""..cpu.."% "..stat(4).."kb",2,2,7)
 end
 
 function spawner(n,fn)
@@ -690,14 +759,18 @@ end
 
 function _init() 
  plyr=make_actor(7,6)
+	plyr.hp=5
+	plyr.hpmax=5
  plyr.side=good_side
+	-- todo: rename to strips
  plyr.frames={
 	 frames_lr,
 	 frames_up,
 	 frames_dn}
- plyr.wp=uzi
+ plyr.wp=shotgun
  plyr.hit=function(self,blt)
  	self.hit_t=time_t+8
+		self.hp-=band(dmg_mask,dmg)
  end
 
 	spawner(10,function(x,y) 
@@ -717,14 +790,19 @@ function _init()
 		end
 	end)
 	
-	spawner(5,function(x,y)
+	spawner(10,function(x,y)
 	 local bad_guy=make_actor(x,y)
+		bad_guy.hp=5
 	 bad_guy.wp=base_gun
 	 bad_guy.frames={
 	 	{4,5,6}
 	 }
 	 bad_guy.hit=function(self,dmg)
 	 	self.hit_t=time_t+8
+			self.hp-=band(dmg_mask,dmg)
+			if self.hp<=0 then
+				del(actors,self)
+			end
 	 end
 	 bad_guy.move_t=0
 	 bad_guy.update=function(self)
@@ -736,10 +814,11 @@ function _init()
 				dy/=d
 				self.dx=0.02*dx
 				self.dy=0.02*dy
-				bad_guy.facing=flr(4*atan2(-dy,-dx))
-				if bad_guy.fire_dly<time_t then				
-					make_blt(bad_guy,bad_guy.wp)		
-					bad_guy.fire_dly=time_t+bad_guy.wp.dly
+				self.angle=atan2(dx,dy)%1
+				self.facing=flr(8*self.angle)
+				if self.fire_dly<time_t then				
+					make_blt(self,self.wp)		
+					self.fire_dly=time_t+self.wp.dly
 				end				
 	 	elseif self.move_t<time_t then
 	 		self.dx=0.05*(rnd(2)-1)
@@ -749,14 +828,19 @@ function _init()
 	 end
 	end)
 	 
-	spawner(1,function(x,y)
+	spawner(2,function(x,y)
 	 local scorpion=make_actor(x,y)
 	 scorpion.w=1.8
+		scorpion.hp=10
 	 scorpion.frames={
 	 	{135,137}
 	 }
 	 scorpion.hit=function(self,blt)
 	 	self.hit_t=time_t+8
+			self.hp-=band(dmg_mask,dmg)
+			if self.hp<=0 then
+				del(actors,self)
+			end
 	 end
 	 scorpion.move_t=0
 	 scorpion.update=function(self)
@@ -768,10 +852,11 @@ function _init()
 	 end
 	end)	
 	
- spawner(5,function(x,y)
+ spawner(8,function(x,y)
 	 local worm=make_actor(x,y)
 	 worm.palt=3
 	 worm.w=0.2
+	 worm.inertia=0.8
 	 worm.frames={
 	 	{7,8}
 	 }
@@ -791,38 +876,38 @@ end
 
 
 __gfx__
-00000000e000000ee000000ee000000ee000000ee000000ee000000e333333333333333300000000eeeeeeeeeeeeeeee00000000000000000000000000000000
-000000000555555005555550055555500f66ff600f66ff600f66ff60333333333333333300000000eeeeeeeeeee99eee00000000000000000000000000000000
-00700700055585800555585005555580055858500558585005585850333333333333333300000000ee9999eeee9779ee00000000000000000000000000000000
-000770000555252005555250055555200ff66ff00ff66ff00ff66ff0333000333333333300000000e999aa9eee9779ee00000000000000000000000000000000
-0007700005555550055555500555555006ff66f006ff66f006ff66f0330fef033300003300000000e999aa9eee9999ee00000000000000000000000000000000
-007007000555555005555550055555500f66f6600f66f6600f66f660330e0e0330efef0300000000ee9999eeee9999ee00000000000000000000000000000000
-0000000005000050e050050ee005500ee06f0ff0e006f0f00f006f0e30ef0fe00ef00fe000000000eeeeeeeeeee99eee00000000000000000000000000000000
-00000000e0eeee0eee0ee0eeeee00eeeee00e00eeee00e0ee0ee00ee330030033003300300000000eeeeeeeeeeeeeeee00000000000000000000000000000000
-e111111eee00000eee00000eee00000eeeeeeeeeeee00eeeeeeeeeee000000000000000000000000eeeeeeeeeeeeeeee00000000000000000000000000000000
-11111111e0999aa0e09999a0e0999990eeeeeeeeeee00eeee00e00ee000000000000000000000000eeeeeeeeeee33eee00000000000000000000000000000000
-e111111e099414100999414009999410eeeeeeeeeee00eee0880870e000000000000000000000000ee3bb3eeee3bb3ee00000000000000000000000000000000
-eeeeeeee09444440099444400999444000000eeeeee0eeee0288820e000000000000000000000000e3bbbb3eeebbbbee00000000000000000000000000000000
-eeeeeeee044455500444455004444450000eeeeeeee0eeeee02820ee000000000000000000000000e3bbbb3eeebbbbee00000000000000000000000000000000
-eeeeeeee0333bab003333ba0033333b0e0eeeeeeeeeeeeeeee020eee000000000000000000000000ee3bb3eeee3bb3ee00000000000000000000000000000000
-eeeeeeee05000050e050050ee005500ee0eeeeeeeeeeeeeeeee0eeee000000000000000000000000eeeeeeeeeee33eee00000000000000000000000000000000
-eeeeeeeee0eeee0eee0ee0eeeee00eeeeeeeeeeeeeeeeeeeeeeeeeee000000000000000000000000eeeeeeeeeeeeeeee00000000000000000000000000000000
-ee000eeeee0000eeee0000eeee0000ee000000000000000000000000000000000000000000000000eeeeeeee0000000000000000000000000000000000000000
-e0bbb0eee0999a0ee099aa0ee0999a0e000000000000000000000000000000000000000000000000eeeeeeee0000000000000000000000000000000000000000
-e07770ee099999a009999aa0099999a0000000000000000000000000000000000000000000000000eeeaaeee0000000000000000000000000000000000000000
-e03330ee099999a009999aa0099999a0000000000000000000000000000000000000000000000000eea77aee0000000000000000000000000000000000000000
-e03a30ee044444400444444004444440000000000000000000000000000000000000000000000000eea77aee0000000000000000000000000000000000000000
-e03930ee03333bb00333bbb003333bb0000000000000000000000000000000000000000000000000eeeaaeee0000000000000000000000000000000000000000
-e00000ee050000500500000000000050000000000000000000000000000000000000000000000000eeeeeeee0000000000000000000000000000000000000000
-e11111eee0eeee0ee0eeeeeeeeeeee0e000000000000000000000000000000000000000000000000eeeeeeee0000000000000000000000000000000000000000
-ee000eeeee0000eeee0000eeee0000ee000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-e06660eee0999a0ee0999a0ee0999a0e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-e07770ee094141a0091414a0094141a0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-e0d8d0ee094444900944449009444490000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-e08880ee044555400455544004455540000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-e0d8d0ee033babb00339bbb0033babb0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-e00000ee05000050000000b003000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-e11111eee0eeee0eeeeeee0ee0eeeeee000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000e000000ee000000ee000000ee000000ee000000ee000000e3333333333333333eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000000000000000000000
+000000000555555005555550055555500f66ff600f66ff600f66ff603333333333333333e00e00eeeeeeeeeeeee99eeeeeeeeeee000000000000000000000000
+0070070005558580055558500555558005585850055858500558585033333333333333330880870eee9999eeee9aa9eeeee99eee000000000000000000000000
+000770000555252005555250055555200ff66ff00ff66ff00ff66ff033300033333333330288820ee999aa9eee9aa9eeee9aa9ee000000000000000000000000
+0007700005555550055555500555555006ff66f006ff66f006ff66f0330fef0333000033e02820eee999aa9eee9999eee99aa9ee000000000000000000000000
+007007000555555005555550055555500f66f6600f66f6600f66f660330e0e0330efef03ee020eeeee9999eeee9999eee9999eee000000000000000000000000
+0000000005000050e050050ee005500ee06f0ff0e006f0f00f006f0e30ef0fe00ef00fe0eee0eeeeeeeeeeeeeee99eeeee99eeee000000000000000000000000
+00000000e0eeee0eee0ee0eeeee00eeeee00e00eeee00e0ee0ee00ee3300300330033003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000000000000000000000
+e111111eee00000eee00000eee00000eeeeeeeeeeeeeeeeeeeeeeeee000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeee000000000000000000000000
+11111111e0999aa0e09999a0e0999990eeeeeeeeeeeeeeeeeeeeeeee000000000000000000000000eeeeeeeeeee33eeeeeeeeeee000000000000000000000000
+e111111e099414100999414009999410eeeeeeeeeeeeeeeeeeeeeeee000000000000000000000000ee3bb3eeee3bb3eeeee3bbee000000000000000000000000
+eeeeeeee094444400994444009994440ee00000eeee0eeeeeeeeeeee000000000000000000000000e3bbbb3eeebbbbeeee3bbbee000000000000000000000000
+eeeeeeee044455500444455004444450ee000eeeeee0eeeeeee0eeee000000000000000000000000e3bbbb3eeebbbbeeeebbb3ee000000000000000000000000
+eeeeeeee0333bab003333ba0033333b0eee0eeeeeee00eeeee0eeeee000000000000000000000000ee3bb3eeee3bb3eeeebb3eee000000000000000000000000
+eeeeeeee05000050e050050ee005500eeee0eeeeeee00eee00eeeeee000000000000000000000000eeeeeeeeeee33eeeeeeeeeee000000000000000000000000
+eeeeeeeee0eeee0eee0ee0eeeee00eeeeeeeeeeeeee00eee00eeeeee000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeee000000000000000000000000
+ee000eeeee0000eeee0000eeee0000eeeeeeeeeeeeeeeeeeeeeeeeee000000000000000000000000eeeeeeee0000000000000000000000000000000000000000
+e0bbb0eee0999a0ee099aa0ee0999a0eeeeeeeeeeeeeeeeeeeeeeeee000000000000000000000000eeeeeeee0000000000000000000000000000000000000000
+e07770ee099999a009999aa0099999a0ee000000ee777777eeee00ee000000000000000000000000eeeaaeee0000000000000000000000000000000000000000
+e03330ee099999a009999aa0099999a0e0496660e7000007eee0650e000000000000000000000000eea77aee0000000000000000000000000000000000000000
+e03a30ee044444400444444004444440e0445550e7000007ee0650ee000000000000000000000000eea77aee0000000000000000000000000000000000000000
+e03930ee03333bb00333bbb003333bb0e0400000e7077777e0950eee000000000000000000000000eeeaaeee0000000000000000000000000000000000000000
+e00000ee050000500500000000000050ee0eeeeeee7eeeee0940eeee000000000000000000000000eeeeeeee0000000000000000000000000000000000000000
+e11111eee0eeee0ee0eeeeeeeeeeee0eeeeeeeeeeeeeeeeee00eeeee000000000000000000000000eeeeeeee0000000000000000000000000000000000000000
+ee000eeeee0000eeee0000eeee0000eeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+e06660eee0999a0ee0999a0ee0999a0eeeeeeeee0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+e07770ee094141a0091414a0094141a0ee00000e0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+e0d8d0ee094444900944449009444490e076670e0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+e08880ee044555400455544004455540e055000e0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+e0d8d0ee033babb00339bbb0033babb0e050eeee0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+e00000ee05000050000000b003000000ee0eeeee0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+e11111eee0eeee0eeeeeee0ee0eeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 44444444444444440404040454545454444444441111111155555555444455555555555500000000000000000000000000000000000000000000000000000000
 44444444449944444040404045454545444444441111111145455555444555555454555500000000000000000000000000000000000000000000000000000000
 44b4b444454954440404040444444444444444441111111144444555444445554444455500000000000000000000000000000000000000000000000000000000
