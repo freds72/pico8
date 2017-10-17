@@ -95,6 +95,23 @@ local shotgun={
 	world inertia
 ]]
 
+-- levels
+local lvl1_rules={
+	ground_tiles={68,68,68,68,64,65},
+	wall_tiles={66},
+	solid_tiles_base=112,
+	bkg_col=0, -- clear color
+	cw=32,ch=32,
+	w={2,4},
+	h={1,3},
+	paths={1,2},
+	path={
+		bends={0,4},
+		w={1,1},
+		len={2,3}
+	}
+}
+
 local blts={len=0}
 local parts={len=0}
 local zbuf={len=0}
@@ -169,6 +186,15 @@ end
 function smoothstep(t)
 	t=mid(t,0,1)
 	return t*t*(3-2*t)
+end
+function rndrng(ab)
+	return flr(lerp(ab[1],ab[2],rnd(1)))
+end
+function rotate(a,p)
+	local c,s=cos(a),-sin(a)
+	return {
+		p[1]*c-p[2]*s,
+		p[1]*s+p[2]*c}
 end
 function rspr(sx,sy,x,y,a)
 	local ca,sa=cos(a),sin(a)
@@ -391,7 +417,7 @@ function blt_update(self)
 		local inertia=self.wp.inertia
 		if inertia then
 			self.dx*=inertia
-			self.dy*=inertia			
+			self.dy*=inertia
 		end
 		local s=solid(x1,y0) or solid(x0,y1) or solid(x1,y1)
 		if s then
@@ -445,6 +471,112 @@ function draw_blt(b,x,y)
 end
 
 -- map
+function rooms_init(rules)
+	for i=0,rules.cw-1 do
+		for j=0,rules.ch-1 do
+			mset(i,j,rules.solid_tiles_base)
+		end
+	end
+end
+local tiles_sides={
+	{0,0},
+	{1,0},
+	{0,1},
+	{-1,0},
+	{0,-1}}
+function tile_flags(cx,cy)
+	local c=0
+	for i=0,#tiles_sides-1 do
+		local p=tiles_sides[i+1]
+		local s=mget(cx+p[1],cy+p[2])
+		if fget(s,7) then
+			c=bor(c,shl(1,i))
+		end
+	end
+	return c
+end
+
+function rooms_done(rules)
+	local tf,t
+	for i=0,rules.cw-1 do
+		for j=0,rules.ch-1 do
+			-- borders
+			tf=tile_flags(i,j)
+			if band(tf,1)!=0 then
+				tf=shr(band(tf,0xfe),1)
+				t=rules.solid_tiles_base+tf
+				mset(i,j,t)
+				-- south not solid?
+				if band(tf,0x7)==0 then
+					t=rules.wall_tiles[flr(rnd(#rules.wall_tiles))+1]
+					mset(i,j+1,t)
+				end
+
+			end
+		end
+	end
+end
+
+function create_room(x,y,w,h,ttl,rules)
+	ttl=ttl or 3
+	if(ttl<0) return
+	local r={
+		x=x,y=y,
+		w=w,h=h}
+	dig(r,rules)
+	local n=ttl*rndrng(rules.paths)
+	for i=1,n do
+		local a=flr(rnd(4))/4
+		local v=rotate(a,{1,0})
+		local bends=rndrng(rules.path.bends)
+		-- starting point
+		local hh,hw=r.w/2,r.h/2
+		local cx,cy=r.x+hw,r.y+hh
+		x,y=cx+v[1]*hw,cy+v[2]*hh
+		create_path(x,y,a,
+			bends,ttl-1,rules)
+	end
+end
+function create_path(x,y,a,n,ttl,rules)
+	-- end of corridor?
+	if n<=0 then
+		create_room(
+			x,y,
+			rndrng(rules.w),
+			rndrng(rules.h),
+			ttl-1,
+			rules)
+		return
+	end
+	local w,h=
+		rndrng(rules.path.w),
+		rndrng(rules.path.len)
+	-- rotate
+	local wl=rotate(a,{h,w})
+	local c={
+		x=x,y=y,
+		w=wl[1],h=wl[2]
+	}
+	
+	dig(c,rules)
+	a+=(rnd(1)>0.5 and 0.25 or -0.25)
+	create_path(
+		c.x+c.w,c.y+c.h,
+		a,n-1,ttl,rules)
+end
+function dig(r,rules)
+	local x0,y0=mid(r.x,0,32),mid(r.y,0,32)
+	local x1,y1=mid(r.x+r.w,0,32),mid(r.y+r.h,0,32)
+	x0,x1=min(x0,x1),max(x0,x1)
+	y0,y1=min(y0,y1),max(y0,y1)
+	for i=x0,x1 do
+		for j=y0,y1 do
+			local t=rules.ground_tiles[flr(rnd(#rules.ground_tiles))+1]
+			mset(i,j,t)
+		end
+	end
+end
+
 function solid(x, y)
  return fget(mget(x,y),7)
 end
@@ -525,7 +657,7 @@ function solid_actor(a,dx,dy)
     -- overlap initially 
     -- without sticking together    
     if (dx!=0 and abs(x) <
-        abs(a.x-a2.x)) then
+	abs(a.x-a2.x)) then
      local v=a.dx+a2.dy
      a.dx=v/2
      a2.dx=v/2
@@ -533,7 +665,7 @@ function solid_actor(a,dx,dy)
     end
     
     if (dy!=0 and abs(y) <
-        abs(a.y-a2.y)) then
+	abs(a.y-a2.y)) then
      local v=a.dy+a2.dy
      a.dy=v/2
      a2.dy=v/2
@@ -722,12 +854,12 @@ function _update60()
 end
 
 function _draw()
- cls(1)
- map(0,0,64-cam_x,64-cam_y,32,32,1)
+ cls(lvl1_rules.bkg_col)
+ map(0,0,64-cam_x,64-cam_y,32,32)
  zbuf_draw()
  
  palt()
- map(0,0,64-cam_x,64-cam_y,32,32,2)
+ --map(0,0,64-cam_x,64-cam_y,32,32)
 
 
 	rectfill(1,1,34,9,0)
@@ -745,34 +877,60 @@ function _draw()
  --rectfill(0,0,127,8,1)
  --local cpu=flr(1000*stat(1))/10
  --print(""..cpu.."% "..stat(4).."kb",2,2,7)
+
+	--[[
+	local tf,t
+	for i=0,lvl1_rules.cw-1 do
+		for j=0,lvl1_rules.ch-1 do
+			-- borders
+			tf=tile_flags(i,j)
+			if band(tf,1)!=0 then
+				local x,y=cam_project(i,j)
+				print(shr(band(tf,0xfe),1),x,y,(i+j)%15+1)
+			end
+		end
+	end
+	]]
 end
 
 function spawner(n,fn)
 	for i=1,n do
 		local x,y=0,0
-		while(solid(x,y)) do
+		local ttl=5
+		while(solid(x,y) and ttl>0) do
 			x,y=flr(rnd(16)),flr(rnd(16))
+			ttl-=1
 		end
+		if(ttl<0) return
+		-- found empty space!
 		fn(x+0.5,y+0.5)
 	end
 end
 
-function _init() 
- plyr=make_actor(7,6)
+function _init()
+	rooms_init(lvl1_rules)
+	create_room(
+		8,8,4,4,
+		rndrng({4,7}),
+		lvl1_rules)
+	rooms_done(lvl1_rules)
+	
+	plyr=make_actor(8,8)
 	plyr.hp=5
 	plyr.hpmax=5
- plyr.side=good_side
+	plyr.side=good_side
 	-- todo: rename to strips
- plyr.frames={
-	 frames_lr,
-	 frames_up,
-	 frames_dn}
- plyr.wp=shotgun
- plyr.hit=function(self,blt)
- 	self.hit_t=time_t+8
+	plyr.frames={
+		frames_lr,
+		frames_up,
+		frames_dn}
+	plyr.wp=shotgun
+	plyr.hit=function(self,blt)
+		self.hit_t=time_t+8
 		self.hp-=band(dmg_mask,dmg)
- end
+	end
 
+	--[[
 	spawner(10,function(x,y) 
 	 local barrel=make_actor(x,y)
 	 barrel.side=no_side
@@ -871,7 +1029,8 @@ function _init()
 	 		self.move_t=time_t+30
 	 	end
 	 end
-	end)	 
+	end)
+	]]	 
 end
 
 
@@ -932,14 +1091,14 @@ e11111eee0eeee0eeeeeee0ee0eeeeeeeeeeeeee0000000000000000000000000000000000000000
 11111159951111111111115995111111000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 55555559955555551111115995111111000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 99599999999995991111115995111111000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+99559999aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9511115995111111951111599511111111111159111111111111115911111111
+95555559a5111111a555555aa55555555555555a555555555555555a555555559511115595111111551111599511111111111159111111111111115911111111
+9511115995111111951111599511111111111159111111111111115911111111951111599511111195111159951111111111115a111111111111115911111111
+95111155951111119511115995111111111111591111111111111159111111119511115955111111951111599511111111111159111111111111115511111111
+55111159951111119511115995111111111111591111111111111159111111119511115995111111951111599511111111111159111111111111115a11111111
+95111159951111119511115995111111111111591111111111111159111111119511115995111111951111595511111111111159111111111111115911111111
+95555559951111119511115995111111555555595555555511111159111111119555555995555555951111599511111155555559555555551111115911111111
+999995999999999995111159951111119999999999a99999111111591111111199599999999955999511115995111111995999999999aa991111115911111111
 eeeeeeee000000000000000000000000000000000000000000000000eeeee00000eeeeeeeeeeeee00000eeee0000000000000000000000000000000000000000
 ee0000ee000000000000000000000000000000000000000000000000eeee02121200eeeeeeeeee02121200ee0000000000000000000000000000000000000000
 e07bb70e000000000000000000000000000000000000000000000000eee0700212110eeeeeeee0700212110e0000000000000000000000000000000000000000
@@ -1006,7 +1165,7 @@ eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 
 __gff__
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001010101018200000000000000000000828282028000000000000000000000008282020200000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001010101018200000000000000000000828282028000000000000000000000008282020200000000000000000000000082808082828282828282828282828282
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __map__
 4545454545454545454545454545454545454545454500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
