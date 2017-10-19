@@ -1,6 +1,9 @@
 pico-8 cartridge // http://www.pico-8.com
 version 8
 __lua__
+local before_update={c=0}
+local after_draw={c=0}
+
 local actors = {} --all actors in world
 
 -- side
@@ -14,6 +17,7 @@ local dmg_mask=   0xff
 
 -- player settings
 local plyr
+local plyr_score
 local plyr_acc=0.05
 local frames_lr={17,18,19,18,17}
 local frames_up={33,34,35}
@@ -96,20 +100,46 @@ local shotgun={
 ]]
 
 -- levels
-local lvl1_rules={
-	ground_tiles={68,68,68,68,64,65,67},
+local cur_level
+local levels={
+	{
+	name="desert",
+	ground_tiles={
+		68,68,68,68,64,65,67},
 	wall_tiles={66},
 	solid_tiles_base=112,
 	bkg_col=1, -- clear color
+	depth=5,
 	cw=32,ch=32,
-	w={2,4},
-	h={1,3},
+	w={3,4},
+	h={3,4},
 	paths={1,2},
 	path={
-		bends={0,4},
+		bends={0,1},
 		w={1,1},
 		len={2,3}
-	}
+	},
+	spawns={
+		{3,5,make_worm},
+		{8,10,make_sandman},
+		{1,2,make_scorpion}
+	}},{
+	name="sewers",
+	ground_tiles={
+		68,68,68,68,64,65,67},
+	wall_tiles={66},
+	solid_tiles_base=112,
+	bkg_col=1, -- clear color
+	depth=6,
+	cw=32,ch=32,
+	w={3,4},
+	h={3,4},
+	paths={1,2},
+	path={
+		bends={0,1},
+		w={1,1},
+		len={2,3}
+	}}
 }
 
 local blts={len=0}
@@ -161,11 +191,117 @@ local face3strip={
 	{strip=3,flipx=false,flipy=false}
 }
 
+-- fade ramp + screen manager
+_shex={}
+_shexstr="0123456789abcdef"
+for i=1,16 do
+	_shex[sub(_shexstr,i,i)]=i-1
+end
+_pl={"00000015d67",
+     "0000015d677",
+     "0000024ef77",
+     "000013b7777",
+     "0000049a777",
+     "000015d6777",
+     "0015d677777",
+     "015d6777777",
+     "000028ef777",
+     "000249a7777",
+     "00249a77777",
+     "00013b77777",
+     "00013c77777",
+     "00015d67777",
+     "00024ef7777",
+     "0024ef77777"}
+_pl_from=0.5
+function fade(to,f)
+	f=mid(f,1,32) -- sensible boundaries
+	to=mid(to,0,1)
+	futures_add(function()
+		for i=0,f do
+			local t=i/f
+			local pix=flr(10*lerp(_pl_from,to,t))+1
+			for x=0,15 do
+				pal(x,_shex[sub(_pl[x+1],pix,pix)],1)
+			end
+			yield()
+		end
+		_pl_from=to
+	end,after_draw)
+end
+-- screen manager
+local sm_t,sm_cur,sm_next,sm_dly=0,nil,nil,0
+function sm_push(s)
+	sm_t=0
+	if sm_cur then
+		sm_dly=sm_t+8
+		sm_next=s
+		fade(0,8)
+	else
+		sm_cur=s
+		sm_cur:init()
+	end
+end
+function sm_update()
+	sm_t+=1
+	if sm_next then 
+		if sm_dly<sm_t then
+			sm_cur=sm_next
+			sm_next=nil
+			time_t=0
+			sm_cur:init()
+			fade(0.5,8)
+		end
+	else
+		sm_cur:update()
+	end
+end
+function sm_draw()
+	sm_cur:draw()
+end
+-- futures
+function futures_update(futures)
+	futures=futures or before_update
+	local n=futures.c
+	futures.c=0
+	for i=1,n do
+		local f=futures[i]
+		local r,e=coresume(f)
+		if r then
+			futures.c+=1
+			futures[futures.c]=f
+		--[[
+		else
+			printh("exception:"..e)
+		]]
+		end
+	end
+end
+function futures_add(fn,futures)
+	futures=futures or before_update
+	futures.c+=1
+	futures[futures.c]=cocreate(fn)
+end
+-- print text helper
+txt_center=false
+txt_shade=-1
+function txt_options(c,s)
+	txt_center=c or false
+	txt_shade=s or -1
+end
+function txt_print(s,x,y,col)
+	if txt_center then
+		x-=flr((4*#s)/2+0.5)
+	end
+	if txt_shade!=-1 then
+		print(s,x+1,y,txt_shade)
+	end
+	print(s,x,y,col)
+end
 -- helper
 function foreach_update(a)
-	local n,c=a.len,0
+	local n,c,elt=a.len,0
 	a.len=0
-	local elt
 	for i=1,n do
 		elt=a[i]
 		if elt:update() then
@@ -195,6 +331,13 @@ function rotate(a,p)
 	return {
 		p[1]*c-p[2]*s,
 		p[1]*s+p[2]*c}
+end
+function bpset(x,y,c)
+	local d=bor(0x6000,x)+shl(y,7)
+	c=sget(min(c,7),8)
+	c=bor(c,shl(c,4))
+	poke(d,c)
+	poke(d+64,c)
 end
 function rspr(sx,sy,x,y,a)
 	local ca,sa=cos(a),sin(a)
@@ -481,13 +624,20 @@ end
 
 -- map
 local rooms
-function rooms_init(rules)
+function make_rooms(x,y,rules)
 	rooms={}
 	for i=0,rules.cw-1 do
 		for j=0,rules.ch-1 do
 			mset(i,j,rules.solid_tiles_base)
 		end
 	end
+	make_room(
+			x,y,
+			rndrng(rules.w),
+			rndrng(rules.h),
+			rules.depth,
+			rules)
+	rooms_done(rules)
 end
 local tiles_sides={
 	{0,0},
@@ -531,7 +681,7 @@ function rooms_done(rules)
 	end
 end
 
-function make_rooms(x,y,w,h,ttl,rules)
+function make_room(x,y,w,h,ttl,rules)
 	ttl=ttl or 3
 	if(ttl<0) return
 	local r={
@@ -557,7 +707,7 @@ end
 function make_path(x,y,a,n,ttl,rules)
 	-- end of corridor?
 	if n<=0 then
-		make_rooms(
+		make_room(
 			x,y,
 			rndrng(rules.w),
 			rndrng(rules.h),
@@ -662,9 +812,8 @@ end
 -- actor after moving dx,dy
 function solid_actor(a,dx,dy)
 	cmap_near_iterator(a.x+dx,a.y+dy)
- local a2=cmap_near_next()
+	local a2=cmap_near_next()
 	while a2 do
- --for a2 in all(actors) do
   if a2 != a then
    local x,y=(a.x+dx)-a2.x,(a.y+dy)-a2.y
    if abs(x)<(a.w+a2.w) and
@@ -696,7 +845,7 @@ function solid_actor(a,dx,dy)
     end    
    end
   end
-		a2=cmap_near_next()
+	a2=cmap_near_next()
  end
  return false
 end
@@ -730,6 +879,108 @@ function make_blast(x,y)
 	end
 	p.hit=function() end
 	return p
+end
+
+function make_barrel(x,y) 
+ local barrel=make_actor(x,y)
+ barrel.side=no_side
+ barrel.inertia=0.8
+ barrel.spr=128
+ barrel.side=all_side
+ barrel.hit=function(self,dmg)
+		if(band(dmg_contact,dmg)!=0) return
+		self.hit_t=time_t+8
+		self.hp-=1--band(dmg_mask,dmg)
+		if self.hp<=0 then
+			make_blast(self.x,self.y)
+			del(actors,self)
+		end
+	end
+	return barrel
+end
+function make_sandman(x,y)
+	local bad_guy=make_actor(x,y)
+	bad_guy.hp=5
+	bad_guy.wp=base_gun
+	bad_guy.frames={
+		{4,5,6}
+	}
+	bad_guy.hit=function(self,dmg)
+			self.hit_t=time_t+8
+			self.hp-=band(dmg_mask,dmg)
+			if self.hp<=0 then
+				del(actors,self)
+			end
+	 end
+ bad_guy.move_t=0
+ bad_guy.update=function(self)
+ 	if lineofsight(self.x,self.y,plyr.x,plyr.y,4) then
+			local dx,dy=plyr.x-self.x,plyr.y-self.y
+			local d=sqrt(dx*dx+dy*dy)
+			if(d<0.01) return
+			dx/=d
+			dy/=d
+			self.dx=-0.02*dx
+			self.dy=-0.02*dy
+			self.angle=atan2(dx,dy)%1
+			self.facing=flr(8*self.angle)
+			if self.fire_dly<time_t then				
+				make_blt(self,self.wp)		
+				self.fire_dly=time_t+self.wp.dly
+			end
+ 	elseif self.move_t<time_t then
+ 		self.dx=0.05*(rnd(2)-1)
+ 		self.dy=0.05*(rnd(2)-1)
+ 		self.move_t=time_t+30
+ 	end
+ end
+	return bad_guy
+end
+
+function make_scorpion(x,y)
+	local scorpion=make_actor(x,y)
+	scorpion.w=1.8
+	scorpion.hp=10
+	scorpion.frames={
+	 	{135,137}
+	 }
+ scorpion.hit=function(self,blt)
+ 	self.hit_t=time_t+8
+		self.hp-=band(dmg_mask,dmg)
+		if self.hp<=0 then
+			del(actors,self)
+		end
+ end
+ scorpion.move_t=0
+ scorpion.update=function(self)
+ 	if self.move_t<time_t then
+ 		self.dx=0.05*(rnd(2)-1)
+ 		self.dy=0.05*(rnd(2)-1)
+ 		self.move_t=time_t+30
+ 	end
+ end
+	return scorpion
+end
+function make_worm(x,y)
+ local worm=make_actor(x,y)
+ worm.palt=3
+ worm.w=0.2
+ worm.inertia=0.8
+ worm.frames={
+ 	{7,8}
+ }
+ worm.hit=function(self,blt)
+ 	self.hit_t=time_t+8
+ end
+ worm.move_t=0
+ worm.update=function(self)
+ 	if self.move_t<time_t then
+ 		self.dx=0.05*(rnd(2)-1)
+ 		self.dy=0.05*(rnd(2)-1)
+ 		self.move_t=time_t+30
+ 	end
+ end
+return worm
 end
 
 -- actor
@@ -795,6 +1046,10 @@ function move_actor(a)
 end
 
 function draw_actor(a,sx,sy)
+	if a.safe_t and a.safe_t>time_t and band(time_t,1)==0 then
+		return
+	end
+	
 	local sw=flr(a.w)+1
 	sx,sy=sx-4*sw,sy-4*sw
 	local wp=a.wp
@@ -859,14 +1114,41 @@ function control_player()
  cam_track(plyr.x,plyr.y)
 end
 
-function _update60()
+function make_level(l)
+	cur_level=1
+	local rules=levels[cur_level]
+	make_room(rules)
+	
+end
+
+function init_plyr()
+	plyr_score=0
+	plyr=make_actor(10,10)
+	plyr.hp=5
+	plyr.hpmax=5
+	plyr.side=good_side
+	-- todo: rename to strips
+	plyr.frames={
+		frames_lr,
+		frames_up,
+		frames_dn}
+	plyr.wp=uzi
+	plyr.hit=function(self,blt)
+		self.hit_t=time_t+8
+		self.hp-=band(dmg_mask,dmg)
+		plyr_safe_t=time_t+60
+	end
+	plyr.safe_t=time_t+180
+end
+
+local game={}
+function game:update()
 	pause_t-=1
 	if(pause_t>0) return
 	pause_t=0
-	
-	time_t+=1
 
-	cmap_clear(actors)	
+	-- todo: update not clear
+	cmap_clear(actors)
 	zbuf_clear()
 	control_player(plyr)
 	
@@ -876,7 +1158,7 @@ function _update60()
 	cam_update()
 end
 
-function _draw()
+function game:draw()
  cls(lvl1_rules.bkg_col)
  map(0,0,64-cam_x,64-cam_y,32,32,1)
  zbuf_draw()
@@ -884,19 +1166,18 @@ function _draw()
  palt()
  map(0,0,64-cam_x,64-cam_y,32,32,2)
 
-
 	rectfill(1,1,34,9,0)
 	rect(2,2,33,8,6)
 	local hp=max(0,plyr.hp)
-	rectfill(3,3,flr(32*hp/plyr.hpmax),7,8)	
- print(hp.."/"..plyr.hpmax,13,3,0)
- print(hp.."/"..plyr.hpmax,12,3,7)
+	rectfill(3,3,flr(32*hp/plyr.hpmax),7,8)
+	txt_options(false,0)
+	txt_print(hp.."/"..plyr.hpmax,12,3,7)
 
 	palt(14,true)
 	palt(0,false)
 	spr(plyr.wp.icon,2,11)
-	print("34",15,12,0)
-	print("34",14,12,7)
+	txt_print("34",14,12,7)
+	
  --rectfill(0,0,127,8,1)
  --local cpu=flr(1000*stat(1))/10
  --print(""..cpu.."% "..stat(4).."kb",2,2,7)
@@ -915,6 +1196,10 @@ function _draw()
 	end
 	]]
 end
+function game:init()
+	make_level(1,16,16)
+	init_plyr()
+end
 
 function spawner(n,fn)
 	for i=1,n do
@@ -930,130 +1215,66 @@ function spawner(n,fn)
 	end
 end
 
-function _init()
-	rooms_init(lvl1_rules)
-	make_rooms(
-		8,8,4,4,
-		rndrng({4,7}),
-		lvl1_rules)
-	rooms_done(lvl1_rules)
-	
-	plyr=make_actor(10,10)
-	plyr.hp=5
-	plyr.hpmax=5
-	plyr.side=good_side
-	-- todo: rename to strips
-	plyr.frames={
-		frames_lr,
-		frames_up,
-		frames_dn}
-	plyr.wp=uzi
-	plyr.hit=function(self,blt)
-		self.hit_t=time_t+8
-		self.hp-=band(dmg_mask,dmg)
-	end
-
-	spawner(10,function(x,y) 
-	 local barrel=make_actor(x,y)
-	 barrel.side=no_side
-	 barrel.inertia=0.8
-	 barrel.spr=128
-	 barrel.side=all_side
-	 barrel.hit=function(self,dmg)
-			if(band(dmg_contact,dmg)!=0) return
-			self.hit_t=time_t+8
-			self.hp-=1--band(dmg_mask,dmg)
-			if self.hp<=0 then
-				make_blast(self.x,self.y)
-				del(actors,self)
-			end
+local shop_screen={}
+local gia,gr,ga
+function shop_screen:update()
+	ga+=gia	
+	gia=mid(-.1,gia,.1)
+	gr=mid(-.1,gr,.1)
+end
+function shop_screen:draw()
+	cls(0)
+	local x,y,y2,a,r,u,v
+	for y=0,31,2 do
+		y2=y*y
+		for x=0,31,2 do
+			a=4*atan2(y,x)
+			r=sqrt(x*x+y2)
+			u=gr*r+ga
+			v=flr(4+4*cos(u+a))
+			bpset(31+x,31-y,v)
+			v=flr(4+4*cos(u+2-a))
+			bpset(31-x,31-y,v)
+			v=flr(4+4*cos(u+a+2))
+			bpset(31-x,31+y,v)
+			v=flr(4+4*cos(u+4-a))
+			bpset(31+x,31+y,v)
 		end
-	end)
-	
-	spawner(10,function(x,y)
-	 local bad_guy=make_actor(x,y)
-		bad_guy.hp=5
-	 bad_guy.wp=base_gun
-	 bad_guy.frames={
-	 	{4,5,6}
-	 }
-	 bad_guy.hit=function(self,dmg)
-	 	self.hit_t=time_t+8
-			self.hp-=band(dmg_mask,dmg)
-			if self.hp<=0 then
-				del(actors,self)
-			end
-	 end
-	 bad_guy.move_t=0
-	 bad_guy.update=function(self)
-	 	if lineofsight(self.x,self.y,plyr.x,plyr.y,4) then
-				local dx,dy=plyr.x-self.x,plyr.y-self.y
-				local d=sqrt(dx*dx+dy*dy)
-				if(d<0.01) return
-				dx/=d
-				dy/=d
-				self.dx=-0.02*dx
-				self.dy=-0.02*dy
-				self.angle=atan2(dx,dy)%1
-				self.facing=flr(8*self.angle)
-				if self.fire_dly<time_t then				
-					make_blt(self,self.wp)		
-					self.fire_dly=time_t+self.wp.dly
-				end				
-	 	elseif self.move_t<time_t then
-	 		self.dx=0.05*(rnd(2)-1)
-	 		self.dy=0.05*(rnd(2)-1)
-	 		self.move_t=time_t+30
-	 	end
-	 end
-	end)
+	end
+		
+	x,y=cos(time_t/64),sin(time_t/64)
+ rspr(8,0,64+16*x,64+16*y,time_t/16)
+end
+function shop_screen:init()
+	ga,gia,gr=0,.01,.01
+end
 
-	--[[	 
-	spawner(2,function(x,y)
-	 local scorpion=make_actor(x,y)
-	 scorpion.w=1.8
-		scorpion.hp=10
-	 scorpion.frames={
-	 	{135,137}
-	 }
-	 scorpion.hit=function(self,blt)
-	 	self.hit_t=time_t+8
-			self.hp-=band(dmg_mask,dmg)
-			if self.hp<=0 then
-				del(actors,self)
-			end
-	 end
-	 scorpion.move_t=0
-	 scorpion.update=function(self)
-	 	if self.move_t<time_t then
-	 		self.dx=0.05*(rnd(2)-1)
-	 		self.dy=0.05*(rnd(2)-1)
-	 		self.move_t=time_t+30
-	 	end
-	 end
-	end)	
-	
- spawner(8,function(x,y)
-	 local worm=make_actor(x,y)
-	 worm.palt=3
-	 worm.w=0.2
-	 worm.inertia=0.8
-	 worm.frames={
-	 	{7,8}
-	 }
-	 worm.hit=function(self,blt)
-	 	self.hit_t=time_t+8
-	 end
-	 worm.move_t=0
-	 worm.update=function(self)
-	 	if self.move_t<time_t then
-	 		self.dx=0.05*(rnd(2)-1)
-	 		self.dy=0.05*(rnd(2)-1)
-	 		self.move_t=time_t+30
-	 	end
-	 end
-	end)
-	]]	 
+local title_screen={}
+function title_screen:update()
+end
+function title_screen:draw()
+	cls(1)
+	txt_options(true,3)
+	txt_print("nuklear",64,2,11)
+	txt_options(true,4)
+	txt_print("klone",64,12,7)
+end
+function title_screen:init()
+end
+
+-- game loop
+function _update60()
+	time_t+=1
+	futures_update(before_update)
+	sm_update()
+end
+function _draw()
+	sm_draw()
+	futures_update(after_draw)
+end
+function _init()
+	cls(0)
+	sm_push(title_screen)
 end
 
 
