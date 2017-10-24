@@ -1,5 +1,5 @@
 pico-8 cartridge // http://www.pico-8.com
-version 8
+version 9
 __lua__
 local before_update={c=0}
 local after_draw={c=0}
@@ -8,89 +8,112 @@ local actors = {} --all actors in world
 
 -- side
 local good_side,bad_side,any_side=0x1,0x2,0x3
--- damage type mask
-local dmg_phys=   0x0100
-local dmg_contact=0x0200
-local dmg_energy= 0x0400
-local dmg_poison= 0x0800
-local dmg_mask=   0xff
+
+-- json parser
+-- from: https://gist.github.com/tylerneylon/59f4bcf316be525b30ab
+local function error(str)
+	printh("error"..str)
+	assert()
+end
+
+local function match(s,tokens)
+	for i=1,#tokens do
+		if(s==sub(tokens,i,i)) return true
+	end
+	return false
+end
+local function skip_delim(str, pos, delim, err_if_missing)
+ if sub(str,pos,pos)!=delim then
+  if(err_if_missing) error('expected '..delim..' near position '.. pos)
+  return pos,false
+ end
+ return pos+1,true
+end
+local function parse_str_val(str, pos, val)
+	val=val or ''
+	if pos>#str then
+		error('end of input found while parsing string.')
+	end
+	local c=sub(str,pos,pos)
+	if(c=='"') return val,pos+1
+	return parse_str_val(str,pos+1,val..c)
+end
+local function parse_num_val(str,pos,val)
+	val=val or ''
+	if pos>#str then
+		error('end of input found while parsing string.')
+	end
+	local c=sub(str,pos,pos)
+	if(not match(c,"-x0123456789.")) return val+0,pos
+	return parse_num_val(str,pos+1,val..c)
+end
+-- public values and functions.
+local table_delims={
+	['{']="}",
+	['[']="]"}
+-- register json context here
+local _g={
+	['true']=true,
+	['false']=false,
+	['dmg_phys']=0x0100,
+	['dmg_contact']=0x0200,
+	['dmg_energy']=0x0400,
+	['dmg_poison']=0x0800,
+	['dmg_mask']=0xff
+}
+
+function json_parse(str, pos, end_delim)
+	pos=pos or 1
+	if(pos>#str) error('reached unexpected end of input.')
+	local first=sub(str,pos,pos)
+	if match(first,"{[") then
+		local obj,key,delim_found={},true,true
+		pos+=1
+		while true do
+			key,pos=json_parse(str, pos, table_delims[first])
+			if(key==nil) return obj,pos
+			if not delim_found then error('comma missing between table items.') end
+			if first=="{" then
+				pos=skip_delim(str,pos,':',true)  -- true -> error if missing.
+				obj[key],pos=json_parse(str,pos)
+			else
+				add(obj,key)
+			end
+			pos,delim_found=skip_delim(str, pos, ',')
+  end
+ elseif first=='"' then
+ 	-- parse a string.
+  return parse_str_val(str,pos+1)
+ elseif match(first,"-0123456789") then
+ 	-- parse a number.
+  return parse_num_val(str, pos)
+ elseif first==end_delim then  -- end of an object or array.
+  return nil,pos+1
+ else  -- parse true, false
+  for lit_str,lit_val in pairs(_g) do
+   local lit_end=pos+#lit_str-1
+   if sub(str,pos,lit_end)==lit_str then return lit_val,lit_end+1 end
+  end
+  local pos_info_str = 'position ' .. pos .. ': ' .. sub(str, pos, pos + 10)
+  error('invalid json syntax starting at ' .. pos_info_str)
+	end
+end
 
 -- player settings
 local plyr
 local plyr_playing
 local plyr_score
 local plyr_acc=0.05
-local frames_lr={17,18,19,18,17}
-local frames_up={33,34,35}
-local frames_dn={49,50,51}
+local plyr_frames=json_parse('[[17,18,19,18,17],[33,34,35],[49,50,51]]')
 local pause_t=0
 -- blast
-local blast_frames={
-	192,194,196,198,200,202}
+local blast_frames=json_parse('[192,194,196,198,200,202]')
 -- camera
 local shkx,shky=0,0
 local cam_x,cam_y
 -- weapons catalog
-local base_gun={
-	id=1,
-	sx=48,sy=8,
-	blt_frames={42,42,42},
-	dmg=bor(dmg_phys,1),
-	spread=0.05,
-	v=0.1, -- velocity
-	ttl=90,
-	dly=32,
-	ammo=50 --max ammo
-}
-local acid_gun={
-	id=1,
-	blt_frames={26,27,28},
-	blts=3,
-	spread=0.1,
-	bounce=true,
-	dmg=bor(dmg_poison,5),
-	v=0.1, -- velocity
-	xy={1,0},
-	ttl=30,
-	dly=5,
-	ammo=50 --max ammo
-}
-local uzi={
-	id=2,
-	icon=21,
-	sx=32,sy=8,
-	blt_frames={
-		10, --east
-		12,
-		11 --north
-	},
-	spread=0.05,
-	dmg=bor(dmg_phys,2),
-	v=0.4, -- velocity
-	ttl=30,
-	dly=5,
-	ammo=50, --max ammo
-	shk_pow=2 -- shake power
-}
-local shotgun={
-	id=2,
-	icon=37,
-	sx=32,sy=16,
-	blt_frames={
-		10, --east
-		12,
-		11 --north
-	},
-	spread=0.05,
-	blts=3,
-	dmg=bor(dmg_phys,2),
-	inertia=0.95,
-	v=0.3, -- velocity
-	ttl=30,
-	dly=56,
-	ammo=50, --max ammo
-	shk_pow=2 -- shake power
-}
+local weapons=json_parse('{"base_gun":{"id":1,"sx":48,"sy":8,"blt_frames":[42,42,42],"dmg_type":dmg_phys,"dmg":1,"spread":0.05,"v":0.1,"ttl":90,"dly":32,"ammo":50},"acid_gun":{"id":1,"blt_frames":[26,27,28],"blts":3,"spread":0.1,"bounce":true,"dmg_type":dmg_poison,"dmg":3,"v":0.1,"xy":[1,0],"ttl":30,"dly":5,"ammo":50},"uzi":{"id":2,"icon":21,"sx":32,"sy":8,"blt_frames":[10,12,11],"spread":0.05,"dmg_type":dmg_phys,"dmg":2,"v":0.4,"ttl":30,"dly":5,"ammo":50,"shk_pow":2},"shotgun":{"id":2,"icon":37,"sx":32,"sy":16,"blt_frames":[10,12,11],"spread":0.05,"blts":3,"dmg_type":dmg_phys,"dmg":2,"inertia":0.95,"v":0.3,"ttl":30,"dly":56,"ammo":50,"shk_pow":2}}')
+
 -- modifiers
 --[[
 	weapon bounce
@@ -102,148 +125,20 @@ local shotgun={
 ]]
 
 -- levels
-local cur_level=3
-local levels={
-	{
-	name="desert",
-	ground_tiles={
-		68,64,65,67},
-	wall_tiles={66},
-	solid_tiles_base=112,
-	bkg_col=1, -- clear color
-	depth=3,
-	cw=32,ch=32,
-	w={4,6},
-	h={4,6},
-	paths={1,2},
-	path={
-		bends={1,2},
-		w={1,2},
-		len={2,3}
-	},
-	spawns={
-		{3,5,make_worm},
-		{8,10,make_sandman},
-		{1,2,make_scorpion}
-	}},{
-	name="sewers",
-	ground_tiles={86,87,87,88},
-	wall_tiles={90,89,91},
-	solid_tiles_base=112,
-	shadow_tile=94,
-	borders={10,11,3},
-	bkg_col=3, -- clear color
-	depth=4,
-	cw=32,ch=32,
-	w={4,6},
-	h={4,6},
-	paths={1,2},
-	path={
-		bends={1,2},
-		w={1,2},
-		len={2,3}
-	}},{
-	name="snow plains",
-	ground_tiles={70,71,72},
-	wall_tiles={74},
-	solid_tiles_base=112,
-	shadow_tile=95,
-	borders={1,12,7},
-	bkg_col=7, -- clear color
-	depth=5,
-	cw=32,ch=48,
-	w={4,6},
-	h={4,6},
-	paths={1,2},
-	path={
-		bends={1,2},
-		w={1,2},
-		len={2,3}
-	}},{
-	name="palace",
-	ground_tiles={96,100},
-	wall_tiles={97,98,99},
-	solid_tiles_base=112,
-	shadow_tile=101,
-	borders={7,0,5},
-	bkg_col=9,
-	depth=5,
-	cw=32,ch=48,
-	w={4,6},
-	h={4,6},
-	paths={1,2},
-	path={
-		bends={1,2},
-		w={1,2},
-		len={2,3}
-	}},{
-	name="lab",
-	ground_tiles={102,105},
-	wall_tiles={103,104,106},
-	solid_tiles_base=112,
-	shadow_tile=107,
-	borders={6,7,5},
-	bkg_col=5, -- clear color
-	depth=4,
-	cw=32,ch=48,
-	w={4,6},
-	h={3,5},
-	paths={4,4},
-	path={
-		bends={0,2},
-		w={1,2},
-		len={8,12}
-	}}
-}
+local cur_level=4
+local levels=json_parse('[{"name":"desert","ground_tiles":[68,64,65,67],"wall_tiles":[66],"solid_tiles_base":112,"bkg_col":1,"depth":3,"cw":32,"ch":32,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"sewers","ground_tiles":[86,87,87,88],"wall_tiles":[90,89,91],"solid_tiles_base":112,"shadow_tile":94,"borders":[10,11,3],"bkg_col":3,"depth":4,"cw":32,"ch":32,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"snow plains","ground_tiles":[70,71,72],"wall_tiles":[74],"solid_tiles_base":112,"shadow_tile":95,"borders":[1,12,7],"bkg_col":7,"depth":5,"cw":32,"ch":48,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"palace","ground_tiles":[96,100],"wall_tiles":[97,98,99,108],"solid_tiles_base":112,"shadow_tile":101,"borders":[7,0,5],"bkg_col":9,"depth":5,"cw":32,"ch":48,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"lab","ground_tiles":[102,105],"wall_tiles":[103,104,106],"solid_tiles_base":112,"shadow_tile":107,"borders":[6,7,5],"bkg_col":5,"depth":4,"cw":32,"ch":48,"w":[4,6],"h":[3,5],"paths":[4,4],"path":{"bends":[0,2],"w":[1,2],"len":[8,12]}}]')
 
 local blts={len=0}
 local parts={len=0}
 local zbuf={len=0}
 local time_t=0
 
-local face2unit={}
-local face2rndunit={}
-for i=0,7 do
-	add(face2unit,{cos(i/7),-sin(i/7)})
-	local rndunit={}
-	for k=1,32 do
-		local ang=i/7+0.05*(rnd(1)-0.5)
-		local dx,dy=cos(ang),-sin(ang)
-		add(rndunit,{dx,dy})
-	end
-	add(face2rndunit,rndunit)
-end
+local face2unit=json_parse('[[1,0],[0.6234,-0.7819],[-0.2225,-0.9749],[-0.901,-0.4338],[-0.901,0.4338],[-0.2225,0.975],[0.6234,0.7819],[1,0]]')
+local face2rndunit=json_parse('[[1,0],[0.6234,-0.7819],[-0.2225,-0.9749],[-0.901,-0.4338],[-0.901,0.4338],[-0.2225,0.975],[0.6234,0.7819],[1,0],[[0.9998,-0.02146],[0.9917,-0.1289],[0.9999,-0.01495],[0.9932,0.1167],[0.9994,-0.03527],[0.9929,-0.1194],[0.9886,-0.1509],[0.9953,0.09727],[0.9987,-0.05059],[0.9881,-0.1539],[0.9996,-0.0276],[0.9967,0.0816],[0.9931,-0.1175],[0.9995,-0.03066],[0.9932,-0.1163],[0.995,0.1003],[0.9959,-0.09037],[1,0.009972],[0.9886,0.1505],[0.9976,0.06974],[0.992,-0.1266],[0.9959,0.09039],[0.9995,-0.0322],[0.9968,0.08045],[0.999,-0.046],[0.9935,-0.114],[0.9992,-0.04025],[0.9932,-0.1163],[1,-0.006126],[0.9911,0.1334],[0.9993,-0.03796],[0.992,0.1266]],[[0.5233,-0.8521],[0.7157,-0.6984],[0.6995,-0.7147],[0.5702,-0.8215],[0.4942,-0.8693],[0.5973,-0.8021],[0.6984,-0.7157],[0.5911,-0.8066],[0.5578,-0.83],[0.65,-0.76],[0.6932,-0.7208],[0.5581,-0.8298],[0.6482,-0.7614],[0.6724,-0.7402],[0.5789,-0.8154],[0.5511,-0.8344],[0.5171,-0.8559],[0.6854,-0.7282],[0.6653,-0.7466],[0.6125,-0.7905],[0.5898,-0.8075],[0.6246,-0.781],[0.6681,-0.744],[0.7293,-0.6842],[0.5282,-0.8491],[0.6879,-0.7258],[0.6161,-0.7876],[0.5645,-0.8254],[0.5581,-0.8298],[0.7379,-0.6749],[0.5495,-0.8355],[0.6532,-0.7572]],[[-0.3412,-0.94],[-0.3325,-0.9431],[-0.3166,-0.9486],[-0.1422,-0.9898],[-0.2811,-0.9597],[-0.1581,-0.9874],[-0.1973,-0.9803],[-0.2693,-0.9631],[-0.2135,-0.9769],[-0.1842,-0.9829],[-0.1289,-0.9916],[-0.1845,-0.9828],[-0.2634,-0.9647],[-0.1891,-0.982],[-0.09992,-0.995],[-0.177,-0.9842],[-0.357,-0.9341],[-0.3484,-0.9373],[-0.1395,-0.9902],[-0.2593,-0.9658],[-0.343,-0.9393],[-0.1292,-0.9916],[-0.09228,-0.9957],[-0.2359,-0.9718],[-0.2045,-0.9789],[-0.1205,-0.9927],[-0.1762,-0.9843],[-0.237,-0.9715],[-0.1426,-0.9898],[-0.3115,-0.9502],[-0.2859,-0.9583],[-0.2277,-0.9737]],[[-0.9133,-0.4073],[-0.8559,-0.5171],[-0.9258,-0.3781],[-0.9023,-0.431],[-0.8481,-0.5298],[-0.9466,-0.3224],[-0.933,-0.3599],[-0.9119,-0.4105],[-0.8934,-0.4493],[-0.8875,-0.4609],[-0.9454,-0.326],[-0.9544,-0.2983],[-0.9463,-0.3231],[-0.8706,-0.4919],[-0.8965,-0.4431],[-0.8555,-0.5177],[-0.924,-0.3823],[-0.8993,-0.4372],[-0.9565,-0.2917],[-0.8744,-0.4852],[-0.8239,-0.5667],[-0.9153,-0.4028],[-0.9331,-0.3595],[-0.9007,-0.4345],[-0.9023,-0.431],[-0.9196,-0.3929],[-0.9379,-0.347],[-0.9322,-0.362],[-0.9404,-0.3401],[-0.8372,-0.5469],[-0.852,-0.5236],[-0.9066,-0.422]],[[-0.9269,0.3752],[-0.9275,0.3738],[-0.9181,0.3965],[-0.8934,0.4493],[-0.8523,0.523],[-0.9397,0.3419],[-0.8987,0.4386],[-0.9101,0.4143],[-0.8823,0.4707],[-0.9165,0.4],[-0.9281,0.3724],[-0.9412,0.338],[-0.874,0.4859],[-0.9534,0.3016],[-0.9505,0.3108],[-0.8285,0.56],[-0.9359,0.3524],[-0.8442,0.536],[-0.8246,0.5657],[-0.8473,0.5311],[-0.8344,0.5511],[-0.9521,0.3057],[-0.8674,0.4976],[-0.8668,0.4986],[-0.8939,0.4482],[-0.8862,0.4633],[-0.9548,0.2973],[-0.8319,0.5549],[-0.9557,0.2943],[-0.8565,0.5161],[-0.9301,0.3674],[-0.889,0.4578]],[[-0.08044,0.9968],[-0.273,0.962],[-0.2026,0.9793],[-0.09037,0.9959],[-0.2833,0.959],[-0.1845,0.9828],[-0.2811,0.9597],[-0.1664,0.9861],[-0.1114,0.9938],[-0.2526,0.9676],[-0.077,0.997],[-0.1804,0.9836],[-0.1623,0.9867],[-0.2734,0.9619],[-0.08503,0.9964],[-0.3667,0.9304],[-0.2903,0.9569],[-0.2232,0.9748],[-0.3534,0.9355],[-0.3042,0.9526],[-0.3699,0.9291],[-0.1581,0.9874],[-0.2478,0.9688],[-0.1441,0.9896],[-0.2656,0.9641],[-0.3595,0.9331],[-0.3702,0.9289],[-0.08694,0.9962],[-0.0682,0.9977],[-0.3115,0.9502],[-0.07777,0.997],[-0.3159,0.9488]],[[0.611,0.7916],[0.6228,0.7824],[0.5527,0.8334],[0.6679,0.7443],[0.632,0.775],[0.5314,0.8471],[0.6954,0.7187],[0.6015,0.7989],[0.6207,0.7841],[0.5607,0.8281],[0.6285,0.7779],[0.6856,0.7279],[0.6168,0.7872],[0.6976,0.7165],[0.7019,0.7122],[0.6741,0.7386],[0.544,0.8391],[0.6859,0.7277],[0.7157,0.6984],[0.6558,0.755],[0.6249,0.7807],[0.5181,0.8554],[0.6171,0.7869],[0.56,0.8285],[0.7168,0.6973],[0.7371,0.6758],[0.5607,0.8281],[0.6161,0.7877],[0.5035,0.864],[0.5543,0.8323],[0.5239,0.8518],[0.5379,0.843]],[[0.992,-0.1262],[0.9929,0.1194],[0.9999,-0.01571],[0.9956,0.09382],[0.9951,-0.09916],[0.9984,-0.05711],[0.9998,0.02186],[0.9968,0.08007],[0.9936,0.1129],[0.999,-0.04485],[0.9919,0.1274],[0.9996,0.02799],[0.9961,0.08848],[0.9919,0.1274],[0.9882,-0.1532],[0.9988,-0.04906],[0.9983,-0.05825],[0.9926,-0.1213],[0.9947,0.1034],[0.9981,0.06095],[0.9992,-0.0391],[0.9931,0.1171],[0.9953,0.09727],[0.9998,0.01879],[0.9998,-0.01917],[0.9986,-0.05366],[0.9982,0.05941],[0.9999,-0.01456],[1,0.008827],[0.998,0.06324],[0.9878,-0.1558],[0.998,-0.06284]]]')
 
-local face1strip={
-	{flipx=false,flipy=false}, --east
-	{flipx=false,flipy=false},
-	{flipx=false,flipy=false},
-	{flipx=true,flipy=false},
-	{flipx=true,flipy=false},
-	{flipx=true,flipy=false},
-	{flipx=false,flipy=false}, --north
-	{flipx=false,flipy=false} --north
-}
-local face2strip={
-	{strip=1,flipx=false,flipy=false},
-	{strip=2,flipx=false,flipy=false},
-	{strip=2,flipx=false,flipy=false},
-	{strip=1,flipx=true,flipy=false},
-	{strip=2,flipx=false,flipy=true},
-	{strip=2,flipx=false,flipy=true},
-	{strip=2,flipx=false,flipy=true},
-	{strip=2,flipx=false,flipy=true}
-}
-local face3strip={
-	{strip=1,flipx=false,flipy=false},
-	{strip=2,flipx=false,flipy=false},
-	{strip=2,flipx=false,flipy=false},
-	{strip=3,flipx=false,flipy=false},
-	{strip=1,flipx=true,flipy=false},
-	{strip=3,flipx=false,flipy=false},
-	{strip=3,flipx=true,flipy=false},
-	{strip=3,flipx=false,flipy=false}
-}
+local face1strip=json_parse('[{"flipx":false,"flipy":false},{"flipx":false,"flipy":false},{"flipx":false,"flipy":false},{"flipx":true,"flipy":false},{"flipx":true,"flipy":false},{"flipx":true,"flipy":false},{"flipx":false,"flipy":false},{"flipx":false,"flipy":false}]')
+local face2strip=json_parse('[{"strip":1,"flipx":false,"flipy":false},{"strip":2,"flipx":false,"flipy":false},{"strip":2,"flipx":false,"flipy":false},{"strip":1,"flipx":true,"flipy":false},{"strip":2,"flipx":false,"flipy":true},{"strip":2,"flipx":false,"flipy":true},{"strip":2,"flipx":false,"flipy":true},{"strip":2,"flipx":false,"flipy":true}]')
+local face3strip=json_parse('[{"strip":1,"flipx":false,"flipy":false},{"strip":2,"flipx":false,"flipy":false},{"strip":2,"flipx":false,"flipy":false},{"strip":3,"flipx":false,"flipy":false},{"strip":1,"flipx":true,"flipy":false},{"strip":3,"flipx":false,"flipy":false},{"strip":3,"flipx":true,"flipy":false},{"strip":3,"flipx":false,"flipy":false}]')
 
 -- fade ramp + screen manager
 _shex={}
@@ -316,14 +211,10 @@ end
 -- futures
 function futures_update(futures)
 	futures=futures or before_update
-	local n=futures.c
-	futures.c=0
-	for i=1,n do
-		local f=futures[i]
+	for f in all(futures) do
 		local r,e=coresume(f)
-		if r then
-			futures.c+=1
-			futures[futures.c]=f
+		if not r then
+			del(futures,f)
 		--[[
 		else
 			printh("exception:"..e)
@@ -332,9 +223,7 @@ function futures_update(futures)
 	end
 end
 function futures_add(fn,futures)
-	futures=futures or before_update
-	futures.c+=1
-	futures[futures.c]=cocreate(fn)
+	add(futures or before_update,cocreate(fn))
 end
 -- print text helper
 txt_center=false
@@ -485,7 +374,7 @@ function zbuf_draw()
 	end
 end
 
--- smart map
+-- collision map
 local cmap={}
 local cmap_cells={0,1,129,128,127,-1,-129,-128,-127}
 function cmap_clear(objs)
@@ -974,7 +863,7 @@ end
 function make_sandman(x,y)
 	local bad_guy=make_actor(x,y)
 	bad_guy.hp=5
-	bad_guy.wp=base_gun
+	bad_guy.wp=weapons.base_gun
 	bad_guy.frames={
 		{4,5,6}
 	}
@@ -1173,11 +1062,8 @@ function make_plyr()
 	plyr.hpmax=5
 	plyr.side=good_side
 	-- todo: rename to strips
-	plyr.frames={
-		frames_lr,
-		frames_up,
-		frames_dn}
-	plyr.wp=uzi
+	plyr.frames=plyr_frames
+	plyr.wp=weapons.uzi
 	plyr.safe_t=time_t+30
 	return plyr
 end
@@ -1398,14 +1284,14 @@ eeeeeeee044455500444455004444450ee000eeeee707eeee0113110e70000070335505070000707
 eeeeeeee0333bab003333ba0033333b0eee0eeeeeee7eeeee0000000e77777770550000070077777ee3bb3eeee3bb3eeeebb3eee000000000000000000000000
 eeeeeeee05000050e050050ee005500eeee0eeeeeee7eeeeeeeeeeeeeeeeeeee0660eeee7007eeeeeeeeeeeeeee33eeeeeeeeeee000000000000000000000000
 eeeeeeeee0eeee0eee0ee0eeeee00eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000eeee7777eeeeeeeeeeeeeeeeeeeeeeeeeeee000000000000000000000000
-ee000eeeee0000eeee0000eeee0000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeee0000000000000000000000000000000000000000
-e0bbb0eee0999a0ee099aa0ee0999a0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeee0000000000000000000000000000000000000000
-e07770ee099999a009999aa0099999a0ee000000ee777777eeee0e0eeeee7e7e0000000000000000eeeaaeee0000000000000000000000000000000000000000
-e03330ee099999a009999aa0099999a0e0496660e7000007ee001010ee7707070000000000000000eea77aee0000000000000000000000000000000000000000
-e03a30ee044444400444444004444440e0445550e7000007e055c1c0e70000070000000000000000eea77aee0000000000000000000000000000000000000000
-e03930ee03333bb00333bbb003333bb0e0400000e7077777e0501010e70707070000000000000000eeeaaeee0000000000000000000000000000000000000000
-e00000ee050000500500000000000050ee0eeeeeee7eeeeeee0e0e0eee7e7e7e0000000000000000eeeeeeee0000000000000000000000000000000000000000
-e11111eee0eeee0ee0eeeeeeeeeeee0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeee0000000000000000000000000000000000000000
+ee000eeeee0000eeee0000eeee0000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeeeeeeeeeee00000000000000000000000000000000
+e0bbb0eee0999a0ee099aa0ee0999a0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeeeee6bb6ee00000000000000000000000000000000
+e07770ee099999a009999aa0099999a0ee000000ee777777eeee0e0eeeee7e7e0000000000000000eeeaaeeee6bb776e00000000000000000000000000000000
+e03330ee099999a009999aa0099999a0e0496660e7000007ee001010ee7707070000000000000000eea77aeeebbbb7be00000000000000000000000000000000
+e03a30ee044444400444444004444440e0445550e7000007e055c1c0e70000070000000000000000eea77aeeebbbbbbe00000000000000000000000000000000
+e03930ee03333bb00333bbb003333bb0e0400000e7077777e0501010e70707070000000000000000eeeaaeeee6bbbb6e00000000000000000000000000000000
+e00000ee050000500500000000000050ee0eeeeeee7eeeeeee0e0e0eee7e7e7e0000000000000000eeeeeeeeee6bb6ee00000000000000000000000000000000
+e11111eee0eeee0ee0eeeeeeeeeeee0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeeeeeeeeeee00000000000000000000000000000000
 ee000eeeee0000eeee0000eeee0000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeee0000000000000000000000000000000000000000
 e06660eee0999a0ee0999a0ee0999a0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000ee88eeee0000000000000000000000000000000000000000
 e07770ee094141a0091414a0094141a0ee00000eee77777eee000000ee7777770000000000000000e000000e0000000000000000000000000000000000000000
@@ -1431,12 +1317,12 @@ c000000cc000000c0c0000c000500500000000000000000055555555544555556555555656777763
 c000000cc000000c0c0000c000500500000550000000000055555555555554557666666735666655313131313522553500000000000000005555555577777777
 ccccccccc000000c0c0000c000500500000550000000000055555555555555555777777553555553131313135322535355555555555555555555555577777777
 666166669995999999000009906000606660666600000000dddd11116666666667676666dddd11116dddddd65555555599959999999599990000000000000000
-661516664495444440445440402222206605066611010111dddd11116555555665656666dddd11116dd77dd61111000044954444449544440000000000000000
-615551665555555550095900508000806666666610111011dddd11116000000665656666dddd00116d7667d61111000055555555555555550000000000000000
-155555169999959990440440908080800066606655555556dddd111160b0280665656666dddddd006d6666d6dddd111199999599999995990000000000000000
-6555556644449544409565904088888065600566655555661111dddd6000000665656666111ddddd6d5665d61111dddd44449544444495440000000000000000
-6655566655555555500454005088088066655666665556661111dddd66777766656566661111dddd6dd55dd61111dddd55555555555555550000000000000000
-6665666699959999909959909020502066656666666566661111dddd66666666656566660111dddd6dddddd61111dddd99959999999599990000000000000000
+661516664495444440445440402222206605066611010111dddd11116555555665656666dddd11116dd77dd6111100004aaaa774449544440000000000000000
+615551665555555550095900508000806666666610111011dddd11116000000665656666dddd00116d7667d6111100005acccc75555555550000000000000000
+155555169999959990440440908080800066606655555556dddd111160b0280665656666dddddd006d6666d6dddd11119a333ca9999995990000000000000000
+6555556644449544409565904088888065600566655555661111dddd6000000665656666111ddddd6d5665d61111dddd4a3333a4444495440000000000000000
+6655566655555555500454005088088066655666665556661111dddd66777766656566661111dddd6dd55dd61111dddd5aaaaaa5555555550000000000000000
+6665666699959999909959909020502066656666666566661111dddd66666666656566660111dddd6dddddd61111dddd92212229999599990000000000000000
 6666666644954444400000004001110066666666666666661111dddd6666666660606666d000dddd667777661111dddd44954444449544440000000000000000
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9111111991111111911111199111111111111119111111111111111911111111
 a111111aa1111111a111111aa11111111111111a111111111111111a111111119111111991111111911111199111111111111119111111111111111911111111
