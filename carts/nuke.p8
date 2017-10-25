@@ -7,7 +7,7 @@ local after_draw={c=0}
 local actors = {} --all actors in world
 
 -- side
-local good_side,bad_side,any_side=0x1,0x2,0x3
+local no_side,good_side,bad_side,any_side=0x0,0x1,0x2,0x3
 
 -- json parser
 -- from: https://gist.github.com/tylerneylon/59f4bcf316be525b30ab
@@ -363,8 +363,9 @@ function zbuf_clear()
 end
 function zbuf_write(obj)
 	local xe,ye=cam_project(obj.x,obj.y)
+	local ze=obj.z and 8*obj.z or 0
 	zbuf.len+=1
-	zbuf[zbuf.len]={obj,{xe,ye},key=ye}
+	zbuf[zbuf.len]={obj,{xe,ye-ze},key=ye+ze}
 end
 function zbuf_draw()
 	sort(zbuf,zbuf.len)
@@ -442,45 +443,31 @@ function cam_project(x,y)
 end
 
 -- special fxs
-function make_part(x,y,dly)
+function make_part(x,y,z,cls)
 	local p={
-		x=x,y=y,
-		dx=0,dy=0,
+		x=x,y=y,z=0,
+		dx=0,dy=0,dz=0,
 		inertia=0,
-		dly=dly,
-		t=time_t+dly,
+		t=time_t+cls.dly,
 		update=update_part
 	}
+	for k,v in pairs(cls) do
+		p[k]=v
+	end
 	parts.len+=1
 	parts[parts.len]=p
 	return p
 end
-function make_static_spr_part(x,y,spr,sw)
-	local p={
-		x=x,y=y,
-		sw=sw or 1,
-		update=update_part,
-		draw=draw_spr_part
-	}
-	parts.len+=1
-	parts[parts.len]=p
-	return p
-end
-function make_flash_part(x,y,r)
-	local p={
-		x=x,y=y,
-		r=r or 1,
-		t=time_t+4,
-		update=update_static_part,
-		draw=function(self,x,y)
-			local r=self.r*(self.t-time_t)/4
-			circfill(x,y,8*r,7)
-		end
-	}
-	parts.len+=1
-	parts[parts.len]=p
-	return p
-end
+
+local flash_part_cls={
+	dly=4,
+	r=0.5,
+	update=update_static_part,
+	draw=function(self,x,y)
+		local r=self.r*(self.t-time_t)/self.dly
+		circfill(x,y,8*r,7)
+	end
+}
 
 function update_static_part(self)
 	if(self.t<time_t) return false
@@ -492,8 +479,10 @@ function update_part(self)
 	if(self.t<time_t) return false
 	self.x+=self.dx
 	self.y+=self.dy
+	self.z+=self.dz
 	self.dx*=self.inertia
 	self.dy*=self.inertia
+	self.dz*=self.inertia
 	zbuf_write(self)
 	return true
 end
@@ -505,6 +494,11 @@ end
 function draw_spr_part(self,x,y)
 	local sw=self.sw
 	spr(self.spr,x-4*sw,y-4*sw,sw,sw)
+end
+function draw_txt_part(self,x,y)
+	local l=#self.txt*4
+	print(self.txt,x-l+1,y-2,0)
+	print(self.txt,x-l,y-2,7)
 end
 
 -- bullets
@@ -554,7 +548,7 @@ function make_blt(a,wp)
 			draw=draw_blt
 		}
 		-- muzzle flash
-		if(i==1) make_flash_part(b.x,b.y,0.5)
+		if(i==1) make_part(b.x,b.y,0.5,flash_part_cls)
 		-- for fast collision
 		b.prevx,b.prevy=b.x,b.y
 		blts.len+=1
@@ -825,31 +819,28 @@ function hit_actor(self,dmg)
 		del(actors,self)
 	end
 end
-
 function make_blast(x,y)
 	pause_t=4
-	local p=make_actor(x,y,4)
-	p.w=0.8
-	p.dmg=bor(dmg_phys,15)
-	p.side=any_side
-	p.t=time_t+12
-	p.ttl=12
-	p.frames=blast_frames
-	p.draw=draw_anim_spr
-	p.update=function(a)
-		if(a.t<time_t) del(actors,a)
-	end
-	p.hit=nop
-	return p
+	return make_actor(x,y,{
+		w=0.8,
+		dmg=bor(dmg_phys,15),
+		side=any_side,
+		t=time_t+12,
+		ttl=12,
+		frames=blast_frames,
+		draw=draw_anim_spr,
+		update=function(a)
+			if(a.t<time_t) del(actors,a)
+		end,
+		hit=nop})
 end
 
-function make_barrel(x,y) 
- local barrel=make_actor(x,y)
- barrel.side=no_side
- barrel.inertia=0.8
- barrel.spr=128
- barrel.side=all_side
- barrel.hit=function(self,dmg)
+-- custom actors
+local barrel_cls={
+	side=any_side,
+	inertia=0.8,
+	spr=128,
+	hit=function(self,dmg)
 		if(band(dmg_contact,dmg)!=0) return
 		self.hit_t=time_t+8
 		self.hp-=1--band(dmg_mask,dmg)
@@ -858,17 +849,13 @@ function make_barrel(x,y)
 			del(actors,self)
 		end
 	end
-	return barrel
-end
-function make_sandman(x,y)
-	local bad_guy=make_actor(x,y)
-	bad_guy.hp=5
-	bad_guy.wp=weapons.base_gun
-	bad_guy.frames={
-		{4,5,6}
-	}
- bad_guy.move_t=0
- bad_guy.update=function(self)
+}
+local sandman_class={
+	hp=5,
+	wp=weapons.base_gun,
+	frames={{4,5,6}},
+	move_t=0,
+	update=function(self)
  	if lineofsight(self.x,self.y,plyr.x,plyr.y,4) then
 			local dx,dy=plyr.x-self.x,plyr.y-self.y
 			local d=sqrt(dx*dx+dy*dy)
@@ -888,51 +875,41 @@ function make_sandman(x,y)
  		self.move_t=time_t+30
  	end
  end
-	return bad_guy
-end
+}
+local scorpion_cls={
+	w=1.8,
+	hp=10,
+	frames={{135,137}},
+	move_t=0,
+	update=function(self)
+ 	if self.move_t<time_t then
+ 		self.dx,self.dy=0.05*(rnd(2)-1),0.05*(rnd(2)-1)
+ 		self.move_t=time_t+30
+ 	end
+ end
+}
+local worm_class={
+	palt=3,
+	w=0.2,
+	inertia=0.8,
+	dmg=bor(dmg_contact,1),
+	frames={{7,8}},
+	move_t=0,
+	update=function(self)
+ 	if self.move_t<time_t then
+ 		self.dx,self.dy=0.05*(rnd(2)-1),0.05*(rnd(2)-1)
+ 		self.move_t=time_t+8+rnd(8)
+ 	end
+ end
+}
 
-function make_scorpion(x,y)
-	local scorpion=make_actor(x,y)
-	scorpion.w=1.8
-	scorpion.hp=10
-	scorpion.frames={
-	 	{135,137}
-	 }
- scorpion.move_t=0
- scorpion.update=function(self)
- 	if self.move_t<time_t then
- 		self.dx,self.dy=0.05*(rnd(2)-1),0.05*(rnd(2)-1)
- 		self.move_t=time_t+30
- 	end
- end
-	return scorpion
-end
-function make_worm(x,y)
- local worm=make_actor(x,y)
- worm.palt=3
- worm.w=0.2
- worm.inertia=0.8
- worm.dmg=bor(dmg_contact,1)
- worm.frames={
- 	{7,8}
- }
- worm.move_t=0
- worm.update=function(self)
- 	if self.move_t<time_t then
- 		self.dx,self.dy=0.05*(rnd(2)-1),0.05*(rnd(2)-1)
- 		self.move_t=time_t+30
- 	end
- end
-return worm
-end
-function make_warp(x,y)
-	local warp=make_actor(x,y)
-	warp.draw=nop
-	warp.hit=nop
-	warp.w=0
-	warp.captured=false
-	warp.frames={80,81,82,83,84}
-	warp.update=function(self)
+local warp_cls={
+	draw=nop,
+	hit=nop,
+	w=0,
+	captured=false,
+	frames={80,81,82,83,84},
+	update=function(self)
 		mset(x,y,self.frames[flr(time_t/8)%#self.frames+1])
 		if (self.captured) return
 		local dx,dy=plyr.x-self.x,plyr.y-self.y
@@ -952,11 +929,48 @@ function make_warp(x,y)
 			end)
 		end
 	end
-end
+}
+
+local health_cls={
+	spr=48,
+	w=0,
+	hit=nop,
+	update=function(self)
+		local dx,dy=plyr.x-self.x,plyr.y-self.y
+		if abs(dx)<0.5 and abs(dy)<0.5 then
+			plyr.hp=min(plyr.hpmax,plyr.hp+1)
+			make_part(self.x,self.y,0,{
+				dz=0.1,
+				inertia=0.91,
+				dly=72,
+				txt="+1hp",
+				draw=draw_txt_part})
+			del(actors,self)
+		end
+	end
+}
+local ammo_cls={
+	spr=32,
+	w=0,
+	hit=nop,
+	update=function(self)
+		local dx,dy=plyr.x-self.x,plyr.y-self.y
+		if abs(dx)<0.5 and abs(dy)<0.5 then
+			--plyr.ammo=min(plyr.ammo_max,plyr.ammo+10)
+			make_part(self.x,self.y,0,{
+				dz=0.1,
+				inertia=0.91,
+				dly=72,
+				txt="ammo+10",
+				draw=draw_txt_part})
+			del(actors,self)
+		end
+	end
+}
 
 -- actor
 -- x,y in map tiles (not pixels)
-function make_actor(x,y)
+function make_actor(x,y,cls)
  local a={
 	 x=x,
 	 y=y,
@@ -976,7 +990,12 @@ function make_actor(x,y)
 	 draw=draw_actor,
 	 hit=hit_actor
  }
- add(actors,a) 
+ add(actors,a)
+ if cls then
+	for k,v in pairs(cls) do
+		a[k]=v
+	end
+ end
  return a
 end
 
@@ -987,7 +1006,7 @@ function move_actor(a)
 
  -- static? no collision check
 	if a.dx==0 and a.dy==0 then
-	 zbuf_write(a)
+		zbuf_write(a)
 		return
 	end
 	
@@ -1057,14 +1076,15 @@ end
 function make_plyr()
 	plyr_score=0
 	plyr_playing=true
-	plyr=make_actor(18,18)
-	plyr.hp=5
-	plyr.hpmax=5
-	plyr.side=good_side
+	plyr=make_actor(18,18,{
+		hp=5,
+		hpmax=5,
+		side=good_side,
 	-- todo: rename to strips
-	plyr.frames=plyr_frames
-	plyr.wp=weapons.uzi
-	plyr.safe_t=time_t+30
+		frames=plyr_frames,
+		wp=weapons.uzi,
+		safe_t=time_t+30
+		})
 	return plyr
 end
 
@@ -1179,7 +1199,10 @@ function game:init()
 	plyr.y=r.y+r.h/2
 	cam_track(plyr.x,plyr.y)
 	
-	make_warp(12,12)
+	make_actor(12,12,health_cls)
+
+	make_actor(14,14,ammo_cls)
+
 end
 
 function spawner(n,fn)
@@ -1284,22 +1307,22 @@ eeeeeeee044455500444455004444450ee000eeeee707eeee0113110e70000070335505070000707
 eeeeeeee0333bab003333ba0033333b0eee0eeeeeee7eeeee0000000e77777770550000070077777ee3bb3eeee3bb3eeeebb3eee03bbbbb003bbbbb0e03bbb0e
 eeeeeeee05000050e050050ee005500eeee0eeeeeee7eeeeeeeeeeeeeeeeeeee0660eeee7007eeeeeeeeeeeeeee33eeeeeeeeeee03bbbbb003bbbbb003bbbbb0
 eeeeeeeee0eeee0eee0ee0eeeee00eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000eeee7777eeeeeeeeeeeeeeeeeeeeeeeeeeee000000000000000000000000
-ee000eeeee0000eeee0000eeee0000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeeeeeeeeeee00000000000000000000000000000000
-e0bbb0eee0999a0ee099aa0ee0999a0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeeeee6bb6ee00000000000000000000000000000000
-e07770ee099999a009999aa0099999a0ee000000ee777777eeee0e0eeeee7e7e0000000000000000eeeaaeeee6bb776e00000000000000000000000000000000
-e03330ee099999a009999aa0099999a0e0496660e7000007ee001010ee7707070000000000000000eea77aeeebbbb7be00000000000000000000000000000000
-e03a30ee044444400444444004444440e0445550e7000007e055c1c0e70000070000000000000000eea77aeeebbbbbbe00000000000000000000000000000000
-e03930ee03333bb00333bbb003333bb0e0400000e7077777e0501010e70707070000000000000000eeeaaeeee6bbbb6e00000000000000000000000000000000
-e00000ee050000500500000000000050ee0eeeeeee7eeeeeee0e0e0eee7e7e7e0000000000000000eeeeeeeeee6bb6ee00000000000000000000000000000000
-e11111eee0eeee0ee0eeeeeeeeeeee0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeeeeeeeeeee00000000000000000000000000000000
-ee000eeeee0000eeee0000eeee0000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeee0000000000000000000000000000000000000000
-e06660eee0999a0ee0999a0ee0999a0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000ee88eeee0000000000000000000000000000000000000000
-e07770ee094141a0091414a0094141a0ee00000eee77777eee000000ee7777770000000000000000e000000e0000000000000000000000000000000000000000
-e0d8d0ee094444900944449009444490e076670ee700007ee03bb660e70000070000000000000000e08877700000000000000000000000000000000000000000
-e08880ee044555400455544004455540e055000ee700777e0453b000700007770000000000000000e05566700000000000000000000000000000000000000000
-e0d8d0ee033babb00339bbb0033babb0e050eeeee707eeee04400eee70077eee0000000000000000e000000e0000000000000000000000000000000000000000
-e00000ee05000050000000b003000000ee0eeeeeee7eeeeee00e0eeee77e7eee0000000000000000ee88eeee0000000000000000000000000000000000000000
-e11111eee0eeee0eeeeeee0ee0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeee0000000000000000000000000000000000000000
+ee00000eee0000eeee0000eeee0000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeeeeeeeeeee00000000000000000000000000000000
+e0bbbbb0e0999a0ee099aa0ee0999a0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeeeee6bb6ee00000000000000000000000000000000
+e0777770099999a009999aa0099999a0ee000000ee777777eeee0e0eeeee7e7e0000000000000000eeeaaeeee6bb776e00000000000000000000000000000000
+e0373730099999a009999aa0099999a0e0496660e7000007ee001010ee7707070000000000000000eea77aeeebbbb7be00000000000000000000000000000000
+e0353530044444400444444004444440e0445550e7000007e055c1c0e70000070000000000000000eea77aeeebbbbbbe00000000000000000000000000000000
+e033333003333bb00333bbb003333bb0e0400000e7077777e0501010e70707070000000000000000eeeaaeeee6bbbb6e00000000000000000000000000000000
+e0533350050000500500000000000050ee0eeeeeee7eeeeeee0e0e0eee7e7e7e0000000000000000eeeeeeeeee6bb6ee00000000000000000000000000000000
+ee00000ee0eeee0ee0eeeeeeeeeeee0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeeeeeeeeeee00000000000000000000000000000000
+ee00000eee0000eeee0000eeee0000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeee0000000000000000000000000000000000000000
+e0666660e0999a0ee0999a0ee0999a0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000ee88eeee0000000000000000000000000000000000000000
+e0777770094141a0091414a0094141a0ee00000eee77777eee000000ee7777770000000000000000e000000e0000000000000000000000000000000000000000
+e0dd8dd0094444900944449009444490e076670ee700007ee03bb660e70000070000000000000000e08877700000000000000000000000000000000000000000
+e0d888d0044555400455544004455540e055000ee700777e0453b000700007770000000000000000e05566700000000000000000000000000000000000000000
+e0d686d0033babb00339bbb0033babb0e050eeeee707eeee04400eee70077eee0000000000000000e000000e0000000000000000000000000000000000000000
+e0dd6dd005000050000000b003000000ee0eeeeeee7eeeeee00e0eeee77e7eee0000000000000000ee88eeee0000000000000000000000000000000000000000
+e0000000e0eeee0eeeeeee0ee0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeee0000000000000000000000000000000000000000
 444444444444444404040404444444444444444444444444777777777777777777777677777677775c775c5c76666667dddddddddddddddd121212eed2dddddd
 44444444449944444040404044444444444444444940044077777777777777777667777777657777ccc7c7c565151516ddddddddd1eddddd21ee21de20ddd2ed
 44b4b4444549544404040404494444444444444450450945777777777766667775577777765777771cc7c77c71515177ddddddddd11ddddd11dde212ddd0d02d
