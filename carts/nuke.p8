@@ -126,7 +126,7 @@ local weapons=json_parse('{"base_gun":{"id":1,"sx":48,"sy":8,"blt_frames":[42,42
 
 -- levels
 local cur_level=4
-local levels=json_parse('[{"name":"desert","ground_tiles":[68,64,65,67],"wall_tiles":[66],"solid_tiles_base":112,"bkg_col":1,"depth":3,"cw":32,"ch":32,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"sewers","ground_tiles":[86,87,87,88],"wall_tiles":[90,89,91],"solid_tiles_base":112,"shadow_tile":94,"borders":[10,11,3],"bkg_col":3,"depth":4,"cw":32,"ch":32,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"snow plains","ground_tiles":[70,71,72],"wall_tiles":[74],"solid_tiles_base":112,"shadow_tile":95,"borders":[1,12,7],"bkg_col":7,"depth":5,"cw":32,"ch":48,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"palace","ground_tiles":[96,100],"wall_tiles":[97,98,99,108],"solid_tiles_base":112,"shadow_tile":101,"borders":[7,0,5],"bkg_col":9,"depth":5,"cw":32,"ch":48,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"lab","ground_tiles":[102,105],"wall_tiles":[103,104,106],"solid_tiles_base":112,"shadow_tile":107,"borders":[6,7,5],"bkg_col":5,"depth":4,"cw":32,"ch":48,"w":[4,6],"h":[3,5],"paths":[4,4],"path":{"bends":[0,2],"w":[1,2],"len":[8,12]}}]')
+local levels=json_parse('[{"name":"desert","ground_tiles":[68,64,65,67],"wall_tiles":[66],"solid_tiles_base":112,"bkg_col":1,"depth":3,"cw":32,"ch":32,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"sewers","ground_tiles":[86,87,87,88],"wall_tiles":[90,89,91],"solid_tiles_base":112,"shadow_tile":94,"borders":[10,11,3],"bkg_col":3,"depth":4,"cw":32,"ch":32,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"snow plains","ground_tiles":[70,71,72],"wall_tiles":[74],"solid_tiles_base":112,"shadow_tile":95,"borders":[1,12,7],"bkg_col":7,"depth":5,"cw":32,"ch":48,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"palace","ground_tiles":[96,100,85],"wall_tiles":[97,98,99,108],"solid_tiles_base":112,"shadow_tile":101,"borders":[7,0,5],"bkg_col":9,"depth":5,"cw":32,"ch":48,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"lab","ground_tiles":[102,105],"wall_tiles":[103,104,106],"solid_tiles_base":112,"shadow_tile":107,"borders":[6,7,5],"bkg_col":5,"depth":4,"cw":32,"ch":48,"w":[4,6],"h":[3,5],"paths":[4,4],"path":{"bends":[0,2],"w":[1,2],"len":[8,12]}}]')
 
 local blts={len=0}
 local parts={len=0}
@@ -800,8 +800,8 @@ end
 
 -- checks both walls and actors
 function solid_a(a, dx, dy)
- if(solid_area(a.x+dx,a.y+dy,a.w,a.w)) return true
- return solid_actor(a, dx, dy) 
+	if(solid_area(a.x+dx,a.y+dy,a.w,a.w)) return true
+	return solid_actor(a, dx, dy) 
 end
 
 -- custom actors
@@ -850,13 +850,13 @@ local barrel_cls={
 		end
 	end
 }
-local sandman_class={
+local sandman_cls={
 	hp=5,
 	wp=weapons.base_gun,
 	frames={{4,5,6}},
 	move_t=0,
 	update=function(self)
- 	if lineofsight(self.x,self.y,plyr.x,plyr.y,4) then
+ 		if lineofsight(self.x,self.y,plyr.x,plyr.y,4) then
 			local dx,dy=plyr.x-self.x,plyr.y-self.y
 			local d=sqrt(dx*dx+dy*dy)
 			if(d<0.01) return
@@ -870,11 +870,11 @@ local sandman_class={
 				make_blt(self,self.wp)		
 				self.fire_dly=time_t+self.wp.dly
 			end
- 	elseif self.move_t<time_t then
- 		self.dx,self.dy=0.05*(rnd(2)-1),0.05*(rnd(2)-1)
- 		self.move_t=time_t+30
+ 		elseif self.move_t<time_t then
+ 			self.dx,self.dy=0.05*(rnd(2)-1),0.05*(rnd(2)-1)
+ 			self.move_t=time_t+30
+ 		end
  	end
- end
 }
 local scorpion_cls={
 	w=1.8,
@@ -888,7 +888,7 @@ local scorpion_cls={
  	end
  end
 }
-local worm_class={
+local worm_cls={
 	palt=3,
 	w=0.2,
 	inertia=0.8,
@@ -902,13 +902,26 @@ local worm_class={
  	end
  end
 }
-
+local slime_cls={
+	palt=3,
+	w=0.2,
+	inertia=0.8,
+	dmg=bor(dmg_contact,1),
+	frames={{29,30,31,30}},
+	move_t=0,
+	update=function(self)
+ 	if self.move_t<time_t then
+ 		self.dx,self.dy=0.05*(rnd(2)-1),0.05*(rnd(2)-1)
+ 		self.move_t=time_t+8+rnd(8)
+ 	end
+ end
+}
 local warp_cls={
-	draw=nop,
-	hit=nop,
 	w=0,
 	captured=false,
-	frames={80,81,82,83,84},
+	frames={80,81},
+	draw=nop,
+	hit=nop,
 	update=function(self)
 		mset(x,y,self.frames[flr(time_t/8)%#self.frames+1])
 		if (self.captured) return
@@ -938,12 +951,12 @@ local health_cls={
 	update=function(self)
 		local dx,dy=plyr.x-self.x,plyr.y-self.y
 		if abs(dx)<0.5 and abs(dy)<0.5 then
-			plyr.hp=min(plyr.hpmax,plyr.hp+1)
+			plyr.hp=min(plyr.hpmax,plyr.hp+2)
 			make_part(self.x,self.y,0,{
 				dz=0.1,
 				inertia=0.91,
 				dly=72,
-				txt="+1hp",
+				txt="hp+2",
 				draw=draw_txt_part})
 			del(actors,self)
 		end
@@ -970,33 +983,32 @@ local ammo_cls={
 
 -- actor
 -- x,y in map tiles (not pixels)
-function make_actor(x,y,cls)
- local a={
-	 x=x,
-	 y=y,
-	 dx=0,
-	 dy=0,
-	 frame=0,
-	 inertia=0.6,
-	 bounce=1,
-	 hp=1,
-	 hit_t=0,
-	 fire_t=0,
-	 fire_dly=0,
-	 w=0.4, -- actors are round!
-	 angle=0,
-	 facing=0, -- trig order e/n/w/s
-	 side=bad_side,
-	 draw=draw_actor,
-	 hit=hit_actor
- }
- add(actors,a)
- if cls then
-	for k,v in pairs(cls) do
-		a[k]=v
+function make_actor(x,y,src)
+	local a={
+		x=x,
+		y=y,
+		dx=0,
+		dy=0,
+		frame=0,
+		inertia=0.6,
+		bounce=1,
+		hp=1,
+		hit_t=0,
+		fire_t=0,
+		fire_dly=0,
+		w=0.4, -- actors are round!
+		angle=0,
+		facing=0, -- trig order e/n/w/s
+		side=bad_side,
+		draw=draw_actor,
+		hit=hit_actor}
+	add(actors,a)
+	if src then
+		for k,v in pairs(src) do
+			a[k]=v
+		end
 	end
- end
- return a
+	return a
 end
 
 function move_actor(a)
@@ -1199,13 +1211,18 @@ function game:init()
 	plyr.y=r.y+r.h/2
 	cam_track(plyr.x,plyr.y)
 	
-	make_actor(12,12,health_cls)
+	make_actor(12,12,warp_cls)
+		
+	--make_actor(12,12,health_cls)
 
-	make_actor(14,14,ammo_cls)
+	--make_actor(14,14,ammo_cls)
 
+	spawner(5,worm_cls)
+
+	spawner(8,sandman_cls)
 end
 
-function spawner(n,fn)
+function spawner(n,src)
 	for i=1,n do
 		local x,y=0,0
 		local ttl=5
@@ -1215,7 +1232,7 @@ function spawner(n,fn)
 		end
 		if(ttl<0) return
 		-- found empty space!
-		fn(x+0.5,y+0.5)
+		make_actor(x+0.5,y+0.5,src)
 	end
 end
 
@@ -1275,14 +1292,46 @@ function title_screen:init()
 end
 
 -- game loop
+local perf={}
+local perf_ramp={8,11,5}
+local perf_counters={"up","draw","mem"}
+
 function _update60()
 	time_t+=1
 	futures_update(before_update)
 	sm_update()
+
+	perf[time_t%64+1]={
+		stat(1),
+		0,
+		stat(0)/1024}
 end
+function draw_perf(x)
+	rectfill(x,0,x+64,32,1)
+	local t=64-time_t%64
+	line(x+t,0,x+t,32,6)
+	if perf[1] then
+		for k=1,#perf_counters do
+			local scale=32
+			if(perf[1][k]<0.5) scale=64
+			if(perf[1][k]<0.25) scale=128
+			color(perf_ramp[k])
+			for i=1,#perf do
+				local p=perf[i]
+				pset(x+64-i,32-scale*p[k])
+			end
+			print(perf_counters[k]..":"..(flr(1000*perf[1][k])/10).."%",x+2+1,28+6*k,0)
+			print(perf_counters[k]..":"..(flr(1000*perf[1][k])/10).."%",x+2,28+6*k,perf_ramp[k])
+		end
+	end	
+end
+
 function _draw()
 	sm_draw()
 	futures_update(after_draw)
+	
+	perf[time_t%64+1][2]=stat(1)
+	draw_perf(64)
 end
 function _init()
 	cls(0)
@@ -1307,14 +1356,14 @@ eeeeeeee044455500444455004444450ee000eeeee707eeee0113110e70000070335505070000707
 eeeeeeee0333bab003333ba0033333b0eee0eeeeeee7eeeee0000000e77777770550000070077777ee3bb3eeee3bb3eeeebb3eee03bbbbb003bbbbb0e03bbb0e
 eeeeeeee05000050e050050ee005500eeee0eeeeeee7eeeeeeeeeeeeeeeeeeee0660eeee7007eeeeeeeeeeeeeee33eeeeeeeeeee03bbbbb003bbbbb003bbbbb0
 eeeeeeeee0eeee0eee0ee0eeeee00eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000eeee7777eeeeeeeeeeeeeeeeeeeeeeeeeeee000000000000000000000000
-ee00000eee0000eeee0000eeee0000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeeeeeeeeeee00000000000000000000000000000000
-e0bbbbb0e0999a0ee099aa0ee0999a0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeeeee6bb6ee00000000000000000000000000000000
-e0777770099999a009999aa0099999a0ee000000ee777777eeee0e0eeeee7e7e0000000000000000eeeaaeeee6bb776e00000000000000000000000000000000
-e0373730099999a009999aa0099999a0e0496660e7000007ee001010ee7707070000000000000000eea77aeeebbbb7be00000000000000000000000000000000
-e0353530044444400444444004444440e0445550e7000007e055c1c0e70000070000000000000000eea77aeeebbbbbbe00000000000000000000000000000000
-e033333003333bb00333bbb003333bb0e0400000e7077777e0501010e70707070000000000000000eeeaaeeee6bbbb6e00000000000000000000000000000000
-e0533350050000500500000000000050ee0eeeeeee7eeeeeee0e0e0eee7e7e7e0000000000000000eeeeeeeeee6bb6ee00000000000000000000000000000000
-ee00000ee0eeee0ee0eeeeeeeeeeee0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeeeeeeeeeee00000000000000000000000000000000
+ee00000eee0000eeee0000eeee0000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeeeeeeeeeeeeeeeeeee000000000000000000000000
+e0bbbbb0e0999a0ee099aa0ee0999a0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeeeee6bb6eeeeeeeeee000000000000000000000000
+e0777770099999a009999aa0099999a0ee000000ee777777eeee0e0eeeee7e7e0000000000000000eeeaaeeee6bb776eeee00eee000000000000000000000000
+e0373730099999a009999aa0099999a0e0496660e7000007ee001010ee7707070000000000000000eea77aeeebbbb7beee0000ee000000000000000000000000
+e0353530044444400444444004444440e0445550e7000007e055c1c0e70000070000000000000000eea77aeeebbbbbbeee0000ee000000000000000000000000
+e033333003333bb00333bbb003333bb0e0400000e7077777e0501010e70707070000000000000000eeeaaeeee6bbbb6eeee00eee000000000000000000000000
+e0533350050000500500000000000050ee0eeeeeee7eeeeeee0e0e0eee7e7e7e0000000000000000eeeeeeeeee6bb6eeeeeeeeee000000000000000000000000
+ee00000ee0eeee0ee0eeeeeeeeeeee0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeeeeeeeeeeeeeeeeeee000000000000000000000000
 ee00000eee0000eeee0000eeee0000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeee0000000000000000000000000000000000000000
 e0666660e0999a0ee0999a0ee0999a0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000ee88eeee0000000000000000000000000000000000000000
 e0777770094141a0091414a0094141a0ee00000eee77777eee000000ee7777770000000000000000e000000e0000000000000000000000000000000000000000
@@ -1331,14 +1380,14 @@ e0000000e0eeee0eeeeeee0ee0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000
 44555444444444444040404044494444444444444450949477777777775555577777677777657777c5c5c1c775151557ddddddddddd12e1d2121de21dd0dd0dd
 44444444444444440505050544454444444444444440040477777777777755577777777777577777515c7ccc77515717dddddddddddd11dd12121d12d2dd02d0
 44444444444444445454545444444444444444440445544477777777777777777777777777777777c115c7c577777777dddddddddddddddd2121212100dd2ddd
-cccccccc555555555555555555555555555555550000000055555555555555555666666537555575313131313535353500000000000000001111111111111111
-c505050ccccccccc0505050505050505050505050000000055555555555555456000000656777763131313135377775300000000000000005151515171717171
-c000000cc000000c0cccccc000000000000000000000000055555555555555556333333635666655313131313700007500000000000000001515151517171717
-c000000cc000000c0c0000c000000000000000000000000055555555555555556555555653555553131313135600006300000000000000005555555577777777
-c000000cc000000c0c0000c000555500000000000000000055555555544555556333333637555575313131313622206500000000000000005555555577777777
-c000000cc000000c0c0000c0005005000000000000000000555555555445555565555556567777631313131355eee65300000000000000005555555577777777
-c000000cc000000c0c0000c000500500000550000000000055555555555554557666666735666655313131313522553500000000000000005555555577777777
-ccccccccc000000c0c0000c000500500000550000000000055555555555555555777777553555553131313135322535355555555555555555555555577777777
+e2e2e2e22e2e2e2e5555555555555555555555556666666655555555555555555666666537555575313131313535353500000000000000001111111111111111
+0000000e000000020505050505050505050505056666656655555555555555456000000656777763131313135377775300000000000000005151515171717171
+02e2e2020e2e2e0e0cccccc000000000000000006666666655555555555555556333333635666655313131313700007500000000000000001515151517171717
+0e000e0e020002020c0000c000000000000000006656666655555555555555556555555653555553131313135600006300000000000000005555555577777777
+020202020e0e0e0e0c0000c000555500000000006666666655555555544555556333333637555575313131313622206500000000000000005555555577777777
+0e0e2e0e0202e2020c0000c0005005000000000066666666555555555445555565555556567777631313131355eee65300000000000000005555555577777777
+020000020e00000e0c0000c000500500000550006666656655555555555554557666666735666655313131313522553500000000000000005555555577777777
+0e2e2e2e02e2e2e20c0000c000500500000550006666666655555555555555555777777553555553131313135322535355555555555555555555555577777777
 666166669995999999000009906000606660666600000000dddd11116666666667676666dddd11116dddddd65555555599959999999599990000000000000000
 661516664495444440445440402222206605066611010111dddd11116555555665656666dddd11116dd77dd6111100004aaaa774449544440000000000000000
 615551665555555550095900508000806666666610111011dddd11116000000665656666dddd00116d7667d6111100005acccc75555555550000000000000000
@@ -1421,7 +1470,7 @@ eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 
 __gff__
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001010101018201010101010101010101828282828200010101010101000001010101010101010101010001010101000082828282828282828282828282828282
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001010101018201010101010101010101828282828201010101010101000001010101010101010101010001010101000082828282828282828282828282828282
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __map__
 5555555555555555555555555545454545454545454500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
