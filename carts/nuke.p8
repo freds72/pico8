@@ -8,6 +8,18 @@ local actors = {} --all actors in world
 
 -- side
 local no_side,good_side,bad_side,any_side=0x0,0x1,0x2,0x3
+local table_delims={
+	['{']="}",
+	['[']="]"}
+-- register json context here
+local _g={
+	['true']=true,
+	['false']=false,
+	['no_side']=no_side,
+	['good_side']=good_side,
+	['bad_side']=bad_side,
+	['any_side']=any_side
+}
 
 -- json parser
 -- from: https://gist.github.com/tylerneylon/59f4bcf316be525b30ab
@@ -35,7 +47,7 @@ local function parse_str_val(str, pos, val)
 		error('end of input found while parsing string.')
 	end
 	local c=sub(str,pos,pos)
-	if(c=='"') return val,pos+1
+	if(c=='"') return _g[val] or val,pos+1
 	return parse_str_val(str,pos+1,val..c)
 end
 local function parse_num_val(str,pos,val)
@@ -48,19 +60,6 @@ local function parse_num_val(str,pos,val)
 	return parse_num_val(str,pos+1,val..c)
 end
 -- public values and functions.
-local table_delims={
-	['{']="}",
-	['[']="]"}
--- register json context here
-local _g={
-	['true']=true,
-	['false']=false,
-	['dmg_phys']=0x0100,
-	['dmg_contact']=0x0200,
-	['dmg_energy']=0x0400,
-	['dmg_poison']=0x0800,
-	['dmg_mask']=0xff
-}
 
 function json_parse(str, pos, end_delim)
 	pos=pos or 1
@@ -80,28 +79,28 @@ function json_parse(str, pos, end_delim)
 				add(obj,key)
 			end
 			pos,delim_found=skip_delim(str, pos, ',')
-  end
- elseif first=='"' then
- 	-- parse a string.
-  return parse_str_val(str,pos+1)
- elseif match(first,"-0123456789") then
- 	-- parse a number.
-  return parse_num_val(str, pos)
- elseif first==end_delim then  -- end of an object or array.
-  return nil,pos+1
- else  -- parse true, false
-  for lit_str,lit_val in pairs(_g) do
-   local lit_end=pos+#lit_str-1
-   if sub(str,pos,lit_end)==lit_str then return lit_val,lit_end+1 end
-  end
-  local pos_info_str = 'position ' .. pos .. ': ' .. sub(str, pos, pos + 10)
-  error('invalid json syntax starting at ' .. pos_info_str)
+	end
+	elseif first=='"' then
+		-- parse a string (or a global object)
+		return parse_str_val(str,pos+1)
+	elseif match(first,"-0123456789") then
+		-- parse a number.
+		return parse_num_val(str, pos)
+	elseif first==end_delim then  -- end of an object or array.
+		return nil,pos+1
+	else  -- parse true, false
+		for lit_str,lit_val in pairs(_g) do
+			local lit_end=pos+#lit_str-1
+			if sub(str,pos,lit_end)==lit_str then return lit_val,lit_end+1 end
+		end
+		local pos_info_str = 'position ' .. pos .. ': ' .. sub(str, pos, pos + 10)
+		error('invalid json syntax starting at ' .. pos_info_str)
 	end
 end
 
 -- player settings
 local plyr
-local plyr_playing
+local plyr_playing,plyr_hpmax
 local plyr_score
 local plyr_acc=0.05
 local plyr_frames=json_parse('[[17,18,19,18,17],[33,34,35],[49,50,51]]')
@@ -112,7 +111,12 @@ local blast_frames=json_parse('[192,194,196,198,200,202]')
 local shkx,shky=0,0
 local cam_x,cam_y
 -- weapons catalog
-local weapons=json_parse('{"base_gun":{"id":1,"sx":48,"sy":8,"blt_frames":[42,42,42],"dmg_type":dmg_phys,"dmg":1,"spread":0.05,"v":0.1,"ttl":90,"dly":32,"ammo":50},"acid_gun":{"id":1,"blt_frames":[26,27,28],"blts":3,"spread":0.1,"bounce":true,"dmg_type":dmg_poison,"dmg":3,"v":0.1,"xy":[1,0],"ttl":30,"dly":5,"ammo":50},"uzi":{"id":2,"icon":21,"sx":32,"sy":8,"blt_frames":[10,12,11],"spread":0.05,"dmg_type":dmg_phys,"dmg":2,"v":0.4,"ttl":30,"dly":5,"ammo":50,"shk_pow":2},"shotgun":{"id":2,"icon":37,"sx":32,"sy":16,"blt_frames":[10,12,11],"spread":0.05,"blts":3,"dmg_type":dmg_phys,"dmg":2,"inertia":0.95,"v":0.3,"ttl":30,"dly":56,"ammo":50,"shk_pow":2}}')
+local dmg_mask,dmg_types=0xff00,json_parse('{"dmg_phys":0x0100,"dmg_contact":0x0200,"dmg_energy":0x0400,"dmg_poison":0x0800}')
+local weapons=json_parse('{"base_gun":{"sx":48,"sy":8,"blt_frames":[42,42,42],"dmg_type":"dmg_phys","dmg":1,"spread":0.05,"v":0.1,"ttl":90,"dly":32,"ammo":50},"acid_gun":{"blt_frames":[26,27,28],"blts":3,"spread":0.1,"bounce":true,"dmg_type":"dmg_poison","dmg":3,"v":0.1,"xy":[1,0],"ttl":30,"dly":5,"ammo":50},"uzi":{"name":"uzi","icon":21,"sx":32,"sy":8,"blt_frames":[10,12,11],"spread":0.05,"dmg_type":"dmg_phys","dmg":2,"v":0.4,"ttl":30,"dly":5,"ammo":50,"shk_pow":2},"shotgun":{"name":"pump","icon":37,"sx":32,"sy":16,"blt_frames":[10,12,11],"spread":0.05,"blts":3,"dmg_type":"dmg_phys","dmg":2,"inertia":0.95,"v":0.3,"ttl":30,"dly":56,"ammo":25,"shk_pow":2},"glock":{"name":"g.lock","icon":53,"sx":32,"sy":24,"blt_frames":[10,12,11],"spread":0.01,"dmg_type":"dmg_phys","dmg":4,"v":0.5,"ttl":30,"dly":32,"ammo":17,"shk_pow":2},"rpg":{"name":"rpg","icon":23,"sx":48,"sy":8,"actor_cls":"msl_cls","spread":0.02,"dly":72,"ammo":8,"shk_pow":3},"grenade":{"name":"mortar","icon":55,"sx":48,"sy":24,"actor_cls":"grenade_cls","spread":0.02,"dly":72,"ammo":12,"shk_pow":2.1}}')
+for k,v in pairs(weapons) do
+	v.dmg=bor(dmg_types[v.dmg_type],v.dmg)
+	_g[k]=v
+end
 
 -- modifiers
 --[[
@@ -134,7 +138,6 @@ local zbuf={len=0}
 local time_t=0
 
 local face2unit=json_parse('[[1,0],[0.6234,-0.7819],[-0.2225,-0.9749],[-0.901,-0.4338],[-0.901,0.4338],[-0.2225,0.975],[0.6234,0.7819],[1,0]]')
-local face2rndunit=json_parse('[[1,0],[0.6234,-0.7819],[-0.2225,-0.9749],[-0.901,-0.4338],[-0.901,0.4338],[-0.2225,0.975],[0.6234,0.7819],[1,0],[[0.9998,-0.02146],[0.9917,-0.1289],[0.9999,-0.01495],[0.9932,0.1167],[0.9994,-0.03527],[0.9929,-0.1194],[0.9886,-0.1509],[0.9953,0.09727],[0.9987,-0.05059],[0.9881,-0.1539],[0.9996,-0.0276],[0.9967,0.0816],[0.9931,-0.1175],[0.9995,-0.03066],[0.9932,-0.1163],[0.995,0.1003],[0.9959,-0.09037],[1,0.009972],[0.9886,0.1505],[0.9976,0.06974],[0.992,-0.1266],[0.9959,0.09039],[0.9995,-0.0322],[0.9968,0.08045],[0.999,-0.046],[0.9935,-0.114],[0.9992,-0.04025],[0.9932,-0.1163],[1,-0.006126],[0.9911,0.1334],[0.9993,-0.03796],[0.992,0.1266]],[[0.5233,-0.8521],[0.7157,-0.6984],[0.6995,-0.7147],[0.5702,-0.8215],[0.4942,-0.8693],[0.5973,-0.8021],[0.6984,-0.7157],[0.5911,-0.8066],[0.5578,-0.83],[0.65,-0.76],[0.6932,-0.7208],[0.5581,-0.8298],[0.6482,-0.7614],[0.6724,-0.7402],[0.5789,-0.8154],[0.5511,-0.8344],[0.5171,-0.8559],[0.6854,-0.7282],[0.6653,-0.7466],[0.6125,-0.7905],[0.5898,-0.8075],[0.6246,-0.781],[0.6681,-0.744],[0.7293,-0.6842],[0.5282,-0.8491],[0.6879,-0.7258],[0.6161,-0.7876],[0.5645,-0.8254],[0.5581,-0.8298],[0.7379,-0.6749],[0.5495,-0.8355],[0.6532,-0.7572]],[[-0.3412,-0.94],[-0.3325,-0.9431],[-0.3166,-0.9486],[-0.1422,-0.9898],[-0.2811,-0.9597],[-0.1581,-0.9874],[-0.1973,-0.9803],[-0.2693,-0.9631],[-0.2135,-0.9769],[-0.1842,-0.9829],[-0.1289,-0.9916],[-0.1845,-0.9828],[-0.2634,-0.9647],[-0.1891,-0.982],[-0.09992,-0.995],[-0.177,-0.9842],[-0.357,-0.9341],[-0.3484,-0.9373],[-0.1395,-0.9902],[-0.2593,-0.9658],[-0.343,-0.9393],[-0.1292,-0.9916],[-0.09228,-0.9957],[-0.2359,-0.9718],[-0.2045,-0.9789],[-0.1205,-0.9927],[-0.1762,-0.9843],[-0.237,-0.9715],[-0.1426,-0.9898],[-0.3115,-0.9502],[-0.2859,-0.9583],[-0.2277,-0.9737]],[[-0.9133,-0.4073],[-0.8559,-0.5171],[-0.9258,-0.3781],[-0.9023,-0.431],[-0.8481,-0.5298],[-0.9466,-0.3224],[-0.933,-0.3599],[-0.9119,-0.4105],[-0.8934,-0.4493],[-0.8875,-0.4609],[-0.9454,-0.326],[-0.9544,-0.2983],[-0.9463,-0.3231],[-0.8706,-0.4919],[-0.8965,-0.4431],[-0.8555,-0.5177],[-0.924,-0.3823],[-0.8993,-0.4372],[-0.9565,-0.2917],[-0.8744,-0.4852],[-0.8239,-0.5667],[-0.9153,-0.4028],[-0.9331,-0.3595],[-0.9007,-0.4345],[-0.9023,-0.431],[-0.9196,-0.3929],[-0.9379,-0.347],[-0.9322,-0.362],[-0.9404,-0.3401],[-0.8372,-0.5469],[-0.852,-0.5236],[-0.9066,-0.422]],[[-0.9269,0.3752],[-0.9275,0.3738],[-0.9181,0.3965],[-0.8934,0.4493],[-0.8523,0.523],[-0.9397,0.3419],[-0.8987,0.4386],[-0.9101,0.4143],[-0.8823,0.4707],[-0.9165,0.4],[-0.9281,0.3724],[-0.9412,0.338],[-0.874,0.4859],[-0.9534,0.3016],[-0.9505,0.3108],[-0.8285,0.56],[-0.9359,0.3524],[-0.8442,0.536],[-0.8246,0.5657],[-0.8473,0.5311],[-0.8344,0.5511],[-0.9521,0.3057],[-0.8674,0.4976],[-0.8668,0.4986],[-0.8939,0.4482],[-0.8862,0.4633],[-0.9548,0.2973],[-0.8319,0.5549],[-0.9557,0.2943],[-0.8565,0.5161],[-0.9301,0.3674],[-0.889,0.4578]],[[-0.08044,0.9968],[-0.273,0.962],[-0.2026,0.9793],[-0.09037,0.9959],[-0.2833,0.959],[-0.1845,0.9828],[-0.2811,0.9597],[-0.1664,0.9861],[-0.1114,0.9938],[-0.2526,0.9676],[-0.077,0.997],[-0.1804,0.9836],[-0.1623,0.9867],[-0.2734,0.9619],[-0.08503,0.9964],[-0.3667,0.9304],[-0.2903,0.9569],[-0.2232,0.9748],[-0.3534,0.9355],[-0.3042,0.9526],[-0.3699,0.9291],[-0.1581,0.9874],[-0.2478,0.9688],[-0.1441,0.9896],[-0.2656,0.9641],[-0.3595,0.9331],[-0.3702,0.9289],[-0.08694,0.9962],[-0.0682,0.9977],[-0.3115,0.9502],[-0.07777,0.997],[-0.3159,0.9488]],[[0.611,0.7916],[0.6228,0.7824],[0.5527,0.8334],[0.6679,0.7443],[0.632,0.775],[0.5314,0.8471],[0.6954,0.7187],[0.6015,0.7989],[0.6207,0.7841],[0.5607,0.8281],[0.6285,0.7779],[0.6856,0.7279],[0.6168,0.7872],[0.6976,0.7165],[0.7019,0.7122],[0.6741,0.7386],[0.544,0.8391],[0.6859,0.7277],[0.7157,0.6984],[0.6558,0.755],[0.6249,0.7807],[0.5181,0.8554],[0.6171,0.7869],[0.56,0.8285],[0.7168,0.6973],[0.7371,0.6758],[0.5607,0.8281],[0.6161,0.7877],[0.5035,0.864],[0.5543,0.8323],[0.5239,0.8518],[0.5379,0.843]],[[0.992,-0.1262],[0.9929,0.1194],[0.9999,-0.01571],[0.9956,0.09382],[0.9951,-0.09916],[0.9984,-0.05711],[0.9998,0.02186],[0.9968,0.08007],[0.9936,0.1129],[0.999,-0.04485],[0.9919,0.1274],[0.9996,0.02799],[0.9961,0.08848],[0.9919,0.1274],[0.9882,-0.1532],[0.9988,-0.04906],[0.9983,-0.05825],[0.9926,-0.1213],[0.9947,0.1034],[0.9981,0.06095],[0.9992,-0.0391],[0.9931,0.1171],[0.9953,0.09727],[0.9998,0.01879],[0.9998,-0.01917],[0.9986,-0.05366],[0.9982,0.05941],[0.9999,-0.01456],[1,0.008827],[0.998,0.06324],[0.9878,-0.1558],[0.998,-0.06284]]]')
 
 local face1strip=json_parse('[{"flipx":false,"flipy":false},{"flipx":false,"flipy":false},{"flipx":false,"flipy":false},{"flipx":true,"flipy":false},{"flipx":true,"flipy":false},{"flipx":true,"flipy":false},{"flipx":false,"flipy":false},{"flipx":false,"flipy":false}]')
 local face2strip=json_parse('[{"strip":1,"flipx":false,"flipy":false},{"strip":2,"flipx":false,"flipy":false},{"strip":2,"flipx":false,"flipy":false},{"strip":1,"flipx":true,"flipy":false},{"strip":2,"flipx":false,"flipy":true},{"strip":2,"flipx":false,"flipy":true},{"strip":2,"flipx":false,"flipy":true},{"strip":2,"flipx":false,"flipy":true}]')
@@ -257,6 +260,13 @@ function foreach_update(a)
 		a[i]=nil
 	end
 	a.len=c
+end
+function clone(src,dst)
+	dst=dst or {}
+	for k,v in pairs(src) do
+		dst[k]=v
+	end
+	return dst
 end
 function nop() end
 function lerp(a,b,t)
@@ -534,7 +544,14 @@ function blt_update(self)
 end
 function make_blt(a,wp)
 	local n=wp.blts or 1
-	for i=1,n do 
+	for i=1,n do
+		if a.ammo then
+			if a.ammo<=0 then
+				-- todo: click sound
+				return
+			end
+			a.ammo-=1
+		end
 		local ang=a.angle+wp.spread*(rnd(2)-1)
 		local u,v=cos(ang),sin(ang)
 		local b={
@@ -812,10 +829,24 @@ function draw_anim_spr(a,x,y)
 	spr(a.frames[i],x-8,y-8,2,2)
 end
 
+function plyr_die(self)
+	
+end
+
+function npc_die(self)
+	if self.drop_value then
+		local v=flr(rnd(self.drop_value))
+		if v>0 then
+		make_actor(self.x,self.y,loot[v+1])
+		end
+	end
+end
+
 function hit_actor(self,dmg)
 	self.hit_t=time_t+8
 	self.hp-=band(self.dmg_mask,dmg)
 	if self.hp<=0 then
+		if(self.die) self:die()
 		del(actors,self)
 	end
 end
@@ -836,92 +867,52 @@ function make_blast(x,y)
 end
 
 -- custom actors
-local barrel_cls={
-	side=any_side,
-	inertia=0.8,
-	spr=128,
-	hit=function(self,dmg)
-		if(band(dmg_contact,dmg)!=0) return
-		self.hit_t=time_t+8
-		self.hp-=1--band(dmg_mask,dmg)
-		if self.hp<=0 then
-			make_blast(self.x,self.y)
-			del(actors,self)
-		end
+
+_g["npc_rnd_move"]=function(self)
+	if self.move_t<time_t then
+		self.dx,self.dy=0.05*(rnd(2)-1),0.05*(rnd(2)-1)
+		self.move_t=time_t+8+rnd(8)
 	end
-}
-local sandman_cls={
-	hp=5,
-	wp=weapons.base_gun,
-	frames={{4,5,6}},
-	move_t=0,
-	update=function(self)
- 		if lineofsight(self.x,self.y,plyr.x,plyr.y,4) then
-			local dx,dy=plyr.x-self.x,plyr.y-self.y
-			local d=sqrt(dx*dx+dy*dy)
-			if(d<0.01) return
-			dx/=d
-			dy/=d
-			self.dx=-0.02*dx
-			self.dy=-0.02*dy
-			self.angle=atan2(dx,dy)%1
-			self.facing=flr(8*self.angle)
-			if self.fire_dly<time_t then				
-				make_blt(self,self.wp)		
-				self.fire_dly=time_t+self.wp.dly
-			end
- 		elseif self.move_t<time_t then
- 			self.dx,self.dy=0.05*(rnd(2)-1),0.05*(rnd(2)-1)
- 			self.move_t=time_t+30
- 		end
- 	end
-}
-local scorpion_cls={
-	w=1.8,
-	hp=10,
-	frames={{135,137}},
-	move_t=0,
-	update=function(self)
- 	if self.move_t<time_t then
- 		self.dx,self.dy=0.05*(rnd(2)-1),0.05*(rnd(2)-1)
- 		self.move_t=time_t+30
- 	end
- end
-}
-local worm_cls={
-	palt=3,
-	w=0.2,
-	inertia=0.8,
-	dmg=bor(dmg_contact,1),
-	frames={{7,8}},
-	move_t=0,
-	update=function(self)
- 	if self.move_t<time_t then
- 		self.dx,self.dy=0.05*(rnd(2)-1),0.05*(rnd(2)-1)
- 		self.move_t=time_t+8+rnd(8)
- 	end
- end
-}
-local slime_cls={
-	palt=3,
-	w=0.2,
-	inertia=0.8,
-	dmg=bor(dmg_contact,1),
-	frames={{29,30,31,30}},
-	move_t=0,
-	update=function(self)
- 	if self.move_t<time_t then
- 		self.dx,self.dy=0.05*(rnd(2)-1),0.05*(rnd(2)-1)
- 		self.move_t=time_t+8+rnd(8)
- 	end
- end
-}
+end
+_g["barrel_hit"]=function(self,dmg)
+	if(band(dmg_types.dmg_contact,dmg)!=0) return
+	self.hit_t=time_t+8
+	self.hp-=1--band(dmg_mask,dmg)
+	if self.hp<=0 then
+		make_blast(self.x,self.y)
+		del(actors,self)
+	end
+end
+_g["sandman_update"]=function(self)
+	if lineofsight(self.x,self.y,plyr.x,plyr.y,4) then
+		local dx,dy=plyr.x-self.x,plyr.y-self.y
+		local d=sqrt(dx*dx+dy*dy)
+		if(d<0.01) return
+		dx/=d
+		dy/=d
+		self.dx=-0.02*dx
+		self.dy=-0.02*dy
+		self.angle=atan2(dx,dy)%1
+		self.facing=flr(8*self.angle)
+		if self.fire_dly<time_t then				
+			make_blt(self,self.wp)		
+			self.fire_dly=time_t+self.wp.dly
+		end
+	elseif self.move_t<time_t then
+		self.dx,self.dy=0.05*(rnd(2)-1),0.05*(rnd(2)-1)
+		self.move_t=time_t+30
+	end
+end
+local bad_actors=json_parse('{"barrel_cls":{"side":"any_side","inertia":0.8,"spr":128,"hit":"barrel_hit"},"sandman_cls":{"hp":3,"wp":"base_gun","frames":[[4,5,6]],"move_t":0,"drop_value":3,"die":"npc_die","update":"sandman_update"},"scorpion_cls":{"w":1.8,"hp":10,"frames":[[135,137]],"move_t":0,"update":"npc_rnd_move"},"worm_cls":{"palt":3,"w":0.2,"inertia":0.8,"dmg_type":"dmg_contact","dmg":1,"frames":[[7,8]],"move_t":0,"update":"npc_rnd_move"},"slime_cls":{"palt":3,"w":0.2,"inertia":0.8,"dmg_type":"dmg_contact","dmg":1,"frames":[[29,30,31,30]],"move_t":0,"update":"npc_rnd_move"}}')
+for k,v in pairs(bad_actors) do
+	v.dmg=bor(dmg_types[v.dmg_type],v.dmg)
+end
+
 local warp_cls={
 	w=0,
 	captured=false,
 	frames={80,81},
 	draw=nop,
-	hit=nop,
 	update=function(self)
 		mset(x,y,self.frames[flr(time_t/8)%#self.frames+1])
 		if (self.captured) return
@@ -947,16 +938,15 @@ local warp_cls={
 local health_cls={
 	spr=48,
 	w=0,
-	hit=nop,
 	update=function(self)
 		local dx,dy=plyr.x-self.x,plyr.y-self.y
 		if abs(dx)<0.5 and abs(dy)<0.5 then
-			plyr.hp=min(plyr.hpmax,plyr.hp+2)
+			plyr.hp=min(plyr_hpmax,plyr.hp+2)
 			make_part(self.x,self.y,0,{
 				dz=0.1,
 				inertia=0.91,
 				dly=72,
-				txt="hp+2",
+				txt=(plyr.hp==plyr_hpmax) and "max. hp" or "hp+2",
 				draw=draw_txt_part})
 			del(actors,self)
 		end
@@ -965,20 +955,60 @@ local health_cls={
 local ammo_cls={
 	spr=32,
 	w=0,
-	hit=nop,
 	update=function(self)
 		local dx,dy=plyr.x-self.x,plyr.y-self.y
 		if abs(dx)<0.5 and abs(dy)<0.5 then
-			--plyr.ammo=min(plyr.ammo_max,plyr.ammo+10)
+			plyr.ammo=min(plyr.wp.ammo,plyr.ammo+10)
 			make_part(self.x,self.y,0,{
 				dz=0.1,
 				inertia=0.91,
 				dly=72,
-				txt="ammo+10",
+				txt=(plyr.wp.ammo==plyr.ammo) and "max. ammo" or "ammo+10",
 				draw=draw_txt_part})
 			del(actors,self)
 		end
 	end
+}
+function wpdrop_draw(self,x,y)
+	draw_actor(self,x,y)
+	if self.near_plyr_t>time_t then
+		draw_txt_part(self,x,y)
+	end
+end
+function wpdrop_update(self)
+	local dx,dy=plyr.x-self.x,plyr.y-self.y
+	if abs(dx)<0.5 and abs(dy)<0.5 then
+		near_plyr_t=time_t+30
+		if btnp(4) then
+			near_plyr_t=0
+			make_part(self.x,self.y,0,{
+				dz=0.1,
+				inertia=0.91,
+				dly=72,
+				txt=self.txt,
+				draw=draw_txt_part})
+			-- swap weapon
+			local wp,ang=plyr.wp,rnd()
+			local prevwp=make_actor(x,y,
+				clone(wpdrop_cls,{
+					dx=0.1*cos(ang),
+					dy=0.1*sin(ang),
+					ammo=plyr.ammo,
+					spr=wp.icon,
+					txt=wp.name}))
+			-- drop current
+			
+			del(actors,self)
+		end
+	end
+end
+local wpdrop_cls={
+	w=0,
+	inertia=0.9,
+	btn_t=0,
+	near_plyr_t=0,
+	draw=wpdrop_draw,
+	update=wpdrop_update
 }
 
 -- actor
@@ -1001,6 +1031,7 @@ function make_actor(x,y,src)
 		facing=0, -- trig order e/n/w/s
 		side=bad_side,
 		draw=draw_actor,
+		die=npc_die,
 		hit=hit_actor}
 	add(actors,a)
 	if src then
@@ -1088,15 +1119,17 @@ end
 function make_plyr()
 	plyr_score=0
 	plyr_playing=true
+	plyr_hpmax=5
 	plyr=make_actor(18,18,{
 		hp=5,
-		hpmax=5,
 		side=good_side,
-	-- todo: rename to strips
+		-- todo: rename to strips
 		frames=plyr_frames,
 		wp=weapons.uzi,
-		safe_t=time_t+30
-		})
+		ammo=weapons.uzi.ammo,
+		safe_t=time_t+30,
+		die=plyr_die
+	})
 	return plyr
 end
 
@@ -1109,14 +1142,16 @@ function control_player()
  if(btn(3)) plyr.dy+=plyr_acc angle=0.75
 	
 	if wp and btn(4) and plyr.fire_dly<time_t then
-	 -- todo: rename recoil
-		plyr.fire_t=time_t+8
-		plyr.fire_dly=time_t+wp.dly
-		make_blt(plyr,wp)
-		local u=face2unit[plyr.facing+1]
-		plyr.dx-=0.05*u[1]
-		plyr.dy-=0.05*u[2]
-		cam_shake(u[1],u[2],wp.shk_pow)
+	 	-- todo: rename recoil
+		if plyr.ammo>0 then
+			plyr.fire_t=time_t+8
+			plyr.fire_dly=time_t+wp.dly
+			make_blt(plyr,wp)
+			local u=face2unit[plyr.facing+1]
+			plyr.dx-=0.05*u[1]
+			plyr.dy-=0.05*u[2]
+			cam_shake(u[1],u[2],wp.shk_pow)
+		end
 	elseif plyr.fire_dly<time_t then
 		plyr.facing=flr(8*angle)
 		plyr.angle=angle
@@ -1125,7 +1160,7 @@ function control_player()
  -- play a sound if moving
  -- (every 4 ticks)
  
- if (abs(plyr.dx)+abs(plyr.dy)>0.1
+ 	if (abs(plyr.dx)+abs(plyr.dy)>0.1
      and (time_t%4)==0) then
   sfx(1)
  end 
@@ -1174,14 +1209,14 @@ function game:draw()
 	rectfill(1,1,34,9,0)
 	rect(2,2,33,8,6)
 	local hp=max(0,plyr.hp)
-	rectfill(3,3,flr(32*hp/plyr.hpmax),7,8)
+	rectfill(3,3,flr(32*hp/plyr_hpmax),7,8)
 	txt_options(false,0)
-	txt_print(hp.."/"..plyr.hpmax,12,3,7)
+	txt_print(hp.."/"..plyr_hpmax,12,3,7)
 
 	palt(14,true)
 	palt(0,false)
 	spr(plyr.wp.icon,2,10)
-	txt_print("34",14,12,7)
+	txt_print(plyr.ammo,14,12,7)
 	
  --rectfill(0,0,127,8,1)
  --local cpu=flr(1000*stat(1))/10
@@ -1211,15 +1246,20 @@ function game:init()
 	plyr.y=r.y+r.h/2
 	cam_track(plyr.x,plyr.y)
 	
-	make_actor(12,12,warp_cls)
-		
-	--make_actor(12,12,health_cls)
+	--make_actor(12,12,warp_cls)
 
+	--make_actor(12,12,health_cls)
 	--make_actor(14,14,ammo_cls)
 
-	spawner(5,worm_cls)
+	make_actor(12,12,
+		clone(wpdrop_cls,{
+			ammo=25,
+			wp=weapons.shotgun,
+			spr=weapons.shotgun.icon,
+			txt=weapons.shotgun.name}))
 
-	spawner(8,sandman_cls)
+	--spawner(5,worm_cls)
+	--spawner(8,sandman_cls)
 end
 
 function spawner(n,src)
@@ -1306,6 +1346,7 @@ function _update60()
 		0,
 		stat(0)/1024}
 end
+
 function draw_perf(x)
 	rectfill(x,0,x+64,32,1)
 	local t=64-time_t%64
@@ -1356,14 +1397,14 @@ eeeeeeee044455500444455004444450ee000eeeee707eeee0113110e70000070335505070000707
 eeeeeeee0333bab003333ba0033333b0eee0eeeeeee7eeeee0000000e77777770550000070077777ee3bb3eeee3bb3eeeebb3eee03bbbbb003bbbbb0e03bbb0e
 eeeeeeee05000050e050050ee005500eeee0eeeeeee7eeeeeeeeeeeeeeeeeeee0660eeee7007eeeeeeeeeeeeeee33eeeeeeeeeee03bbbbb003bbbbb003bbbbb0
 eeeeeeeee0eeee0eee0ee0eeeee00eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000eeee7777eeeeeeeeeeeeeeeeeeeeeeeeeeee000000000000000000000000
-ee00000eee0000eeee0000eeee0000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeeeeeeeeeeeeeeeeeee000000000000000000000000
-e0bbbbb0e0999a0ee099aa0ee0999a0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeeeee6bb6eeeeeeeeee000000000000000000000000
-e0777770099999a009999aa0099999a0ee000000ee777777eeee0e0eeeee7e7e0000000000000000eeeaaeeee6bb776eeee00eee000000000000000000000000
-e0373730099999a009999aa0099999a0e0496660e7000007ee001010ee7707070000000000000000eea77aeeebbbb7beee0000ee000000000000000000000000
-e0353530044444400444444004444440e0445550e7000007e055c1c0e70000070000000000000000eea77aeeebbbbbbeee0000ee000000000000000000000000
-e033333003333bb00333bbb003333bb0e0400000e7077777e0501010e70707070000000000000000eeeaaeeee6bbbb6eeee00eee000000000000000000000000
-e0533350050000500500000000000050ee0eeeeeee7eeeeeee0e0e0eee7e7e7e0000000000000000eeeeeeeeee6bb6eeeeeeeeee000000000000000000000000
-ee00000ee0eeee0ee0eeeeeeeeeeee0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeeeeeeeeeeeeeeeeeee000000000000000000000000
+ee00000eee0000eeee0000eeee0000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeeeeeeeeeeeeeeeeeeee000000ee000000ee000000e
+e0bbbbb0e0999a0ee099aa0ee0999a0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeeeee6bb6eeeeeeeeee022898900228898002288890
+e0777770099999a009999aa0099999a0ee000000ee777777eeee0e0eeeee7e7e0000000000000000eeeaaeeee6bb776eeee00eee0228a8a002288a80022888a0
+e0373730099999a009999aa0099999a0e0496660e7000007ee001010ee7707070000000000000000eea77aeeebbbb7beee0000ee022888800228888002288880
+e0353530044444400444444004444440e0445550e7000007e055c1c0e70000070000000000000000eea77aeeebbbbbbeee0000ee022767600228767002288760
+e033333003333bb00333bbb003333bb0e0400000e7077777e0501010e70707070000000000000000eeeaaeeee6bbbb6eeee00eee022686800228686002288680
+e0533350050000500500000000000050ee0eeeeeee7eeeeeee0e0e0eee7e7e7e0000000000000000eeeeeeeeee6bb6eeeeeeeeee02000020e020010ee002100e
+ee00000ee0eeee0ee0eeeeeeeeeeee0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeeeeeeeeeeeeeeeeeee00eeee00ee0ee0eeeee00eee
 ee00000eee0000eeee0000eeee0000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeee0000000000000000000000000000000000000000
 e0666660e0999a0ee0999a0ee0999a0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000ee88eeee0000000000000000000000000000000000000000
 e0777770094141a0091414a0094141a0ee00000eee77777eee000000ee7777770000000000000000e000000e0000000000000000000000000000000000000000
