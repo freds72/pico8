@@ -129,8 +129,8 @@ end
 ]]
 
 -- levels
-local cur_level=4
-local levels=json_parse('[{"name":"desert","ground_tiles":[68,64,65,67],"wall_tiles":[66],"solid_tiles_base":112,"bkg_col":1,"depth":3,"cw":32,"ch":32,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"sewers","ground_tiles":[86,87,87,88],"wall_tiles":[90,89,91],"solid_tiles_base":112,"shadow_tile":94,"borders":[10,11,3],"bkg_col":3,"depth":4,"cw":32,"ch":32,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"snow plains","ground_tiles":[70,71,72],"wall_tiles":[74],"solid_tiles_base":112,"shadow_tile":95,"borders":[1,12,7],"bkg_col":7,"depth":5,"cw":32,"ch":48,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"palace","ground_tiles":[96,100,85],"wall_tiles":[97,98,99,108],"solid_tiles_base":112,"shadow_tile":101,"borders":[7,0,5],"bkg_col":9,"depth":5,"cw":32,"ch":48,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"lab","ground_tiles":[102,105],"wall_tiles":[103,104,106],"solid_tiles_base":112,"shadow_tile":107,"borders":[6,7,5],"bkg_col":5,"depth":4,"cw":32,"ch":48,"w":[4,6],"h":[3,5],"paths":[4,4],"path":{"bends":[0,2],"w":[1,2],"len":[8,12]}}]')
+local cur_level=1
+local levels=json_parse('[{"name":"desert","ground_tiles":[68,64,65,67,111],"wall_tiles":[66],"shadow_tile":110,"solid_tiles_base":112,"bkg_col":1,"depth":3,"cw":32,"ch":32,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"sewers","ground_tiles":[86,87,87,88],"wall_tiles":[90,89,91],"solid_tiles_base":112,"shadow_tile":94,"borders":[10,11,3],"bkg_col":3,"depth":4,"cw":32,"ch":32,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"snow plains","ground_tiles":[70,71,72],"wall_tiles":[74],"solid_tiles_base":112,"shadow_tile":95,"borders":[1,12,7],"bkg_col":6,"depth":5,"cw":32,"ch":48,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"palace","ground_tiles":[96,100,85],"wall_tiles":[97,98,99,108],"solid_tiles_base":112,"shadow_tile":101,"borders":[7,0,5],"bkg_col":9,"depth":5,"cw":32,"ch":48,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"lab","ground_tiles":[102,105],"wall_tiles":[103,104,106],"solid_tiles_base":112,"shadow_tile":107,"borders":[6,7,5],"bkg_col":5,"depth":4,"cw":32,"ch":48,"w":[4,6],"h":[3,5],"paths":[4,4],"path":{"bends":[0,2],"w":[1,2],"len":[8,12]}}]')
 
 local blts={len=0}
 local parts={len=0}
@@ -262,6 +262,7 @@ function foreach_update(a)
 	a.len=c
 end
 function clone(src,dst)
+	if(src==dst) assert()
 	dst=dst or {}
 	for k,v in pairs(src) do
 		dst[k]=v
@@ -393,9 +394,11 @@ function cmap_clear(objs)
 	cmap={}
 	for i=1,#objs do
 		obj=objs[i]
-		h=flr(obj.x)+128*flr(obj.y)
-		cmap[h]=cmap[h] or {}
-		add(cmap[h],obj)
+		if obj.w>0 then
+			h=flr(obj.x)+128*flr(obj.y)
+			cmap[h]=cmap[h] or {}
+			add(cmap[h],obj)
+		end
 	end
 end
 function cmap_write(obj)
@@ -560,16 +563,22 @@ function make_blt(a,wp)
 			dx=wp.v*u,dy=wp.v*v,
 			t=time_t+wp.ttl,
 			side=a.side,
-			facing=flr(8*(ang%1)),
-			update=blt_update,
-			draw=draw_blt
+			facing=flr(8*(ang%1))
 		}
+		if wp.actor_cls then
+			make_actor(x,y,
+				clone(wp.actor_cls,b))
+		else
+			-- for fast collision
+			clone({
+				prevx=b.x,prevy=b.y,
+				update=blt_update,
+				draw=draw_blt},b)
+			blts.len+=1
+			blts[blts.len]=b
+		end
 		-- muzzle flash
 		if(i==1) make_part(b.x,b.y,0.5,flash_part_cls)
-		-- for fast collision
-		b.prevx,b.prevy=b.x,b.y
-		blts.len+=1
-		blts[blts.len]=b
 	end
 end
 function draw_blt(b,x,y)
@@ -874,7 +883,7 @@ _g["npc_rnd_move"]=function(self)
 		self.move_t=time_t+8+rnd(8)
 	end
 end
-_g["barrel_hit"]=function(self,dmg)
+_g["blast_on_hit"]=function(self,dmg)
 	if(band(dmg_types.dmg_contact,dmg)!=0) return
 	self.hit_t=time_t+8
 	self.hp-=1--band(dmg_mask,dmg)
@@ -884,7 +893,8 @@ _g["barrel_hit"]=function(self,dmg)
 	end
 end
 _g["sandman_update"]=function(self)
-	if lineofsight(self.x,self.y,plyr.x,plyr.y,4) then
+	if self.seek_t<time_t and lineofsight(self.x,self.y,plyr.x,plyr.y,4) then
+		self.seek_t=time_t+8+rnd(8)
 		local dx,dy=plyr.x-self.x,plyr.y-self.y
 		local d=sqrt(dx*dx+dy*dy)
 		if(d<0.01) return
@@ -900,12 +910,22 @@ _g["sandman_update"]=function(self)
 		end
 	elseif self.move_t<time_t then
 		self.dx,self.dy=0.05*(rnd(2)-1),0.05*(rnd(2)-1)
-		self.move_t=time_t+30
+		self.move_t=time_t+16+rnd(16)
 	end
 end
-local bad_actors=json_parse('{"barrel_cls":{"side":"any_side","inertia":0.8,"spr":128,"hit":"barrel_hit"},"sandman_cls":{"hp":3,"wp":"base_gun","frames":[[4,5,6]],"move_t":0,"drop_value":3,"die":"npc_die","update":"sandman_update"},"scorpion_cls":{"w":1.8,"hp":10,"frames":[[135,137]],"move_t":0,"update":"npc_rnd_move"},"worm_cls":{"palt":3,"w":0.2,"inertia":0.8,"dmg_type":"dmg_contact","dmg":1,"frames":[[7,8]],"move_t":0,"update":"npc_rnd_move"},"slime_cls":{"palt":3,"w":0.2,"inertia":0.8,"dmg_type":"dmg_contact","dmg":1,"frames":[[29,30,31,30]],"move_t":0,"update":"npc_rnd_move"}}')
+local bad_actors=json_parse('{"barrel_cls":{"side":"any_side","inertia":0.8,"spr":128,"hit":"blast_on_hit"},"sandman_cls":{"hp":3,"wp":"base_gun","frames":[[4,5,6]],"move_t":0,"drop_value":3,"die":"npc_die","update":"sandman_update"},"scorpion_cls":{"w":1.8,"hp":10,"frames":[[135,137]],"move_t":0,"update":"npc_rnd_move"},"worm_cls":{"palt":3,"w":0.2,"inertia":0.8,"dmg_type":"dmg_contact","dmg":1,"frames":[[7,8]],"move_t":0,"update":"npc_rnd_move"},"slime_cls":{"palt":3,"w":0.2,"inertia":0.8,"dmg_type":"dmg_contact","dmg":1,"frames":[[29,30,31,30]],"move_t":0,"update":"npc_rnd_move"}}')
 for k,v in pairs(bad_actors) do
 	v.dmg=bor(dmg_types[v.dmg_type],v.dmg)
+end
+
+function draw_rspr_actor(self,x,y)
+	 local ang=atan2(self.dy,self.dy)
+		rspr(self.sx,self.sy,x-4,y-4,1-ang)
+end
+
+function blast_on_touch(self)
+	-- todo
+	del(actors,self)
 end
 
 local warp_cls={
@@ -978,26 +998,33 @@ end
 function wpdrop_update(self)
 	local dx,dy=plyr.x-self.x,plyr.y-self.y
 	if abs(dx)<0.5 and abs(dy)<0.5 then
-		near_plyr_t=time_t+30
+		self.near_plyr_t=time_t+30
 		if btnp(4) then
-			near_plyr_t=0
+			self.near_plyr_t=0
 			make_part(self.x,self.y,0,{
 				dz=0.1,
 				inertia=0.91,
 				dly=72,
 				txt=self.txt,
 				draw=draw_txt_part})
-			-- swap weapon
+			-- swap weapons
 			local wp,ang=plyr.wp,rnd()
-			local prevwp=make_actor(x,y,
-				clone(wpdrop_cls,{
-					dx=0.1*cos(ang),
-					dy=0.1*sin(ang),
-					ammo=plyr.ammo,
-					spr=wp.icon,
-					txt=wp.name}))
-			-- drop current
-			
+			-- todo: fix rentrancy
+			make_actor(plyr.x,plyr.y,{
+				w=0,
+				inertia=0.9,
+				btn_t=0,
+				near_plyr_t=0,
+				draw=wpdrop_draw,
+				update=wpdrop_update,
+				dx=0.1*cos(ang),
+				dy=0.1*sin(ang),
+				drop=wp,
+				ammo=plyr.ammo,
+				spr=wp.icon,
+				txt=wp.name})
+			-- pick drop
+			plyr.wp=self.drop
 			del(actors,self)
 		end
 	end
@@ -1052,11 +1079,12 @@ function move_actor(a)
 		zbuf_write(a)
 		return
 	end
-	
+	local touch=false
  if not solid_a(a,a.dx,0) then
   a.x+=a.dx
- else   
+ else
   -- otherwise bounce
+  touch=true
   a.dx*=-a.bounce
   sfx(2)
  end
@@ -1065,8 +1093,13 @@ function move_actor(a)
  if not solid_a(a,0,a.dy) then
   a.y+=a.dy
  else
+ 	touch=true
   a.dy*=-a.bounce
   sfx(2)
+ end
+ 
+ if touch and a.touch then
+ 	a:touch()
  end
  
  -- apply inertia
@@ -1089,10 +1122,12 @@ function draw_actor(a,sx,sy)
 	local wp=a.wp
 	-- shadow
 	spr(16,sx,sy+7)
-	-- hit effecit
+	-- hit effect
+	local tcol=a.palt or 14
 	if a.hit_t>time_t then
-		for i=0,15 do pal(i,7) end
-	end
+		memset(0x5f00,0xf,16)
+		pal(tcol,tcol)
+ end
  local s,flipx,flipy=a.spr,false,false
  if a.frames then 
  	local spr_options=(#a.frames==3 and face3strip or face1strip)[a.facing+1]
@@ -1101,9 +1136,9 @@ function draw_actor(a,sx,sy)
 		flipx,flipy=spr_options.flipx,spr_options.flipy
 	end
 	-- actor
-	palt(a.palt or 14,true)
+	palt(tcol,true)
 	spr(s,sx,sy,sw,sw,flipx,flipy)
-	palt(a.palt or 14,false)
+	palt(tcol,false)
 	pal()
  palt(0,false)
  palt(14,true)
@@ -1253,13 +1288,13 @@ function game:init()
 
 	make_actor(12,12,
 		clone(wpdrop_cls,{
-			ammo=25,
-			wp=weapons.shotgun,
+			ammo=weapons.shotgun.ammo,
+			drop=weapons.shotgun,
 			spr=weapons.shotgun.icon,
 			txt=weapons.shotgun.name}))
 
-	--spawner(5,worm_cls)
-	--spawner(8,sandman_cls)
+ --spawner(5,worm_cls)
+	spawner(5,barrel_cls)
 end
 
 function spawner(n,src)
@@ -1315,6 +1350,22 @@ function warp_screen:draw()
 end
 function warp_screen:init()
 	ga,gia,gr=0,.01,.01
+end
+
+local game_over_screen={}
+function game_over_screen:update()
+	if time_t>180 or btnp(4) or btnp(5) then
+		sm_push(title_screen)
+	end
+end
+function game_over_screen:draw()
+	cls(1)
+	txt_options(true,3)
+	txt_print("you are dead",64,12,7)
+
+	txt_print("max level:"..cur_level,64,24,7)		
+end
+function game_over_screen:init()
 end
 
 local title_screen={}
@@ -1419,8 +1470,8 @@ e0000000e0eeee0eeeeeee0ee0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000
 435b5344445544444040404045444494444444440444504477777777765555777777777675677777c111ccc565151777dddddddddddddddd21dde121dd02dd0d
 453535444444444404040404444444544444444445094544777777777555556777777777775677775c5cc77c51515667ddddddddddddeedd12111212d02d0ddd
 44555444444444444040404044494444444444444450949477777777775555577777677777657777c5c5c1c775151557ddddddddddd12e1d2121de21dd0dd0dd
-44444444444444440505050544454444444444444440040477777777777755577777777777577777515c7ccc77515717dddddddddddd11dd12121d12d2dd02d0
-44444444444444445454545444444444444444440445544477777777777777777777777777777777c115c7c577777777dddddddddddddddd2121212100dd2ddd
+44444444444444440404040444454444444444444440040477777777777755577777777777577777515c7ccc77515717dddddddddddd11dd12121d12d2dd02d0
+44444444444444444040404044444444444444440445544477777777777777777777777777777777c115c7c577777777dddddddddddddddd2121212100dd2ddd
 e2e2e2e22e2e2e2e5555555555555555555555556666666655555555555555555666666537555575313131313535353500000000000000001111111111111111
 0000000e000000020505050505050505050505056666656655555555555555456000000656777763131313135377775300000000000000005151515171717171
 02e2e2020e2e2e0e0cccccc000000000000000006666666655555555555555556333333635666655313131313700007500000000000000001515151517171717
@@ -1429,14 +1480,14 @@ e2e2e2e22e2e2e2e5555555555555555555555556666666655555555555555555666666537555575
 0e0e2e0e0202e2020c0000c0005005000000000066666666555555555445555565555556567777631313131355eee65300000000000000005555555577777777
 020000020e00000e0c0000c000500500000550006666656655555555555554557666666735666655313131313522553500000000000000005555555577777777
 0e2e2e2e02e2e2e20c0000c000500500000550006666666655555555555555555777777553555553131313135322535355555555555555555555555577777777
-666166669995999999000009906000606660666600000000dddd11116666666667676666dddd11116dddddd65555555599959999999599990000000000000000
-661516664495444440445440402222206605066611010111dddd11116555555665656666dddd11116dd77dd6111100004aaaa774449544440000000000000000
-615551665555555550095900508000806666666610111011dddd11116000000665656666dddd00116d7667d6111100005acccc75555555550000000000000000
-155555169999959990440440908080800066606655555556dddd111160b0280665656666dddddd006d6666d6dddd11119a333ca9999995990000000000000000
-6555556644449544409565904088888065600566655555661111dddd6000000665656666111ddddd6d5665d61111dddd4a3333a4444495440000000000000000
-6655566655555555500454005088088066655666665556661111dddd66777766656566661111dddd6dd55dd61111dddd5aaaaaa5555555550000000000000000
-6665666699959999909959909020502066656666666566661111dddd66666666656566660111dddd6dddddd61111dddd92212229999599990000000000000000
-6666666644954444400000004001110066666666666666661111dddd6666666660606666d000dddd667777661111dddd44954444449544440000000000000000
+666166669995999999000009906000606660666600000000dddd11116666666667676666ddddd11d6dddddd65555555599959999999599995555555544444444
+661516664495444440445440402222206605066611010111dddd11116555555665656666dddd11116dd77dd6111100004aaaa774449544445555555544444444
+615551665555555550095900508000806666666610111011dddd11116000000665656666dddd11116d7667d6111100005acccc75555555555454545447444744
+155555169999959990440440908080800066606655555556dddd111160b0280665656666dddd111d6d6666d6dddd11119a333ca9999995994444444441676144
+6555556644449544409565904088888065600566655555661111dddd6000000665656666d1dddddd6d5665d61111dddd4a3333a4444495444444444444777444
+6655566655555555500454005088088066655666665556661111dddd6677776665656666111ddddd6dd55dd61111dddd5aaaaaa5555555554444444444161444
+6665666699959999909959909020502066656666666566661111dddd66666666656566661111dddd6dddddd61111dddd92212229999599994444444444444444
+6666666644954444400000004001110066666666666666661111dddd6666666660606666dd1ddddd667777661111dddd44954444449544444444444444444444
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9111111991111111911111199111111111111119111111111111111911111111
 a111111aa1111111a111111aa11111111111111a111111111111111a111111119111111991111111911111199111111111111119111111111111111911111111
 91111119911111119111111991111111111111191111111111111119111111119111111991111111911111199111111111111119111111111111111911111111
@@ -1511,7 +1562,7 @@ eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 
 __gff__
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001010101018201010101010101010101828282828201010101010101000001010101010101010101010001010101000082828282828282828282828282828282
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001010101018201010101010101010101828282828201010101010101000001010101010101010101010101010101010182828282828282828282828282828282
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __map__
 5555555555555555555555555545454545454545454500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
