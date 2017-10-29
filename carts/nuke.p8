@@ -97,6 +97,8 @@ function json_parse(str, pos, end_delim)
 		error('invalid json syntax starting at ' .. pos_info_str)
 	end
 end
+-- screens catalog
+local game_over_screen,title_screen,warp_screen={},{},{}
 
 -- player settings
 local plyr
@@ -112,7 +114,7 @@ local shkx,shky=0,0
 local cam_x,cam_y
 -- weapons catalog
 local dmg_mask,dmg_types=0xff,json_parse('{"dmg_phys":0x0100,"dmg_contact":0x0200,"dmg_energy":0x0400,"dmg_poison":0x0800}')
-local weapons=json_parse('{"base_gun":{"sx":48,"sy":8,"blt_frames":[42,42,42],"dmg_type":"dmg_phys","dmg":1,"spread":0.05,"v":0.1,"ttl":90,"dly":32,"ammo":50},"acid_gun":{"blt_frames":[26,27,28],"blts":3,"spread":0.1,"bounce":true,"dmg_type":"dmg_poison","dmg":3,"v":0.1,"xy":[1,0],"ttl":30,"dly":5,"ammo":50},"uzi":{"name":"uzi","icon":21,"sx":32,"sy":8,"blt_frames":[10,12,11],"spread":0.05,"dmg_type":"dmg_phys","dmg":2,"v":0.4,"ttl":30,"dly":5,"ammo":50,"shk_pow":2},"shotgun":{"name":"pump","icon":37,"sx":32,"sy":16,"blt_frames":[10,12,11],"spread":0.05,"blts":3,"dmg_type":"dmg_phys","dmg":2,"inertia":0.95,"v":0.3,"ttl":30,"dly":56,"ammo":25,"shk_pow":2},"glock":{"name":"g.lock","icon":53,"sx":32,"sy":24,"blt_frames":[10,12,11],"spread":0.01,"dmg_type":"dmg_phys","dmg":4,"v":0.5,"ttl":30,"dly":32,"ammo":17,"shk_pow":2},"rpg":{"name":"rpg","icon":23,"sx":48,"sy":8,"actor_cls":"msl_cls","spread":0.02,"v":0.4,"dly":72,"ammo":8,"shk_pow":3},"grenade":{"name":"mortar","icon":55,"sx":48,"sy":24,"actor_cls":"grenade_cls","spread":0.02,"dly":72,"ammo":12,"shk_pow":2.1}}')
+local weapons=json_parse('{"base_gun":{"sx":48,"sy":8,"blt_frames":[42,42,42],"dmg_type":"dmg_phys","dmg":1,"spread":0.05,"v":0.1,"ttl":90,"dly":32,"ammo":50},"acid_gun":{"blt_frames":[26,27,28],"blts":3,"spread":0.1,"bounce":true,"dmg_type":"dmg_poison","dmg":3,"v":0.1,"xy":[1,0],"ttl":30,"dly":5,"ammo":50},"uzi":{"name":"uzi","icon":21,"sx":32,"sy":8,"blt_frames":[10,12,11],"spread":0.05,"dmg_type":"dmg_phys","dmg":2,"v":0.4,"ttl":30,"dly":5,"ammo":150,"shk_pow":2},"shotgun":{"name":"pump","icon":37,"sx":32,"sy":16,"blt_frames":[10,12,11],"spread":0.05,"blts":3,"dmg_type":"dmg_phys","dmg":2,"inertia":0.95,"v":0.3,"ttl":30,"dly":56,"ammo":25,"shk_pow":2},"glock":{"name":"g.lock","icon":53,"sx":32,"sy":24,"blt_frames":[10,12,11],"spread":0.01,"dmg_type":"dmg_phys","dmg":4,"v":0.5,"ttl":30,"dly":32,"ammo":17,"shk_pow":2},"rpg":{"name":"rpg","icon":23,"sx":48,"sy":8,"actor_cls":"msl_cls","spread":0.02,"v":0.4,"dly":72,"ammo":8,"shk_pow":3},"grenade":{"name":"mortar","icon":55,"sx":48,"sy":24,"actor_cls":"grenade_cls","spread":0.02,"dly":72,"ammo":12,"shk_pow":2.1}}')
 for k,v in pairs(weapons) do
 	if v.dmg then
 		v.dmg=bor(dmg_types[v.dmg_type],v.dmg)
@@ -131,7 +133,8 @@ end
 ]]
 
 -- levels
-local cur_level=1
+local active_actors
+local cur_level,cur_loop=1,1
 local levels=json_parse('[{"name":"desert","ground_tiles":[68,64,65,67,111],"wall_tiles":[66],"solid_tiles_base":112,"shadow_tile":110,"bkg_col":1,"depth":3,"cw":32,"ch":32,"w":[4,6],"h":[4,6],"paths":[2,4],"path":{"bends":[1,2],"w":[4,6],"len":[4,6]},"spawn":[[2,4,"sandman_cls"],[1,3,"worm_cls"]]},{"name":"sewers","ground_tiles":[86,87,87,88],"wall_tiles":[90,89,91],"solid_tiles_base":112,"shadow_tile":94,"borders":[10,11,3],"bkg_col":3,"depth":4,"cw":32,"ch":32,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"snow plains","ground_tiles":[70,71,72],"wall_tiles":[74],"solid_tiles_base":112,"shadow_tile":95,"borders":[1,12,7],"bkg_col":7,"depth":5,"cw":32,"ch":48,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"palace","ground_tiles":[96,100],"wall_tiles":[97,98,99,108],"solid_tiles_base":112,"shadow_tile":101,"borders":[7,0,5],"bkg_col":9,"depth":5,"cw":32,"ch":48,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"lab","ground_tiles":[102,105],"wall_tiles":[103,104,106],"solid_tiles_base":112,"shadow_tile":107,"borders":[6,7,5],"bkg_col":5,"depth":4,"cw":32,"ch":48,"w":[4,6],"h":[3,5],"paths":[4,4],"path":{"bends":[0,2],"w":[1,2],"len":[8,12]}},{"name":"desert","ground_tiles":[68,64,65,67],"wall_tiles":[66],"solid_tiles_base":112,"bkg_col":1,"depth":3,"cw":32,"ch":32,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"sewers","ground_tiles":[86,87,87,88],"wall_tiles":[90,89,91],"solid_tiles_base":112,"shadow_tile":94,"borders":[10,11,3],"bkg_col":3,"depth":4,"cw":32,"ch":32,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"snow plains","ground_tiles":[70,71,72],"wall_tiles":[74],"solid_tiles_base":112,"shadow_tile":95,"borders":[1,12,7],"bkg_col":7,"depth":5,"cw":32,"ch":48,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"palace","ground_tiles":[96,100],"wall_tiles":[97,98,99,108],"solid_tiles_base":112,"shadow_tile":101,"borders":[7,0,5],"bkg_col":9,"depth":5,"cw":32,"ch":48,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"lab","ground_tiles":[102,105],"wall_tiles":[103,104,106],"solid_tiles_base":112,"shadow_tile":107,"borders":[6,7,5],"bkg_col":5,"depth":4,"cw":32,"ch":48,"w":[4,6],"h":[3,5],"paths":[4,4],"path":{"bends":[0,2],"w":[1,2],"len":[8,12]}}]')
 
 local blts={len=0}
@@ -543,6 +546,9 @@ function blt_update(self)
 		for a in all(actors) do
 			if (self.side!=a.side or a.side==any_side) and circline_coll(a.x,a.y,a.w,x0,y0,x1,y1) then
 				a:hit(self.wp.dmg)
+				-- impact!
+				a.dx+=0.5*self.dx
+				a.dy+=0.5*self.dy
 				return false
 			end
 		end
@@ -855,12 +861,18 @@ function plyr_die(self)
 end
 
 function die_actor(self)
-	if rnd()>0.5 then
-		make_actor(self.x,self.y,health_cls)
-	else
-		make_actor(self.x,self.y,ammo_cls)
+	-- last actor?
+	active_actors-=1
+	if active_actors==0 then
+		-- create portal
+		make_actor(self.x,self.y,warp_cls)
+	else	
+		if rnd()>0.5 then
+			make_actor(self.x,self.y,health_cls)
+		else
+			make_actor(self.x,self.y,ammo_cls)
+		end
 	end
-	
 	--[[
 	if self.drop_value then
 		local v=flr(rnd(self.drop_value))
@@ -874,16 +886,12 @@ end
 function hit_actor(self,dmg)
 	self.hit_t=time_t+8
 	self.hp-=band(dmg_mask,dmg)
-	if self.hp<=0 then
+	if not self.disable and self.hp<=0 then
 		self.hp=0
-	 --if(self.die) self:die()
-	if rnd()>0.5 then
-		make_actor(self.x,self.y,health_cls)
-	else
-		make_actor(self.x,self.y,ammo_cls)
-	end
-	
-			del(actors,self)
+	 -- avoid reentrancy
+	 self.disable=true
+	 if(self.die) self:die()	
+		del(actors,self)
 	end
 end
 function make_blast(x,y)
@@ -907,10 +915,11 @@ end
 warp_cls={
 	w=0,
 	captured=false,
-	frames={80,81},
+	frames={92,93},
 	draw=nop,
 	update=function(self)
-		mset(x,y,self.frames[flr(time_t/8)%#self.frames+1])
+	 -- todo: blow up nearby walls
+		mset(self.x+0.5,self.y+0.5,self.frames[flr(time_t/8)%#self.frames+1])
 		if (self.captured) return
 		local dx,dy=plyr.x-self.x,plyr.y-self.y
 		local d=dx*dx+dy*dy
@@ -923,8 +932,16 @@ warp_cls={
 				for i=1,90 do
 					local dist=lerp(d,0,i/90)
 					plyr.x,plyr.y=self.x+dist*cos(a),self.y+dist*sin(a)
+					yield()
 				end
+				plyr_playing=true
 				cur_level+=1
+				-- loop?
+				if cur_level>#levels then
+					cur_loop+=1
+					cur_level=1
+				end
+				del(actors,self)
 				sm_push(warp_screen)
 			end)
 		end
@@ -1002,8 +1019,12 @@ _g.sandman_update=function(self)
 		if(d<0.01) return
 		dx/=d
 		dy/=d
-		self.dx=-0.02*dx
-		self.dy=-0.02*dy
+		local v=0.2
+		if d<3 then
+			v=-0.1
+		end	
+		self.dx=v*dx
+		self.dy=v*dy
 		self.angle=atan2(dx,dy)%1
 		self.facing=flr(8*self.angle)
 		if self.fire_dly<time_t then				
@@ -1015,7 +1036,7 @@ _g.sandman_update=function(self)
 		self.move_t=time_t+16+rnd(16)
 	end
 end
-bad_actors=json_parse('{"barrel_cls":{"side":"any_side","inertia":0.8,"spr":128,"hit":"blast_on_hit"},"msl_cls":{"side":"any_side","inertia":1.01,"sx":80,"sy":24,"update":"smoke_emitter","draw":"draw_rspr_actor","hit":"blast_on_hit","touch":"blast_on_touch"},"sandman_cls":{"hp":3,"wp":"base_gun","frames":[[4,5,6]],"move_t":0,"drop_value":3,"die":"npc_die","update":"sandman_update"},"scorpion_cls":{"w":1.8,"hp":10,"frames":[[135,137]],"move_t":0,"update":"npc_rnd_move"},"worm_cls":{"palt":3,"w":0.2,"inertia":0.8,"dmg_type":"dmg_contact","dmg":1,"frames":[[7,8]],"move_t":0,"update":"npc_rnd_move"},"slime_cls":{"palt":3,"w":0.2,"inertia":0.8,"dmg_type":"dmg_contact","dmg":1,"frames":[[29,30,31,30]],"move_t":0,"update":"npc_rnd_move"}}')
+bad_actors=json_parse('{"barrel_cls":{"side":"any_side","inertia":0.8,"spr":128,"hit":"blast_on_hit"},"msl_cls":{"side":"any_side","inertia":1.01,"sx":80,"sy":24,"update":"smoke_emitter","draw":"draw_rspr_actor","hit":"blast_on_hit","touch":"blast_on_touch"},"sandman_cls":{"hp":3,"wp":"base_gun","frames":[[4,5,6]],"move_t":0,"drop_value":3,"update":"sandman_update"},"scorpion_cls":{"w":1.8,"hp":10,"frames":[[135,137]],"move_t":0,"update":"npc_rnd_move"},"worm_cls":{"palt":3,"w":0.2,"inertia":0.8,"dmg_type":"dmg_contact","dmg":1,"frames":[[7,8]],"move_t":0,"update":"npc_rnd_move"},"slime_cls":{"palt":3,"w":0.2,"inertia":0.8,"dmg_type":"dmg_contact","dmg":1,"frames":[[29,30,31,30]],"move_t":0,"update":"npc_rnd_move"}}')
 for k,v in pairs(bad_actors) do
 	v.dmg=bor(dmg_types[v.dmg_type],v.dmg)
 end
@@ -1198,35 +1219,36 @@ function make_plyr()
 end
 
 function control_player()
-	local wp,angle=plyr.wp,plyr.angle
- -- how fast to accelerate
- local dx,dy=0,0
- if(btn(0)) plyr.dx-=plyr_acc angle=0.5
- if(btn(1)) plyr.dx+=plyr_acc angle=0
- if(btn(2)) plyr.dy-=plyr_acc angle=0.25
- if(btn(3)) plyr.dy+=plyr_acc angle=0.75	
-	
-	if wp and btn(4) and plyr.fire_dly<time_t then
-	 	-- todo: rename recoil
-		if plyr.ammo>0 then
-			plyr.fire_t=time_t+8
-			plyr.fire_dly=time_t+wp.dly
-			make_blt(plyr,wp)
-			local u=face2unit[plyr.facing+1]
-			plyr.dx-=0.05*u[1]
-			plyr.dy-=0.05*u[2]
-			cam_shake(u[1],u[2],wp.shk_pow)
+ if plyr_playing then
+		local wp,angle=plyr.wp,plyr.angle
+	 -- how fast to accelerate
+	 local dx,dy=0,0
+	 if(btn(0)) plyr.dx-=plyr_acc dx=-1 angle=0.5
+	 if(btn(1)) plyr.dx+=plyr_acc dx=1 angle=0
+	 if(btn(2)) plyr.dy-=plyr_acc dy=-1 angle=0.25
+	 if(btn(3)) plyr.dy+=plyr_acc dy=1 angle=0.75	
+		if(bor(dx,dy)!=0) angle=atan2(dx,dy)
+		
+		if wp and btn(4) and plyr.fire_dly<time_t then
+		 	-- todo: rename recoil
+			if plyr.ammo>0 then
+				plyr.fire_t=time_t+8
+				plyr.fire_dly=time_t+wp.dly
+				make_blt(plyr,wp)
+				local u=face2unit[plyr.facing+1]
+				plyr.dx-=0.05*u[1]
+				plyr.dy-=0.05*u[2]
+				cam_shake(u[1],u[2],wp.shk_pow)
+			end
+		elseif plyr.fire_dly<time_t then
+			plyr.facing=flr(8*angle)
+			plyr.angle=angle
 		end
-	elseif plyr.fire_dly<time_t then
-		plyr.facing=flr(8*angle)
-		plyr.angle=angle
-	end
-	
- -- play a sound if moving
- -- (every 4 ticks)
+	end	
+	-- play a sound if moving
+	-- (every 4 ticks)
  
- 	if (abs(plyr.dx)+abs(plyr.dy)>0.1
-     and (time_t%4)==0) then
+ if (abs(plyr.dx)+abs(plyr.dy)>0.1 and (time_t%4)==0) then
   sfx(1)
  end 
  
@@ -1237,12 +1259,16 @@ function make_level(lvl)
 	local rules=levels[lvl]
 	make_rooms(8,8,rules)
 	-- spawn entities
+	active_actors=0
+	-- invalid level
+	if(not rules.spawn) assert()
 	for i=2,#rooms do
 		local r,sp=rooms[i],rndarray(rules.spawn)
 		local n=flr(lerp(sp[1],sp[2],rnd()))
 		for k=1,n do
 			local x,y=r.x+lerp(0,r.w,rnd()),r.y+lerp(0,r.h,rnd())
 			make_actor(x,y,bad_actors[sp[3]])
+			active_actors+=1
 		end
 	end
 end
@@ -1252,7 +1278,7 @@ function game:update()
 	pause_t-=1
 	if(pause_t>0) return
 	pause_t=0
-
+	
 	-- todo: update vs clear
 	cmap_clear(actors)
 	zbuf_clear()
@@ -1312,28 +1338,16 @@ function game:draw()
 end
 function game:init()
 	poke(0x5f2c,0)
-	if not plyr then
-		plyr=make_plyr()	
-	end
+	actors={}
+	make_level(cur_level)
+	add(actors,plyr)
+
 	local r=rooms[1]
 	plyr.x=r.x+r.w/2
 	plyr.y=r.y+r.h/2
 	cam_track(plyr.x,plyr.y)
 	
 	--make_actor(12,12,warp_cls)
-
- --make_actor(12,12,health_cls)
-	--make_actor(14,14,ammo_cls)
-
-	--[[
-	make_actor(12,12,
-		clone(wpdrop_cls,{
-			ammo=weapons.shotgun.ammo,
-			drop=weapons.shotgun,
-			spr=weapons.shotgun.icon,
-			txt=weapons.shotgun.name}))
-	]]
-	
 end
 
 function spawner(n,src)
@@ -1350,14 +1364,12 @@ function spawner(n,src)
 	end
 end
 
-local warp_screen={}
 local gia,gr,ga
 function warp_screen:update()
 	ga+=gia
 	gia=mid(-.1,gia,.1)
 	gr=mid(-.1,gr,.1)
 	if btnp(4) then
-		make_level(cur_level)
 		sm_push(game)
 	end
 end
@@ -1389,13 +1401,14 @@ function warp_screen:draw()
 	rspr(8,24,32+8*x,32+8*y,time_t/16)
 	
 	txt_options(true,0)
-	txt_print(levels[cur_level].name,32,8,7)
+	local txt=levels[cur_level].name.." "..cur_loop.."-"..cur_level
+	txt_print(,32,8,7)
 end
 function warp_screen:init()
 	poke(0x5f2c,3)
 end
 
-local game_over_screen={}
+-- game over
 function game_over_screen:update()
 	if time_t>180 or btnp(4) or btnp(5) then
 		sm_push(title_screen)
@@ -1412,12 +1425,13 @@ function game_over_screen:init()
 	poke(0x5f2c,3)
 end
 
-local title_screen={}
+-- title screen
 function title_screen:update()
 	ga+=gia
 	gia=mid(-.1,gia,.1)
 	gr=mid(-.1,gr,.1)
 	if btnp(4) or btnp(5) then
+		plyr=make_plyr()
 		sm_push(warp_screen)
 	end
 end
@@ -1438,7 +1452,7 @@ function title_screen:draw()
 end
 function title_screen:init()
 	poke(0x5f2c,3)	
-	cur_level=1
+	cur_level,cur_loop=1,1
 	ga,gia,gr=0,.01,.01
 	palt(14,true)
 	palt(0,false)
@@ -1534,14 +1548,14 @@ e0000000e0eeee0eeeeeee0ee0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000
 44555444444444444040404044494444444444444450949477777777775555577777677777657777c5c5c1c775151557ddddddddddd12e1d2121de21dd0dd0dd
 44444444444444440404040444454444444444444440040477777777777755577777777777577777515c7ccc77515717dddddddddddd11dd12121d12d2dd02d0
 44444444444444444040404044444444444444440445544477777777777777777777777777777777c115c7c577777777dddddddddddddddd2121212100dd2ddd
-e2e2e2e22e2e2e2e1111111155555555555555556666666655555555555555555666666537555575313131313535353500000000000000001111111111111111
-0000000e000000021111111105050505050505056666656655555555555555456000000656777763131313135377775300000000000000005151515171717171
-02e2e2020e2e2e0e1d1d1d1d00000000000000006666666655555555555555556333333635666655313131313700007500000000000000001515151517171717
-0e000e0e02000202dddddddd00000000000000006656666655555555555555556555555653555553131313135600006300000000000000005555555577777777
-020202020e0e0e0edddddddd00555500000000006666666655555555544555556333333637555575313131313622206500000000000000005555555577777777
-0e0e2e0e0202e202dddddddd005005000000000066666666555555555445555565555556567777631313131355eee65300000000000000005555555577777777
-020000020e00000edddddddd00500500000550006666656655555555555554557666666735666655313131313522553500000000000000005555555577777777
-0e2e2e2e02e2e2e2dddddddd00500500000550006666666655555555555555555777777553555553131313135322535355555555555555555555555577777777
+e2e2e2e22e2e2e2e11111111555555555555555566666666555555555555555556666665375555753131313135353535ee2222eeeeeeeeee1111111111111111
+1111111e1111111211111111050505050505050566666566555555555555554560000006567777631313131353777753e2eeee2eee2222ee5151515171717171
+12e2e2121e2e2e1e1d1d1d1d0000000000000000666666665555555555555555633333363566665531313131370000752ee22ee2e2eeee2e1515151517171717
+1e111e1e12111212dddddddd0000000000000000665666665555555555555555655555565355555313131313560000632e2ee2e2e2e22e2e5555555577777777
+121212121e1e1e1edddddddd0055550000000000666666665555555554455555633333363755557531313131362220652ee22ee2e2eeee2e5555555577777777
+1e1e2e1e1212e212dddddddd005005000000000066666666555555555445555565555556567777631313131355eee653e2eeee2eee2222ee5555555577777777
+121111121e11111edddddddd005005000005500066666566555555555555545576666667356666553131313135225535ee2222eeeeeeeeee5555555577777777
+1e2e2e2e12e2e2e2dddddddd005005000005500066666666555555555555555557777775535555531313131353225353eeeeeeeeeeeeeeee5555555577777777
 666166669995999999000009906000606660666600000000dddd11116666666667676666ddddd11d6dddddd65555555599959999999599995555555544444444
 661516664495444440445440402222206605066611010111dddd11116555555665656666dddd11116dd77dd6111100004aaaa774449544445555555544444444
 615551665555555550095900508000806666666610111011dddd11116000000665656666dddd11116d7667d6111100005acccc75555555555454545447444744
@@ -1624,7 +1638,7 @@ eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 
 __gff__
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001010101018201010101010101010101828201828201010101010101000001010101010101010101010101010101010182828282828282828282828282828282
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001010101018201010101010101010101010101828201010101010101010101010101010101010101010101010101010182828282828282828282828282828282
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __map__
 0000000000000000000000000000000045454545454500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
