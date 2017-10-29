@@ -2,7 +2,7 @@ pico-8 cartridge // http://www.pico-8.com
 version 8
 __lua__
 local time_t=0
-local x,y=64,64
+local x,y,lw=64,64,0
 --[[
 function dist2line(x,y,r,x0,y0,x1,y1)
 	x0,y0=x0-x,y0-y
@@ -13,7 +13,7 @@ function dist2line(x,y,r,x0,y0,x1,y1)
 	return (r*r*d2-d*d)>0
 end
 ]]
-function dist2line(x,y,r,x0,y0,x1,y1)
+function dist2line(x,y,r,x0,y0,x1,y1,r2)
 	local dx,dy=x1-x0,y1-y0
 	local ax,ay=x-x0,y-y1
 	local t=ax*dx+ay*dy
@@ -22,25 +22,30 @@ function dist2line(x,y,r,x0,y0,x1,y1)
 	--if(t< or t>d) return false
 	t/=d
 	local ix,iy=x0+t*dx-x,y0+t*dy-y
-	return (ix*ix+iy*iy)<r*r	
+	return (ix*ix+iy*iy)<(r*r+r2*r2)
 end
-
 
 function _update()
 	if(btn(0)) x-=1	
 	if(btn(1)) x+=1	
 	if(btn(2)) y-=1	
 	if(btn(3)) y+=1
+	if(btn(4)) lw-=1
+	if(btn(5)) lw+=1
+	lw=mid(lw,0,8)
 end
 
 local x0,y0=32,32
 local x1,y1=54,32
 function _draw()
 	cls(0)
-	local hit=dist2line(x,y,8,x0,y0,x1,y1)
+	local hit=dist2line(x,y,8,x0,y0,x1,y1,2*lw)
 	print("hit:"..(hit==true and "yes" or "no"),2,2,7)
-		
+	print("width:"..lw,2,9,7)		
+	
 	line(x0,y0,x1,y1,7)
+	circ(x0,y0,lw,7)
+	circ(x1,y1,lw,7)
 	if hit then
 		circfill(x,y,8,7)
 	else

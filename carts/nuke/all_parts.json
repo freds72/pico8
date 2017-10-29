@@ -1,0 +1,1 @@
+{"flash_part_cls":{"dly":4,"r":0.5,"c":7,"dr":-0.1,"update":"update_static_part","draw":"draw_circ_part"},"smoke_part_cls":{"dly":18,"r":0.3,"dr":-0.01,"c":7,"rnds":["r"],"draw":"draw_circ_part"}}

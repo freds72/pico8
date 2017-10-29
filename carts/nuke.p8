@@ -114,7 +114,7 @@ local shkx,shky=0,0
 local cam_x,cam_y
 -- weapons catalog
 local dmg_mask,dmg_types=0xff,json_parse('{"dmg_phys":0x0100,"dmg_contact":0x0200,"dmg_energy":0x0400,"dmg_poison":0x0800}')
-local weapons=json_parse('{"base_gun":{"sx":48,"sy":8,"blt_frames":[42,42,42],"dmg_type":"dmg_phys","dmg":1,"spread":0.05,"v":0.1,"ttl":90,"dly":32,"ammo":50},"acid_gun":{"blt_frames":[26,27,28],"blts":3,"spread":0.1,"bounce":true,"dmg_type":"dmg_poison","dmg":3,"v":0.1,"xy":[1,0],"ttl":30,"dly":5,"ammo":50},"uzi":{"name":"uzi","icon":21,"sx":32,"sy":8,"blt_frames":[10,12,11],"spread":0.05,"dmg_type":"dmg_phys","dmg":2,"v":0.4,"ttl":30,"dly":5,"ammo":150,"shk_pow":2},"shotgun":{"name":"pump","icon":37,"sx":32,"sy":16,"blt_frames":[10,12,11],"spread":0.05,"blts":3,"dmg_type":"dmg_phys","dmg":2,"inertia":0.95,"v":0.3,"ttl":30,"dly":56,"ammo":25,"shk_pow":2},"glock":{"name":"g.lock","icon":53,"sx":32,"sy":24,"blt_frames":[10,12,11],"spread":0.01,"dmg_type":"dmg_phys","dmg":4,"v":0.5,"ttl":30,"dly":32,"ammo":17,"shk_pow":2},"rpg":{"name":"rpg","icon":23,"sx":48,"sy":8,"actor_cls":"msl_cls","spread":0.02,"v":0.4,"dly":72,"ammo":8,"shk_pow":3},"grenade":{"name":"mortar","icon":55,"sx":48,"sy":24,"actor_cls":"grenade_cls","spread":0.02,"dly":72,"ammo":12,"shk_pow":2.1}}')
+local weapons=json_parse('{"base_gun":{"sx":48,"sy":8,"blt_frames":[42,42,42],"dmg_type":"dmg_phys","dmg":1,"spread":0.05,"v":0.1,"ttl":90,"dly":32},"acid_gun":{"blt_frames":[26,27,28],"blts":3,"spread":0.1,"bounce":0.9,"dmg_type":"dmg_poison","dmg":3,"v":0.1,"xy":[1,0],"ttl":30,"dly":5},"uzi":{"name":"uzi","icon":21,"sx":32,"sy":8,"blt_frames":[10,12,11],"spread":0.05,"dmg_type":"dmg_phys","dmg":2,"v":0.4,"ttl":30,"dly":5,"ammo":75,"shk_pow":2},"shotgun":{"name":"pump","icon":37,"sx":32,"sy":16,"blt_frames":[10,12,11],"spread":0.05,"blts":3,"dmg_type":"dmg_phys","dmg":2,"inertia":0.95,"v":0.3,"ttl":30,"dly":56,"ammo":25,"shk_pow":2},"glock":{"name":"g.lock","icon":53,"sx":32,"sy":24,"blt_frames":[10,12,11],"spread":0.01,"dmg_type":"dmg_phys","dmg":4,"v":0.5,"ttl":30,"dly":32,"ammo":17,"shk_pow":2},"rpg":{"name":"rpg","icon":23,"sx":48,"sy":8,"actor_cls":"msl_cls","spread":0.02,"v":0.4,"dly":72,"ammo":8,"shk_pow":3},"grenade":{"name":"mortar","icon":55,"sx":48,"sy":24,"actor_cls":"grenade_cls","spread":0.02,"dly":72,"ammo":12,"shk_pow":2.1}}')
 for k,v in pairs(weapons) do
 	if v.dmg then
 		v.dmg=bor(dmg_types[v.dmg_type],v.dmg)
@@ -135,7 +135,7 @@ end
 -- levels
 local active_actors
 local cur_level,cur_loop=1,1
-local levels=json_parse('[{"name":"desert","ground_tiles":[68,64,65,67,111],"wall_tiles":[66],"solid_tiles_base":112,"shadow_tile":110,"bkg_col":1,"depth":3,"cw":32,"ch":32,"w":[4,6],"h":[4,6],"paths":[2,4],"path":{"bends":[1,2],"w":[4,6],"len":[4,6]},"spawn":[[2,4,"sandman_cls"],[1,3,"worm_cls"]]},{"name":"sewers","ground_tiles":[86,87,87,88],"wall_tiles":[90,89,91],"solid_tiles_base":112,"shadow_tile":94,"borders":[10,11,3],"bkg_col":3,"depth":4,"cw":32,"ch":32,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"snow plains","ground_tiles":[70,71,72],"wall_tiles":[74],"solid_tiles_base":112,"shadow_tile":95,"borders":[1,12,7],"bkg_col":7,"depth":5,"cw":32,"ch":48,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"palace","ground_tiles":[96,100],"wall_tiles":[97,98,99,108],"solid_tiles_base":112,"shadow_tile":101,"borders":[7,0,5],"bkg_col":9,"depth":5,"cw":32,"ch":48,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"lab","ground_tiles":[102,105],"wall_tiles":[103,104,106],"solid_tiles_base":112,"shadow_tile":107,"borders":[6,7,5],"bkg_col":5,"depth":4,"cw":32,"ch":48,"w":[4,6],"h":[3,5],"paths":[4,4],"path":{"bends":[0,2],"w":[1,2],"len":[8,12]}},{"name":"desert","ground_tiles":[68,64,65,67],"wall_tiles":[66],"solid_tiles_base":112,"bkg_col":1,"depth":3,"cw":32,"ch":32,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"sewers","ground_tiles":[86,87,87,88],"wall_tiles":[90,89,91],"solid_tiles_base":112,"shadow_tile":94,"borders":[10,11,3],"bkg_col":3,"depth":4,"cw":32,"ch":32,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"snow plains","ground_tiles":[70,71,72],"wall_tiles":[74],"solid_tiles_base":112,"shadow_tile":95,"borders":[1,12,7],"bkg_col":7,"depth":5,"cw":32,"ch":48,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"palace","ground_tiles":[96,100],"wall_tiles":[97,98,99,108],"solid_tiles_base":112,"shadow_tile":101,"borders":[7,0,5],"bkg_col":9,"depth":5,"cw":32,"ch":48,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"lab","ground_tiles":[102,105],"wall_tiles":[103,104,106],"solid_tiles_base":112,"shadow_tile":107,"borders":[6,7,5],"bkg_col":5,"depth":4,"cw":32,"ch":48,"w":[4,6],"h":[3,5],"paths":[4,4],"path":{"bends":[0,2],"w":[1,2],"len":[8,12]}}]')
+local levels=json_parse('[{"name":"desert","ground_tiles":[68,64,65,67,111],"wall_tiles":[66],"solid_tiles_base":112,"shadow_tile":110,"bkg_col":1,"depth":5,"cw":32,"ch":32,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]},"spawn":[[2,4,"sandman_cls"],[1,3,"worm_cls"]]},{"name":"sewers","ground_tiles":[86,87,87,88],"wall_tiles":[90,89,91],"solid_tiles_base":112,"shadow_tile":94,"borders":[10,11,3],"bkg_col":3,"depth":4,"cw":32,"ch":32,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]},"spawn":[[1,3,"slime_cls"],[0,1,"barrel_cls"]]},{"name":"snow plains","ground_tiles":[70,71,72],"wall_tiles":[74],"solid_tiles_base":112,"shadow_tile":95,"borders":[1,12,7],"bkg_col":7,"depth":5,"cw":32,"ch":48,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]},"spawn":[[1,2,"dog_cls"],[0,2,"bear_cls"],[0,1,"barrel_cls"]]},{"name":"palace","ground_tiles":[96,100],"wall_tiles":[97,98,99,108],"solid_tiles_base":112,"shadow_tile":101,"borders":[7,0,5],"bkg_col":9,"depth":5,"cw":32,"ch":48,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"lab","ground_tiles":[102,105],"wall_tiles":[103,104,106],"solid_tiles_base":112,"shadow_tile":107,"borders":[6,7,5],"bkg_col":5,"depth":4,"cw":32,"ch":48,"w":[4,6],"h":[3,5],"paths":[4,4],"path":{"bends":[0,2],"w":[1,2],"len":[8,12]}},{"name":"desert","ground_tiles":[68,64,65,67],"wall_tiles":[66],"solid_tiles_base":112,"bkg_col":1,"depth":3,"cw":32,"ch":32,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"sewers","ground_tiles":[86,87,87,88],"wall_tiles":[90,89,91],"solid_tiles_base":112,"shadow_tile":94,"borders":[10,11,3],"bkg_col":3,"depth":4,"cw":32,"ch":32,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"snow plains","ground_tiles":[70,71,72],"wall_tiles":[74],"solid_tiles_base":112,"shadow_tile":95,"borders":[1,12,7],"bkg_col":7,"depth":5,"cw":32,"ch":48,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"palace","ground_tiles":[96,100],"wall_tiles":[97,98,99,108],"solid_tiles_base":112,"shadow_tile":101,"borders":[7,0,5],"bkg_col":9,"depth":5,"cw":32,"ch":48,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"lab","ground_tiles":[102,105],"wall_tiles":[103,104,106],"solid_tiles_base":112,"shadow_tile":107,"borders":[6,7,5],"bkg_col":5,"depth":4,"cw":32,"ch":48,"w":[4,6],"h":[3,5],"paths":[4,4],"path":{"bends":[0,2],"w":[1,2],"len":[8,12]}}]')
 
 local blts={len=0}
 local parts={len=0}
@@ -1036,7 +1036,7 @@ _g.sandman_update=function(self)
 		self.move_t=time_t+16+rnd(16)
 	end
 end
-bad_actors=json_parse('{"barrel_cls":{"side":"any_side","inertia":0.8,"spr":128,"hit":"blast_on_hit"},"msl_cls":{"side":"any_side","inertia":1.01,"sx":80,"sy":24,"update":"smoke_emitter","draw":"draw_rspr_actor","hit":"blast_on_hit","touch":"blast_on_touch"},"sandman_cls":{"hp":3,"wp":"base_gun","frames":[[4,5,6]],"move_t":0,"drop_value":3,"update":"sandman_update"},"scorpion_cls":{"w":1.8,"hp":10,"frames":[[135,137]],"move_t":0,"update":"npc_rnd_move"},"worm_cls":{"palt":3,"w":0.2,"inertia":0.8,"dmg_type":"dmg_contact","dmg":1,"frames":[[7,8]],"move_t":0,"update":"npc_rnd_move"},"slime_cls":{"palt":3,"w":0.2,"inertia":0.8,"dmg_type":"dmg_contact","dmg":1,"frames":[[29,30,31,30]],"move_t":0,"update":"npc_rnd_move"}}')
+bad_actors=json_parse('{"barrel_cls":{"side":"any_side","inertia":0.8,"spr":128,"hit":"blast_on_hit"},"msl_cls":{"side":"any_side","inertia":1.01,"sx":80,"sy":24,"update":"smoke_emitter","draw":"draw_rspr_actor","hit":"blast_on_hit","touch":"blast_on_touch"},"sandman_cls":{"hp":3,"wp":"base_gun","frames":[[4,5,6]],"move_t":0,"drop_value":3,"update":"sandman_update"},"scorpion_cls":{"w":1.8,"hp":10,"wp":"acid_gun","frames":[[135,137]],"move_t":0,"update":"npc_rnd_move"},"worm_cls":{"palt":3,"w":0.2,"inertia":0.8,"dmg_type":"dmg_contact","dmg":1,"frames":[[7,8]],"move_t":0,"update":"npc_rnd_move"},"slime_cls":{"palt":3,"w":0.2,"inertia":0.8,"dmg_type":"dmg_contact","dmg":1,"frames":[[29,30,31,30]],"move_t":0,"update":"npc_rnd_move"},"dog_cls":{"w":0.4,"inertia":0.2,"dmg_type":"dmg_contact","dmg":3,"frames":[[61,62]],"move_t":0,"update":"npc_rnd_move"},"bear_cls":{"w":0.4,"inertia":0.2,"dmg_type":"dmg_contact","dmg":2,"frames":[[1,2,3]],"move_t":0,"update":"npc_rnd_move"}}')
 for k,v in pairs(bad_actors) do
 	v.dmg=bor(dmg_types[v.dmg_type],v.dmg)
 end
@@ -1343,8 +1343,8 @@ function game:init()
 	add(actors,plyr)
 
 	local r=rooms[1]
-	plyr.x=r.x+r.w/2
-	plyr.y=r.y+r.h/2
+	plyr.x,plyr.y=r.x+r.w/2,r.y+r.h/2
+	plyr.safe_t=time_t+30
 	cam_track(plyr.x,plyr.y)
 	
 	--make_actor(12,12,warp_cls)
@@ -1402,7 +1402,7 @@ function warp_screen:draw()
 	
 	txt_options(true,0)
 	local txt=levels[cur_level].name.." "..cur_loop.."-"..cur_level
-	txt_print(,32,8,7)
+	txt_print(txt,32,8,7)
 end
 function warp_screen:init()
 	poke(0x5f2c,3)
@@ -1508,14 +1508,14 @@ end
 
 
 __gfx__
-00000000e000000ee000000ee000000ee000000ee000000ee000000e3333333333333333eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000ee000000ee000000e
-000000000555555005555550055555500f66ff600f66ff600f66ff603333333333333333e00e00eeeeeeeeeeeee99eeeeeeeeeee01111a10011111a001111110
-0070070005558580055558500555558005585850055858500558585033333333333333330880870eee9999eeee9aa9eeeee99eee01c00000011c00000111c000
-000770000555252005555250055555200ff66ff00ff66ff00ff66ff033300033333333330288820ee999aa9eee9aa9eeee9aa9ee0ccc0c000cccc0c00ccccc00
-0007700005555550055555500555555006ff66f006ff66f006ff66f0330fef0333000033e02820eee999aa9eee9999eee99aa9ee0cccccc00cccccc00cccccc0
-007007000555555005555550055555500f66f6600f66f6600f66f660330e0e0330efef03ee020eeeee9999eeee9999eee9999eee055556500555556005555550
-0000000005000050e050050ee005500ee06f0ff0e006f0f00f006f0e30ef0fe00ef00fe0eee0eeeeeeeeeeeeeee99eeeee99eeee07000070e070070ee006700e
-00000000e0eeee0eee0ee0eeeee00eeeee00e00eeee00e0ee0ee00ee3300300330033003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0eeee0eee0ee0eeeee00eee
+00000000e000000ee0000000e000000ee000000ee000000ee000000e3333333333333333eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000ee000000ee000000e
+000000000676767006676760056676700f66ff600f66ff600f66ff603333333333333333e00e00eeeeeeeeeeeee99eeeeeeeeeee01111a10011111a001111110
+0070070007989860057989800657989005585850055858500558585033333333333333330880870eee9999eeee9aa9eeeee99eee01c00000011c00000111c000
+000770000694047006694040056694000ff66ff00ff66ff00ff66ff033300033333333330288820ee999aa9eee9aa9eeee9aa9ee0ccc0c000cccc0c00ccccc00
+0007700007676760057676700657676006ff66f006ff66f006ff66f0330fef0333000033e02820eee999aa9eee9999eee99aa9ee0cccccc00cccccc00cccccc0
+007007000444444004444440044444400f66f6600f66f6600f66f660330e0e0330efef03ee020eeeee9999eeee9999eee9999eee055556500555556005555550
+0000000005000050e050010ee005100ee06f0ff0e006f0f00f006f0e30ef0fe00ef00fe0eee0eeeeeeeeeeeeeee99eeeee99eeee07000070e070070ee006700e
+00000000000ee000e000000eeee00eeeee00e00eeee00e0ee0ee00ee3300300330033003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0eeee0eee0ee0eeeee00eee
 e111111eee00000eee00000eee00000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00eeeeeeeeeeeeee00eee
 11111111e0999aa0e09999a0e0999990eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000eeeee777eeeeeeeeeeeeeeee33eeeeeeeeeeeee0370eeee0000eeee0370ee
 e111111e099414100999414009999410eeeeeeeeeeeeeeeee0000000e77777770bb0000070077777ee3bb3eeee3bb3eeeee3bbeee03bb70ee03bb70eee0370ee
@@ -1532,14 +1532,14 @@ e0353530044444400444444004444440e0445550e7000007e055c1c0e70000070000000000000000
 e033333003333bb00333bbb003333bb0e0400000e7077777e0501010e70707070000000000000000eeeaaeeee6bbbb6eeee00eee022686800228686002288680
 e0533350050000500500000000000050ee0eeeeeee7eeeeeee0e0e0eee7e7e7e0000000000000000eeeeeeeeee6bb6eeeeeeeeee02000020e020010ee002100e
 ee00000ee0eeee0ee0eeeeeeeeeeee0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeeeeeeeeeeeeeeeeeee00eeee00ee0ee0eeeee00eee
-ee00000eee0000eeee0000eeee0000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeee008200000000000055555555eeeeeeee00000000
-e0666660e0999a0ee0999a0ee0999a0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000ee88eeee109400000000000005000050ee0000ee00000000
-e0777770094141a0091414a0094141a0ee00000eee77777eee000000ee7777770000000000000000e000000e21a900000000000000eeee00e009900e00000000
-e0dd8dd0094444900944449009444490e076670ee700007ee03bb660e70000070000000000000000e088777031b300000000000050eeee05e0a99a0e00000000
-e0d888d0044555400455544004455540e055000ee700777e0453b000700007770000000000000000e055667045c100000000000000eeee00e04aa40e00000000
-e0d686d0033babb00339bbb0033babb0e050eeeee707eeee04400eee70077eee0000000000000000e000000e51d100000000000050ffff05e044440e00000000
-e0dd6dd005000050000000b003000000ee0eeeeeee7eeeeee00e0eeee77e7eee0000000000000000ee88eeee65e200000000000000822800e004400e00000000
-e0000000e0eeee0eeeeeee0ee0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeee76fd00000000000005000050ee0000ee00000000
+ee00000eee0000eeee0000eeee0000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeee00820000e00ee00ee0e0eeeee0e0eeee00000000
+e0666660e0999a0ee0999a0ee0999a0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000ee88eeee1094000004900490090900ee0909000e00000000
+e0777770094141a0091414a0094141a0ee00000eee77777eee000000ee7777770000000000000000e000000e21a90000044848400dd8480e0dd8454000000000
+e0dd8dd0094444900944449009444490e076670ee700007ee03bb660e70000070000000000000000e088777031b30000044909400d4454400d44707000000000
+e0d888d0044555400455544004455540e055000ee700777e0453b000700007770000000000000000e055667045c10000044444400447070e0441110e00000000
+e0d686d0033babb00339bbb0033babb0e050eeeee707eeee04400eee70077eee0000000000000000e000000e51d1000004444440044444400447070e00000000
+e0dd6dd005000050000000b003000000ee0eeeeeee7eeeeee00e0eeee77e7eee0000000000000000ee88eeee65e2000005000050040400400404444000000000
+e0000000e0eeee0eeeeeee0ee0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000eeeeeeee76fd0000e0eeee0ee0e0ee0ee0e0000e00000000
 444444444444444404040404444444444444444444444444777777777777777777777677777677775c775c5c76666667dddddddddddddddd121212eed2dddddd
 44444444449944444040404044444444444444444940044077777777777777777667777777657777ccc7c7c565151516ddddddddd1eddddd21ee21de20ddd2ed
 44b4b4444549544404040404494444444444444450450945777777777766667775577777765777771cc7c77c71515177ddddddddd11ddddd11dde212ddd0d02d
