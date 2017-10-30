@@ -1,1 +1,149 @@
-{"barrel_cls":{"side":"any_side","inertia":0.8,"spr":128,"hit":"blast_on_hit"},"msl_cls":{"side":"any_side","inertia":1.01,"sx":80,"sy":24,"update":"smoke_emitter","draw":"draw_rspr_actor","hit":"blast_on_hit","touch":"blast_on_touch"},"sandman_cls":{"hp":3,"wp":"base_gun","frames":[[4,5,6]],"move_t":0,"drop_value":3,"update":"sandman_update"},"scorpion_cls":{"w":1.8,"hp":10,"wp":"acid_gun","frames":[[135,137]],"move_t":0,"update":"npc_rnd_move"},"worm_cls":{"palt":3,"w":0.2,"inertia":0.8,"dmg_type":"dmg_contact","dmg":1,"frames":[[7,8]],"move_t":0,"update":"npc_rnd_move"},"slime_cls":{"palt":3,"w":0.2,"inertia":0.8,"dmg_type":"dmg_contact","dmg":1,"frames":[[29,30,31,30]],"move_t":0,"update":"npc_rnd_move"},"dog_cls":{"w":0.4,"inertia":0.2,"dmg_type":"dmg_contact","dmg":3,"frames":[[61,62]],"move_t":0,"update":"npc_rnd_move"},"bear_cls":{"w":0.4,"inertia":0.2,"dmg_type":"dmg_contact","dmg":2,"frames":[[1,2,3]],"move_t":0,"update":"npc_rnd_move"}}
+{
+    "barrel_cls": {
+        "side": "any_side",
+        "inertia": 0.8,
+        "spr": 128,
+        "hit": "blast_on_hit"
+    },
+    "msl_cls": {
+        "side": "any_side",
+        "inertia": 1.01,
+        "sx": 80,
+        "sy": 24,
+        "update": "smoke_emitter",
+        "draw": "draw_rspr_actor",
+        "hit": "blast_on_hit",
+        "touch": "blast_on_touch"
+    },
+    "grenade_cls": {
+        "side": "any_side",
+        "w": 0.2,
+        "h": 0.2,
+        "inertia": 0.8,
+        "bounce": 0.8,
+        "spr": 44,
+        "update": "smoke_emitter",
+        "draw": "draw_spr_actor",
+        "hit": "blast_on_hit",
+        "touch": "blast_on_touch"
+    },
+    "sandman_cls": {
+        "hp": 3,
+        "wp": "base_gun",
+        "frames": [
+            [
+                4,
+                5,
+                6
+            ]
+        ],
+        "move_t": 0,
+        "drop_value": 3,
+        "update": "sandman_update"
+    },
+    "scorpion_cls": {
+        "w": 1.8,
+        "h": 1.8,
+        "hp": 10,
+        "wp": "acid_gun",
+        "frames": [
+            [
+                135,
+                137
+            ]
+        ],
+        "move_t": 0,
+        "update": "npc_rnd_move"
+    },
+    "worm_cls": {
+        "palt": 3,
+        "w": 0.2,
+        "h": 0.2,
+        "inertia": 0.8,
+        "dmg_type": "dmg_contact",
+        "dmg": 1,
+        "frames": [
+            [
+                7,
+                8
+            ]
+        ],
+        "move_t": 0,
+        "update": "npc_rnd_move"
+    },
+    "slime_cls": {
+        "palt": 3,
+        "w": 0.2,
+        "h": 0.2,
+        "inertia": 0.8,
+        "dmg_type": "dmg_contact",
+        "dmg": 1,
+        "frames": [
+            [
+                29,
+                30,
+                31,
+                30
+            ]
+        ],
+        "move_t": 0,
+        "update": "npc_rnd_move"
+    },
+    "dog_cls": {
+        "inertia": 0.2,
+        "dmg_type": "dmg_contact",
+        "dmg": 3,
+        "frames": [
+            [
+                61,
+                62
+            ]
+        ],
+        "move_t": 0,
+        "update": "npc_rnd_move"
+    },
+    "bear_cls": {
+        "inertia": 0.2,
+        "dmg_type": "dmg_contact",
+        "dmg": 2,
+        "frames": [
+            [
+                1,
+                2,
+                3
+            ]
+        ],
+        "move_t": 0,
+        "update": "npc_rnd_move"
+    },
+    "throne_cls": {
+        "w": 4,
+        "h": 3,
+        "palt": 15,
+        "inertia": 0,
+        "spr": 139,
+        "move_t": 0,
+        "update": "nop"
+    },
+    "health_cls": {
+        "spr": 48,
+        "w": 0,
+        "h": 0,
+        "update": "health_pickup"
+    },
+    "ammo_cls": {
+        "spr": 32,
+        "w": 0,
+        "h": 0,
+        "update": "ammo_pickup"
+    },
+    "wpdrop_cls": {
+        "w": 0,
+        "h": 0,
+        "inertia": 0.9,
+        "btn_t": 0,
+        "near_plyr_t": 0,
+        "draw": "wpdrop_draw",
+        "update": "wpdrop_update"
+    }
+}
