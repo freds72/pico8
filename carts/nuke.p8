@@ -1,6 +1,7 @@
 pico-8 cartridge // http://www.pico-8.com
 version 9
 __lua__
+local time_t=0
 local before_update={c=0}
 local after_draw={c=0}
 
@@ -115,7 +116,7 @@ local shkx,shky=0,0
 local cam_x,cam_y
 -- weapons catalog
 local dmg_mask,dmg_types=0xff,json_parse('{"dmg_phys":0x0100,"dmg_contact":0x0200,"dmg_energy":0x0400,"dmg_poison":0x0800}')
-local weapons=json_parse('{"base_gun":{"sx":48,"sy":8,"blt_frames":[42,42,42],"dmg_type":"dmg_phys","dmg":1,"spread":0.05,"v":0.1,"ttl":90,"dly":32},"goo":{"blt_frames":[63,63,63],"dmg_type":"dmg_phys","dmg":1,"spread":0.25,"v":0,"ttl":90,"dly":64},"acid_gun":{"blt_frames":[26,27,28],"blts":3,"spread":0.1,"bounce":0.9,"dmg_type":"dmg_poison","dmg":3,"v":0.1,"xy":[1,0],"ttl":30,"dly":5},"uzi":{"name":"uzi","icon":21,"sx":32,"sy":8,"blt_frames":[10,12,11],"spread":0.04,"dmg_type":"dmg_phys","dmg":2,"v":0.4,"ttl":30,"dly":5,"ammo":75,"shk_pow":2},"minigun":{"name":"minigun","icon":25,"sx":64,"sy":8,"blt_frames":[10,12,11],"spread":0.04,"dmg_type":"dmg_phys","dmg":2,"v":0.45,"ttl":30,"blts":1,"dly":3,"ammo":250,"shk_pow":2},"shotgun":{"name":"pump","icon":37,"sx":32,"sy":16,"blt_frames":[10,12,11],"spread":0.05,"blts":3,"dmg_type":"dmg_phys","dmg":2,"inertia":0.95,"v":0.3,"ttl":30,"dly":56,"ammo":25,"shk_pow":2},"glock":{"name":"g.lock","icon":53,"sx":32,"sy":24,"blt_frames":[10,12,11],"spread":0.01,"dmg_type":"dmg_phys","dmg":4,"v":0.5,"ttl":30,"dly":32,"ammo":17,"shk_pow":2},"rpg":{"name":"rpg","icon":23,"sx":48,"sy":8,"actor_cls":"msl_cls","spread":0.02,"v":0.4,"dly":72,"ammo":8,"shk_pow":3},"grenade":{"name":"mortar","icon":55,"sx":48,"sy":24,"actor_cls":"grenade_cls","spread":0.02,"v":0.5,"dly":72,"ammo":12,"shk_pow":2.1},"mega_gun":{"sx":48,"sy":8,"blt_frames":[43,43,43],"dmg_type":"dmg_phys","dmg":5,"spread":0.05,"v":0.1,"ttl":30,"dly":32,"sub_cls":"mega_sub","emitters":5},"mega_sub":{"sx":48,"sy":8,"blt_frames":[26,27,28],"dmg_type":"dmg_phys","dmg":5,"spread":0,"v":0.3,"ttl":30,"dly":5,"burst":5}}')
+local weapons=json_parse('{"base_gun":{"sx":48,"sy":8,"frames":[42,42,42],"dmg_type":"dmg_phys","dmg":1,"spread":0.05,"v":0.1,"ttl":90,"dly":32},"goo":{"frames":[63,63,63],"dmg_type":"dmg_phys","dmg":1,"spread":0.25,"v":0,"ttl":90,"dly":64},"acid_gun":{"frames":[26,27,28],"blts":3,"spread":0.1,"bounce":0.9,"dmg_type":"dmg_poison","dmg":3,"v":0.1,"xy":[1,0],"ttl":30,"dly":5},"uzi":{"n":"uzi","icon":21,"sx":32,"sy":8,"frames":[10,12,11],"spread":0.04,"dmg_type":"dmg_phys","dmg":2,"v":0.4,"ttl":30,"dly":5,"ammo":75,"shk_pow":2},"minigun":{"n":"minigun","icon":25,"sx":64,"sy":8,"frames":[10,12,11],"spread":0.04,"dmg_type":"dmg_phys","dmg":2,"v":0.45,"ttl":30,"blts":1,"dly":3,"ammo":250,"shk_pow":2},"shotgun":{"n":"pump","icon":37,"sx":32,"sy":16,"frames":[10,12,11],"spread":0.05,"blts":3,"dmg_type":"dmg_phys","dmg":2,"inertia":0.95,"v":0.3,"ttl":30,"dly":56,"ammo":25,"shk_pow":2},"glock":{"n":"g.lock","icon":53,"sx":32,"sy":24,"frames":[10,12,11],"spread":0.01,"dmg_type":"dmg_phys","dmg":4,"v":0.5,"ttl":30,"dly":32,"ammo":17,"shk_pow":2},"rpg":{"n":"rpg","icon":23,"sx":48,"sy":8,"actor_cls":"msl_cls","spread":0.02,"v":0.4,"dly":72,"ammo":8,"shk_pow":3},"grenade":{"n":"mortar","icon":55,"sx":48,"sy":24,"actor_cls":"grenade_cls","spread":0.02,"v":0.5,"dly":72,"ammo":12,"shk_pow":2.1},"mega_gun":{"sx":48,"sy":8,"frames":[43,43,43],"dmg_type":"dmg_phys","dmg":5,"spread":0.05,"v":0.1,"ttl":30,"dly":32,"sub_cls":"mega_sub","emitters":5},"mega_sub":{"sx":48,"sy":8,"frames":[26,27,28],"dmg_type":"dmg_phys","dmg":5,"spread":0,"v":0.3,"ttl":30,"dly":5,"burst":5}}')
 for k,v in pairs(weapons) do
 	if v.dmg then
 		v.dmg=bor(dmg_types[v.dmg_type],v.dmg)
@@ -135,43 +136,45 @@ for i=0,15 do
 	end
 end
 local lights={}
-function make_light(r)
+for r=42,44 do
 	local light={}
 	for y=0,127 do
 		local dy=64-y
 		if dy*dy<r*r then
-			local x1,x2=flr(sqrt(r*r-dy*dy)/2),0
+			local x1,x2,x3=flr(sqrt(r*r-dy*dy)/2),0,0
 			local r2=0.8*r
 			if dy*dy<r2*r2 then
 				x2=flr(sqrt(r2*r2-dy*dy)/2)
 			end
-			add(light,{31-x1,31-x2,32+x2,32+x1})
+			r2*=0.8
+			if dy*dy<r2*r2 then
+				x3=flr(sqrt(r2*r2-dy*dy)/2)
+			end
+			add(light,{31-x1,31-x2,31-x3})
 		else
-			add(light,{31,31,32,32})
+			add(light,{31,31,31})
 		end
 	end
-	return light
+	add(lights,light)
 end
-add(lights,make_light(42))
-add(lights,make_light(43))
-add(lights,make_light(44))
 
 _g.darken=function()
 	local m,r=0x6000,flr(rnd(#lights))+1
 	for y=1,128 do
 		local l=lights[r][y]
-		local x0,x1,x2,x3=l[1],l[2],l[3],l[4]
+		local x0,x1,x2=l[1],l[2],l[3]
 		for x=0,x0 do
-			poke(m+x,shade[shade[peek(m+x)]])
+			--poke(m+x,shade[shade[peek(m+x)]])
+			poke(m+x,0)
+			poke(m+63-x,0)
 		end
 		for x=x0+1,x1 do
-			poke(m+x,shade[peek(m+x)])
+			poke(m+x,shade[shade[peek(m+x)]])
+			poke(m+63-x,shade[shade[peek(m+63-x)]])
 		end
-		for x=x2,x3-1 do
+		for x=x1+1,x2 do
 			poke(m+x,shade[peek(m+x)])
-		end
-		for x=x3,63 do
-			poke(m+x,shade[shade[peek(m+x)]])	
+			poke(m+63-x,shade[peek(m+63-x)])
 		end
 		m+=64
 	end
@@ -190,17 +193,15 @@ end
 -- levels
 local active_actors
 local cur_level,cur_loop
-local levels=json_parse('[{"name":"desert","blast_tile":69,"ground_tiles":[68,64,65,67,111],"wall_tiles":[66],"solid_tiles_base":112,"shadow_tile":110,"bkg_col":1,"depth":3,"cw":32,"ch":32,"w":[4,6],"h":[4,6],"paths":[1,3],"path":{"bends":[1,2],"w":[3,4],"len":[4,8]},"spawn":[[2,4,"sandman_cls"],[1,3,"worm_cls"]]},{"name":"sewers","shader":"darken","ground_tiles":[86,87,87,88],"wall_tiles":[90,89,91],"solid_tiles_base":112,"shadow_tile":94,"borders":[10,11,3],"bkg_col":3,"depth":4,"cw":32,"ch":32,"w":[5,8],"h":[4,6],"paths":[3,4],"path":{"bends":[2,3],"w":[1,2],"len":[6,9]},"spawn":[[1,3,"slime_cls"],[0,1,"barrel_cls"]]},{"name":"snow plains","ground_tiles":[70,71,72],"wall_tiles":[74],"solid_tiles_base":112,"shadow_tile":95,"blast_tile":75,"borders":[1,12,6],"bkg_col":6,"depth":4,"cw":32,"ch":48,"w":[4,6],"h":[4,6],"paths":[2,4],"path":{"bends":[1,2],"w":[2,4],"len":[5,8]},"spawn":[[1,2,"dog_cls"],[0,2,"bear_cls"]]},{"name":"palace","ground_tiles":[96,100],"wall_tiles":[97,98,99,108],"solid_tiles_base":112,"shadow_tile":101,"borders":[7,0,5],"bkg_col":9,"depth":5,"cw":32,"ch":48,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"name":"lab","ground_tiles":[102,105],"wall_tiles":[103,104,106],"solid_tiles_base":112,"shadow_tile":107,"borders":[6,7,5],"bkg_col":5,"depth":4,"cw":32,"ch":48,"w":[4,6],"h":[3,5],"paths":[4,4],"path":{"bends":[0,2],"w":[1,2],"len":[8,12]}},{"name":"throne","builtin":true,"bkg_col":0,"borders":[7,0,5],"cx":103,"cy":0,"cw":13,"ch":31,"plyr_pos":{"x":110,"y":28},"spawn":[{"actor_cls":"throne_cls","x":109,"y":6},{"actor_cls":"ammo_cls","x":106,"y":27},{"actor_cls":"ammo_cls","x":107,"y":27},{"actor_cls":"ammo_cls","x":106,"y":28},{"actor_cls":"ammo_cls","x":107,"y":28},{"actor_cls":"health_cls","x":112,"y":27},{"actor_cls":"health_cls","x":113,"y":27},{"actor_cls":"health_cls","x":112,"y":28},{"actor_cls":"health_cls","x":113,"y":28}]}]')
+local levels=json_parse('[{"n":"desert","blast_tile":69,"floors":[68,64,65,67,111],"walls":[66],"shadow":110,"bkg_col":1,"d":3,"cw":32,"ch":32,"w":[4,6],"h":[4,6],"paths":[1,3],"path":{"bends":[1,2],"w":[3,4],"len":[4,8]},"spawn":[[2,4,"sandman_cls"],[1,3,"worm_cls"]]},{"n":"sewers","shader":"darken","floors":[86,87,87,88],"walls":[90,89,91],"shadow":94,"borders":[10,11,3],"bkg_col":3,"d":4,"cw":32,"ch":32,"w":[5,8],"h":[4,6],"paths":[3,4],"path":{"bends":[2,3],"w":[1,2],"len":[6,9]},"spawn":[[1,3,"slime_cls"],[0,1,"barrel_cls"]]},{"n":"snow plains","floors":[70,71,72],"walls":[74],"shadow":95,"blast_tile":75,"borders":[1,12,6],"bkg_col":6,"d":4,"cw":32,"ch":48,"w":[4,6],"h":[4,6],"paths":[2,4],"path":{"bends":[1,2],"w":[2,4],"len":[5,8]},"spawn":[[1,2,"dog_cls"],[0,2,"bear_cls"]]},{"n":"palace","floors":[96,100],"walls":[97,98,99,108],"shadow":101,"borders":[7,0,5],"bkg_col":9,"d":5,"cw":32,"ch":48,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]}},{"n":"lab","floors":[102,105],"walls":[103,104,106],"shadow":107,"borders":[6,7,5],"bkg_col":5,"d":4,"cw":32,"ch":48,"w":[4,6],"h":[3,5],"paths":[4,4],"path":{"bends":[0,2],"w":[1,2],"len":[8,12]}},{"n":"throne","builtin":true,"bkg_col":0,"borders":[7,0,5],"cx":103,"cy":0,"cw":13,"ch":31,"plyr_pos":{"x":110,"y":28},"spawn":[{"a":"throne_cls","x":109,"y":6},{"a":"ammo_cls","x":106,"y":27},{"a":"ammo_cls","x":107,"y":27},{"a":"ammo_cls","x":106,"y":28},{"a":"ammo_cls","x":107,"y":28},{"a":"health_cls","x":112,"y":27},{"a":"health_cls","x":113,"y":27},{"a":"health_cls","x":112,"y":28},{"a":"health_cls","x":113,"y":28}]}]')
 
 local blts={len=0}
 local parts={len=0}
 local zbuf={len=0}
-local time_t=0
 
 local face2unit=json_parse('[[1,0],[0.6234,-0.7819],[-0.2225,-0.9749],[-0.901,-0.4338],[-0.901,0.4338],[-0.2225,0.975],[0.6234,0.7819],[1,0]]')
 
 local face1strip=json_parse('[{"flipx":false,"flipy":false},{"flipx":false,"flipy":false},{"flipx":false,"flipy":false},{"flipx":true,"flipy":false},{"flipx":true,"flipy":false},{"flipx":true,"flipy":false},{"flipx":false,"flipy":false},{"flipx":false,"flipy":false}]')
-local face2strip=json_parse('[{"strip":1,"flipx":false,"flipy":false},{"strip":2,"flipx":false,"flipy":false},{"strip":2,"flipx":false,"flipy":false},{"strip":1,"flipx":true,"flipy":false},{"strip":2,"flipx":false,"flipy":true},{"strip":2,"flipx":false,"flipy":true},{"strip":2,"flipx":false,"flipy":true},{"strip":2,"flipx":false,"flipy":true}]')
 local face3strip=json_parse('[{"strip":1,"flipx":false,"flipy":false},{"strip":2,"flipx":false,"flipy":false},{"strip":2,"flipx":false,"flipy":false},{"strip":3,"flipx":false,"flipy":false},{"strip":1,"flipx":true,"flipy":false},{"strip":3,"flipx":false,"flipy":false},{"strip":3,"flipx":true,"flipy":false},{"strip":3,"flipx":false,"flipy":false}]')
 
 -- screen manager
@@ -330,6 +331,10 @@ function rspr(sx,sy,x,y,a)
   dy0+=ddy0
  end
 end
+function is_near_actor(a1,a2,r)
+	local dx,dy=a2.x-a1.x,a2.y-a1.y
+	return dx*dx+dy*dy<r*r
+end
 
 -- https://github.com/morgan3d/misc/tree/master/p8sort
 function sort(t,n)
@@ -373,9 +378,12 @@ function circline_coll(x,y,r,x0,y0,x1,y1)
 	local dx,dy=x1-x0,y1-y0
 	local ax,ay=x-x0,y-y1
 	local t,d=ax*dx+ay*dy,dx*dx+dy*dy
-	--if(d==0) return true
-	t=mid(t,0,d)
-	t/=d
+	if d==0 then
+		t=0
+	else
+		t=mid(t,0,d)
+		t/=d
+	end
 	local ix,iy=x0+t*dx-x,y0+t*dy-y
 	return (ix*ix+iy*iy)<r*r
 end
@@ -459,11 +467,10 @@ function cam_update()
 	if(abs(shkx)>0.5 or abs(shky)>0.5) camera(shkx,shky)
 end
 function cam_track(x,y)
- cam_x,cam_y=(x*8)-4,(y*8)-4
+	cam_x,cam_y=(x*8)-4,(y*8)-4
 end
 function cam_project(x,y)
- local sx,sy=x*8,y*8
- return 64+sx-cam_x,64+sy-cam_y
+	return 64+8*x-cam_x,64+8*y-cam_y
 end
 
 -- special fxs
@@ -586,7 +593,7 @@ function blt_update(self)
 				end
 				for i=1,wp.dly do yield() end
 			end
-			end)
+		end)
 	end
 	return false
 end
@@ -629,14 +636,13 @@ function make_blt(a,wp)
 		end
 		-- muzzle flash
 		if(i==1) make_part(b.x,b.y+0.5,0.5,all_parts.flash_part_cls)
-		if(i==1) make_part(b.x,b.y+0.5,0.5,all_parts.flash_part_cls)
 	end
 end
 function draw_blt(b,x,y)
 	palt(0,false)
 	palt(14,true)
 	local spr_options=face3strip[b.facing+1]
-	spr(b.wp.blt_frames[spr_options.strip],x-4,y-4,1,1,spr_options.flipx,spr_options.flipy)
+	spr(b.wp.frames[spr_options.strip],x-4,y-4,1,1,spr_options.flipx,spr_options.flipy)
 end
 
 -- map
@@ -650,12 +656,12 @@ function make_level(lvl)
 	local rules=levels[lvl]
 	if rules.builtin then
 		for s in all(rules.spawn) do
-			make_actor(s.x,s.y,bad_actors[s.actor_cls])
+			make_actor(s.x,s.y,bad_actors[s.a])
 		end
 	else
 		make_rooms(rules)
 		-- invalid level
-		if(not rules.spawn) print(cur_level.." "..rules.name) assert()
+		if(not rules.spawn) print(cur_level.." "..rules.n) assert()
 		for i=2,#rooms do
 			local r,sp=rooms[i],rndarray(rules.spawn)
 			local n=flr(lerp(sp[1],sp[2],rnd()))
@@ -678,11 +684,11 @@ function make_rooms(rules)
 	local cx,cy=rules.cw/2-cw,rules.ch/2-ch
 	make_room(
 			cx,cy,cw,ch,
-			rules.depth,
+			rules.d,
 			rules)
 	make_walls(0,rules.cw-1,0,rules.ch-1,rules,true)
 end
-function tile_flags(cx,cy)
+function ftile(cx,cy)
 	local c=0
 	for i=0,#tile_sides-1 do
 		local p=tile_sides[i+1]
@@ -700,17 +706,17 @@ function make_walls(x0,x1,y0,y1,rules,shadow)
 	for i=x0,x1 do
 		for j=y0,y1 do
 			-- borders
-			tf=tile_flags(i,j)
+			tf=ftile(i,j)
 			if band(tf,1)!=0 then
 				tf=shr(band(tf,0xfffe),1)
-				t=rules.solid_tiles_base+tf
+				t=112+tf
 				mset(i,j,t)
 				-- south not solid?
 				if band(tf,0x2)==0 then
 					if rnd()<0.8 then
-					 t=rules.wall_tiles[1]
+						t=rules.walls[1]
 					else
-						t=rndarray(rules.wall_tiles)
+						t=rndarray(rules.walls)
 					end
 					add(walls,{i,j+1,t})
 				end
@@ -719,7 +725,7 @@ function make_walls(x0,x1,y0,y1,rules,shadow)
 	end
 	for w in all(walls) do
 		mset(w[1],w[2],w[3])
-		if(shadow)mset(w[1],w[2]+1,rules.shadow_tile)
+		if(shadow)mset(w[1],w[2]+1,rules.shadow)
 	end
 end
 
@@ -784,9 +790,9 @@ function dig(r,rules)
 		for i=x0,x1 do
 			for j=y0,y1 do
 				if rnd()<0.9 then
-					mset(i,j,rules.ground_tiles[1])
+					mset(i,j,rules.floors[1])
 				else							
-					mset(i,j,rndarray(rules.ground_tiles))
+					mset(i,j,rndarray(rules.floors))
 				end
 			end
 		end
@@ -796,7 +802,7 @@ function dig(r,rules)
 end
 function clear_walls(x,y,rules)
 	if fget(mget(x,y),2) then
-		local t=rules.ground_tiles[1]
+		local t=rules.floors[1]
 		mset(x,y,t)
 		mset(x,y+1,t)
 	end
@@ -998,6 +1004,39 @@ function make_blast(x,y)
 	dig_blast(x,y+0.5)
 end
 
+-- a-star
+function go(x0,y0,x1,y1,fn,cb)
+	x0,y0,x1,y1=flr(x0),flr(y0),flr(x1),flr(y1)
+	local visited,path={},{}
+	for i=1,5 do
+		local score,next_tile=32000
+		for k=1,7 do
+			local tile=face2unit[k]
+			local x,y=x0+tile[1],y0+tile[2]
+			if not visited[x+64*y] and not solid(x,y) then
+				local cur_score=fn(x,y,x1,y1)
+				if cur_score<score then
+					score,next_tile=cur_score,tile
+				end
+				visited[x+64*y]=true
+				if cb then
+					cb(x,y,cur_score)
+				end
+			end
+		end
+		if next_tile then
+			x0+=next_tile[1]
+			y0+=next_tile[2]
+			add(path,{x0,y0})
+		end
+		local dx,dy=x1-x0,y1-y0
+		if abs(dx)<=1 and abs(dy)<=1 then
+			return path
+		end
+	end
+	return path
+end
+
 -- custom actors
 warp_cls={
 	w=0,
@@ -1005,7 +1044,7 @@ warp_cls={
 	frames={92,93},
 	draw=nop,
 	update=function(self)
-	 -- todo: blow up nearby walls
+	 	dig_blast(self.x,self.y)
 		mset(self.x+0.5,self.y+0.5,self.frames[flr(time_t/8)%#self.frames+1])
 		if (self.captured) return
 		local dx,dy=plyr.x-self.x,plyr.y-self.y
@@ -1061,20 +1100,38 @@ _g.ammo_pickup=function(self)
 	end
 end
 
-
 _g.npc_rnd_move=function(self)
 	if self.wp and self.fire_dly<time_t then				
-		local dx,dy=plyr.x-self.x,plyr.y-self.y
-		if dx*dx+dy*dy<32 then
+		if is_near_actor(plyr,self,6) then
 			make_blt(self,self.wp)		
 			self.fire_dly=time_t+self.wp.dly*(rnd(2)-1)
 		end
 	end
 
-	if self.move_t<time_t then
+	--[[if self.move_t<time_t then
 		self.dx,self.dy=0.05*(rnd(2)-1),0.05*(rnd(2)-1)
 		self.move_t=time_t+8+rnd(8)
 	end
+	]]
+	--[[
+	if not self.path then
+		self.path=go(self.x,self.y,plyr.x,plyr.y,function(x0,y0,x1,y1)
+			local dx,dy=x1-x0,y1-y0
+			return dx*dx+dy*dy
+		end)
+		self.move_t=time_t+60
+	end
+	if self.move_t>time_t then
+		local t=flr(#self.path*(self.move_t-time_t)/60)+1
+		local dx,dy=self.x-self.path[t][1],self.y-self.path[t][2]
+		local d=dx*dx+dy*dy
+		if d!=0 then
+			d=sqrt(d)
+			self.dx+=dx/d
+ 		self.dy+=dy/d
+		end		
+	end
+	]]
 end
 _g.blast_on_hit=function(self,dmg)
 	if(band(dmg_types.dmg_contact,dmg)!=0) return
@@ -1156,7 +1213,7 @@ _g.wpdrop_update=function(self)
 				drop=wp,
 				ammo=plyr.ammo,
 				spr=wp.icon,
-				txt=wp.name})
+				txt=wp.n})
 			-- pick drop
 			plyr.wp=self.drop
 			plyr.ammo=self.ammo
@@ -1267,10 +1324,10 @@ function draw_actor(a,sx,sy)
 	if a.hit_t>time_t then
 		memset(0x5f00,0xf,16)
 		pal(tcol,tcol)
- end
- local s,flipx,flipy=a.spr,false,false
- if a.frames then
- 	local spr_options=(#a.frames==3 and face3strip or face1strip)[a.facing+1]
+ 	end
+ 	local s,flipx,flipy=a.spr,false,false
+ 	if a.frames then
+ 		local spr_options=(#a.frames==3 and face3strip or face1strip)[a.facing+1]
 		local frames=a.frames[spr_options.strip or 1]
 		s=frames[flr(a.frame%#frames)+1]
 		flipx,flipy=spr_options.flipx,spr_options.flipy
@@ -1280,8 +1337,8 @@ function draw_actor(a,sx,sy)
 	spr(s,sx,sy,sw,sh,flipx,flipy)
 	palt(tcol,false)
 	pal()
- palt(0,false)
- palt(14,true)
+ 	palt(0,false)
+ 	palt(14,true)
 	local wp=a.wp
 	if wp and wp.sx then
 		local u,v=cos(a.angle),sin(a.angle)
@@ -1289,7 +1346,7 @@ function draw_actor(a,sx,sy)
 		local f=-2*max(0,a.fire_t-time_t)/8
 		rspr(wp.sx,wp.sy,sx+4*u+f*u,sy+4*v+f*v,1-a.angle)
 	end
- palt(14,false)	
+	palt(14,false)
 end
 
 -- player actor
@@ -1298,11 +1355,11 @@ function make_plyr()
 	plyr_playing=true
 	plyr_hpmax=5
 	plyr=make_actor(18,18,{
-		hp=5,
+		hp=8,
 		side=good_side,
 		-- todo: rename to strips
 		frames=plyr_frames,
-		wp=weapons.minigun,
+		wp=weapons.uzi,
 		ammo=weapons.minigun.ammo,
 		safe_t=time_t+30,
 		die=plyr_die
@@ -1368,24 +1425,35 @@ end
 
 function game:draw()
 	local lvl=levels[cur_level]
- cls(lvl.bkg_col)
- local cx,cy=lvl.cx or 0,lvl.cy or 0
- local sx,sy=64-cam_x+8*cx,64-cam_y+8*cy-4
- map(cx,cy,sx,sy,lvl.cw,lvl.ch,1)
- zbuf_draw()
- palt()
+ 	cls(lvl.bkg_col)
+	local cx,cy=lvl.cx or 0,lvl.cy or 0
+	local sx,sy=64-cam_x+8*cx,64-cam_y+8*cy-4
+	map(cx,cy,sx,sy,lvl.cw,lvl.ch,1)
+	zbuf_draw()
+	palt()
  
- if lvl.borders then
-	 pal(10,lvl.borders[1])
- 	pal(9,lvl.borders[2])
-	 pal(1,lvl.borders[3])
- end
- map(cx,cy,sx,sy,lvl.cw,lvl.ch,2)
+	if lvl.borders then
+		pal(10,lvl.borders[1])
+		pal(9,lvl.borders[2])
+		pal(1,lvl.borders[3])
+	end
+ 	map(cx,cy,sx,sy,lvl.cw,lvl.ch,2)
 	pal()
 			
-	if lvl.shader then
-		lvl.shader()
+	if(lvl.shader) lvl.shader()
+	--[[
+	local a=actors[2]
+	local path=go(plyr.x,plyr.y,a.x,a.y,function(x0,y0,x1,y1)
+		local dx,dy=x0-x1,y0-y1
+		return dx*dx+dy*dy
+	end)
+	for p in all(path) do
+		local xe,ye=cam_project(p[1],p[2])
+		spr(0,xe,ye)
 	end
+	local xe,ye=cam_project(a.x,a.y)	
+	circfill(xe,ye,3,8)
+	]]
 	
 	rectfill(1,1,34,9,0)
 	rect(2,2,33,8,6)
@@ -1400,25 +1468,6 @@ function game:draw()
 	txt_print(plyr.ammo,14,12,7)
 
 	txt_print(blts.len,14,20,7)
-	
- --rectfill(0,0,127,8,1)
- --local cpu=flr(1000*stat(1))/10
- --print(""..cpu.."% "..stat(4).."kb",2,2,7)
-
-	--[[
-	local tf,t
-	local rules=levels[cur_level]
-	for i=0,rules.cw-1 do
-		for j=0,rules.ch-1 do
-			-- borders
-			tf=tile_flags(i,j)
-			if band(tf,1)!=0 then
-				local x,y=cam_project(i,j)
-				print(shr(band(tf,0xfe),1),x,y,(i+j)%15+1)
-			end
-		end
-	end
-	]]
 end
 function game:init()
 	poke(0x5f2c,0)
@@ -1436,8 +1485,6 @@ function game:init()
 	plyr.fire_t=0
 	plyr.safe_t=time_t+30
 	cam_track(plyr.x,plyr.y)
-	
-	--make_actor(12,12,warp_cls)
 end
 
 function spawner(n,src)
@@ -1491,7 +1538,7 @@ function warp_screen:draw()
 	rspr(8,24,32+8*x,32+8*y,time_t/16)
 	
 	txt_options(true,0)
-	local txt=levels[cur_level].name.." "..cur_loop.."-"..cur_level
+	local txt=levels[cur_level].n.." "..cur_loop.."-"..cur_level
 	txt_print(txt,32,8,7)
 end
 function warp_screen:init()
@@ -1505,11 +1552,11 @@ function game_over_screen:update()
 	end
 end
 function game_over_screen:draw()
-	cls(1)
+	cls(1)cls(1)
 	txt_options(true,3)
-	txt_print("you are dead",64,12,7)
+	txt_print("you are dead",32,12,7)
 
-	txt_print("max level:"..cur_level,64,24,7)		
+	txt_print("max level:"..cur_loop.."-"..cur_level,32,24,7)		
 end
 function game_over_screen:init()
 	poke(0x5f2c,3)
