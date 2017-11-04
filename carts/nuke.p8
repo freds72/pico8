@@ -99,8 +99,6 @@ function json_parse(str, pos, end_delim)
 		error('invalid json syntax starting at ' .. pos_info_str)
 	end
 end
--- screens catalog
-local game_over_screen,title_screen,warp_screen={},{},{}
 
 -- player settings
 local plyr
@@ -1068,7 +1066,8 @@ warp_cls={
 					cur_level=1
 				end
 				del(actors,self)
-				sm_push(warp_screen)
+
+				next_level()
 			end)
 		end
 	end
@@ -1225,7 +1224,7 @@ _g.throne_update=function(self)
 	
 end
 
-bad_actors=json_parse('{"barrel_cls":{"side":"any_side","inertia":0.8,"spr":128,"hit":"blast_on_hit"},"msl_cls":{"side":"any_side","inertia":1.01,"sx":80,"sy":24,"update":"smoke_emitter","draw":"draw_rspr_actor","hit":"blast_on_hit","touch":"blast_on_touch"},"grenade_cls":{"side":"any_side","w":0.2,"h":0.2,"inertia":0.91,"bounce":0.8,"sx":96,"sy":16,"update":"smoke_emitter","draw":"draw_rspr_actor","hit":"blast_on_hit","touch":"blast_on_touch"},"sandman_cls":{"hp":30,"wp":"base_gun","frames":[[4,5,6]],"dead_spr":129,"move_t":0,"drop_value":3,"update":"sandman_update"},"scorpion_cls":{"w":1.8,"h":1.8,"hp":10,"wp":"acid_gun","frames":[[135,137]],"move_t":0,"update":"npc_rnd_move"},"worm_cls":{"palt":3,"w":0.2,"h":0.2,"inertia":0.8,"dmg_type":"dmg_contact","dmg":1,"frames":[[7,8]],"move_t":0,"update":"npc_rnd_move"},"slime_cls":{"w":0.2,"h":0.2,"inertia":0.8,"dmg_type":"dmg_contact","dmg":1,"frames":[[29,30,31,30]],"move_t":0,"update":"npc_rnd_move","wp":"goo"},"dog_cls":{"inertia":0.2,"dmg_type":"dmg_contact","dmg":3,"frames":[[61,62]],"move_t":0,"update":"npc_rnd_move"},"bear_cls":{"inertia":0.2,"dmg_type":"dmg_contact","dmg":2,"frames":[[1,2,3]],"move_t":0,"update":"npc_rnd_move"},"throne_cls":{"w":2,"h":1.5,"hp":300,"palt":15,"inertia":0,"spr":139,"move_t":0,"update":"nop"},"health_cls":{"spr":48,"w":0,"h":0,"update":"health_pickup"},"ammo_cls":{"spr":32,"w":0,"h":0,"update":"ammo_pickup"},"wpdrop_cls":{"w":0,"h":0,"inertia":0.9,"btn_t":0,"near_plyr_t":0,"draw":"wpdrop_draw","update":"wpdrop_update"}}')
+bad_actors=json_parse('{"barrel_cls":{"side":"any_side","inertia":0.8,"spr":128,"hit":"blast_on_hit"},"msl_cls":{"side":"any_side","inertia":1.01,"sx":80,"sy":24,"update":"smoke_emitter","draw":"draw_rspr_actor","hit":"blast_on_hit","touch":"blast_on_touch"},"grenade_cls":{"side":"any_side","w":0.2,"h":0.2,"inertia":0.91,"bounce":0.8,"sx":96,"sy":16,"update":"smoke_emitter","draw":"draw_rspr_actor","hit":"blast_on_hit","touch":"blast_on_touch"},"sandman_cls":{"hp":3,"wp":"base_gun","frames":[[4,5,6]],"dead_spr":129,"move_t":0,"drop_value":3,"update":"sandman_update"},"scorpion_cls":{"w":1.8,"h":1.8,"hp":10,"wp":"acid_gun","frames":[[135,137]],"move_t":0,"update":"npc_rnd_move"},"worm_cls":{"palt":3,"w":0.2,"h":0.2,"inertia":0.8,"dmg_type":"dmg_contact","dmg":1,"frames":[[7,8]],"move_t":0,"update":"npc_rnd_move"},"slime_cls":{"w":0.2,"h":0.2,"inertia":0.8,"dmg_type":"dmg_contact","dmg":1,"frames":[[29,30,31,30]],"move_t":0,"update":"npc_rnd_move","wp":"goo"},"dog_cls":{"inertia":0.2,"dmg_type":"dmg_contact","dmg":3,"frames":[[61,62]],"move_t":0,"update":"npc_rnd_move"},"bear_cls":{"inertia":0.2,"dmg_type":"dmg_contact","dmg":2,"frames":[[1,2,3]],"move_t":0,"update":"npc_rnd_move"},"throne_cls":{"w":2,"h":1.5,"hp":300,"palt":15,"inertia":0,"spr":139,"move_t":0,"update":"nop"},"health_cls":{"spr":48,"w":0,"h":0,"update":"health_pickup"},"ammo_cls":{"spr":32,"w":0,"h":0,"update":"ammo_pickup"},"wpdrop_cls":{"w":0,"h":0,"inertia":0.9,"btn_t":0,"near_plyr_t":0,"draw":"wpdrop_draw","update":"wpdrop_update"}}')
 for k,v in pairs(bad_actors) do
 	if v.dmg then
 		v.dmg=bor(dmg_types[v.dmg_type],v.dmg)
@@ -1353,9 +1352,9 @@ end
 function make_plyr()
 	plyr_score=0
 	plyr_playing=true
-	plyr_hpmax=5
+	plyr_hpmax=8
 	plyr=make_actor(18,18,{
-		hp=8,
+		hp=plyr_hpmax,
 		side=good_side,
 		-- todo: rename to strips
 		frames=plyr_frames,
@@ -1406,8 +1405,43 @@ function control_player()
  cam_track(plyr.x,plyr.y)
 end
 
-local game={}
-function game:update()
+function next_level()
+	actors={}
+	make_level(cur_level)
+	add(actors,plyr)
+	
+	local lvl=levels[cur_level]
+	if lvl.builtin then
+		plyr.x,plyr.y=lvl.plyr_pos.x+0.5,lvl.plyr_pos.y+0.5
+	else
+		local r=rooms[1]
+		plyr.x,plyr.y=r.x+r.w/2,r.y+r.h/2
+	end
+	plyr.fire_t=0
+	plyr.hit_t=0
+	plyr.safe_t=time_t+30
+	cam_track(plyr.x,plyr.y)
+end
+
+function spawner(n,src)
+	for i=1,n do
+		local x,y=0,0
+		local ttl=5
+		while(solid(x,y) and ttl>0) do
+			x,y=flr(rnd(16)),flr(rnd(16))
+			ttl-=1
+		end
+		if(ttl<0) return
+		-- found empty space!
+		make_actor(x+0.5,y+0.5,src)
+	end
+end
+
+-- game loop
+function _update60()
+	time_t+=1
+	futures_update(before_update)
+	
 	pause_t-=1
 	if(pause_t>0) return
 	pause_t=0
@@ -1423,7 +1457,7 @@ function game:update()
 	cam_update()
 end
 
-function game:draw()
+function _draw()
 	local lvl=levels[cur_level]
  	cls(lvl.bkg_col)
 	local cx,cy=lvl.cx or 0,lvl.cy or 0
@@ -1455,6 +1489,8 @@ function game:draw()
 	circfill(xe,ye,3,8)
 	]]
 	
+	futures_update(after_draw)	
+
 	rectfill(1,1,34,9,0)
 	rect(2,2,33,8,6)
 	local hp=max(0,plyr.hp)
@@ -1466,192 +1502,12 @@ function game:draw()
 	palt(0,false)
 	spr(plyr.wp.icon,2,10)
 	txt_print(plyr.ammo,14,12,7)
-
-	txt_print(blts.len,14,20,7)
-end
-function game:init()
-	poke(0x5f2c,0)
-	actors={}
-	make_level(cur_level)
-	add(actors,plyr)
-	
-	local lvl=levels[cur_level]
-	if lvl.builtin then
-		plyr.x,plyr.y=lvl.plyr_pos.x+0.5,lvl.plyr_pos.y+0.5
-	else
-		local r=rooms[1]
-		plyr.x,plyr.y=r.x+r.w/2,r.y+r.h/2
-	end
-	plyr.fire_t=0
-	plyr.safe_t=time_t+30
-	cam_track(plyr.x,plyr.y)
-end
-
-function spawner(n,src)
-	for i=1,n do
-		local x,y=0,0
-		local ttl=5
-		while(solid(x,y) and ttl>0) do
-			x,y=flr(rnd(16)),flr(rnd(16))
-			ttl-=1
-		end
-		if(ttl<0) return
-		-- found empty space!
-		make_actor(x+0.5,y+0.5,src)
-	end
-end
-
-local gia,gr,ga
-function warp_screen:update()
-	ga+=gia
-	gia=mid(-.1,gia,.1)
-	gr=mid(-.1,gr,.1)
-	if btnp(4) then
-		sm_push(game)
-	end
-end
-function draw_warp()
-	local x,y,y2,a,r,u,v
-	for y=0,15 do
-		y2=y*y
-		for x=0,15 do
-			a=4*atan2(y,x)
-			r=sqrt(x*x+y2)
-			u=gr*r+ga
-			v=flr(4+4*cos(u+a))
-			bpset(15+x,15-y,v)
-			v=flr(4+4*cos(u+2-a))
-			bpset(15-x,15-y,v)
-			v=flr(4+4*cos(u+a+2))
-			bpset(15-x,15+y,v)
-			v=flr(4+4*cos(u+4-a))
-			bpset(15+x,15+y,v)
-		end
-	end
-end
-function warp_screen:draw()
-	cls(0)
-		
-	draw_warp()
-
-	local x,y=cos(time_t/64),sin(time_t/64)
-	rspr(8,24,32+8*x,32+8*y,time_t/16)
-	
-	txt_options(true,0)
-	local txt=levels[cur_level].n.." "..cur_loop.."-"..cur_level
-	txt_print(txt,32,8,7)
-end
-function warp_screen:init()
-	poke(0x5f2c,3)
-end
-
--- game over
-function game_over_screen:update()
-	if time_t>180 or btnp(4) or btnp(5) then
-		sm_push(title_screen)
-	end
-end
-function game_over_screen:draw()
-	cls(1)cls(1)
-	txt_options(true,3)
-	txt_print("you are dead",32,12,7)
-
-	txt_print("max level:"..cur_loop.."-"..cur_level,32,24,7)		
-end
-function game_over_screen:init()
-	poke(0x5f2c,3)
-end
-
--- title screen
-function title_screen:update()
-	ga+=gia
-	gia=mid(-.1,gia,.1)
-	gr=mid(-.1,gr,.1)
-	if btnp(4) or btnp(5) then
-		plyr=make_plyr()
-		sm_push(warp_screen)
-	end
-end
-function title_screen:draw()
-	cls(1)
-	draw_warp()
-	txt_options(true,0,true)
-	txt_print("nu   lear",32,2,7)
-	spr(144,24,0)
-	txt_options(true,0,true)
-	txt_print("   lone",36,11,7)
-	spr(144,24,9)
-	
-	if time_t%2==0 then
-		txt_options(true,3)
-		txt_print("press start",32,54,11)
-	end
-end
-function title_screen:init()
-	poke(0x5f2c,3)
-	cur_level,cur_loop=1,1
-	ga,gia,gr=0,.01,.01
-	palt(14,true)
-	palt(0,false)
-end
-
--- game loop
-local perf={}
-local perf_ramp={8,11,5}
-local perf_counters={"up","draw","mem"}
-
-function _update60()
-	time_t+=1
-	futures_update(before_update)
-	sm_t+=1
-	if sm_next then 
-		if sm_dly<sm_t then
-			sm_cur=sm_next
-			sm_next=nil
-			time_t=0
-			sm_cur:init()
-			--fade(0.5,8)
-		end
-	else
-		sm_cur:update()
-	end
-
-	perf[time_t%64+1]={
-		stat(1),
-		0,
-		stat(0)/1024}
-end
-
-function draw_perf(x)
-	rectfill(x,0,x+64,32,1)
-	local t=64-time_t%64
-	line(x+t,0,x+t,32,6)
-	if perf[1] then
-		for k=1,#perf_counters do
-			local scale=32
-			if(perf[1][k]<0.5) scale=64
-			if(perf[1][k]<0.25) scale=128
-			color(perf_ramp[k])
-			for i=1,#perf do
-				local p=perf[i]
-				pset(x+64-i,32-scale*p[k])
-			end
-			print(perf_counters[k]..":"..(flr(1000*perf[1][k])/10).."%",x+2+1,28+6*k,0)
-			print(perf_counters[k]..":"..(flr(1000*perf[1][k])/10).."%",x+2,28+6*k,perf_ramp[k])
-		end
-	end	
-end
-
-function _draw()
-	sm_cur:draw()
-	futures_update(after_draw)
-	
-	perf[time_t%64+1][2]=stat(1)
-	--draw_perf(64)
 end
 function _init()
 	cls(0)
-	sm_push(title_screen)
+	cur_level,cur_loop=1,1
+	plyr=make_plyr()
+	next_level()
 end
 
 
