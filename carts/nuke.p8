@@ -194,7 +194,7 @@ local levels=json_parse('[{"n":"intro","shader":"intro","builtin":true,"bkg_col"
 
 local blts={len=0}
 local parts={len=0}
-local zbuf={{},{len=0}}
+local zbuf={{},{},{}}
 
 local face2unit=json_parse('[[1,0],[0.6234,-0.7819],[-0.2225,-0.9749],[-0.901,-0.4338],[-0.901,0.4338],[-0.2225,0.975],[0.6234,0.7819],[1,0]]')
 
@@ -326,7 +326,7 @@ end
 -- https://github.com/morgan3d/misc/tree/master/p8sort
 function sort(t)
 	local n=#t
-	if (n<2) return
+	if (n<2) return t
  local i,j,temp
  local lower = flr(n/2)+1
  local upper = n
@@ -340,7 +340,7 @@ function sort(t)
    upper-=1
    if upper==1 then
     t[1]=temp
-    return
+    return t
    end
   end
 
@@ -359,6 +359,7 @@ function sort(t)
   end
   t[i] = temp
  end
+ return t
 end
 
 -- collision
@@ -379,6 +380,7 @@ end
 function zbuf_clear()
 	zbuf[1]={}
 	zbuf[2]={}
+	zbuf[3]={}
 end
 function zbuf_write(obj)
 	local xe,ye=cam_project(obj.x,obj.y)
@@ -386,18 +388,11 @@ function zbuf_write(obj)
 	local zorder=obj.zorder or 2
 	add(zbuf[zorder],{obj,{xe,ye-ze},key=ye+ze})
 end
-function zbuf_draw()
-	local zb,pos
-	for i=1,#zbuf[1] do
-		zb=zbuf[1][i]
-		pos=zb[2]
-		zb[1]:draw(pos[1],pos[2])
-	end
-	sort(zbuf[2])
-	for i=1,#zbuf[2] do
-		zb=zbuf[2][i]
-		pos=zb[2]
-		zb[1]:draw(pos[1],pos[2])
+function zbuf_draw(zbuf)
+	local zb
+	for i=1,#zbuf do
+		zb=zbuf[i]
+		zb[1]:draw(zb[2][1],zb[2][2])
 	end
 end
 
@@ -504,6 +499,11 @@ function make_part(x,y,z,src)
 	parts.len+=1
 	parts[parts.len]=p
 	return p
+end
+function draw_laser_part(p,x,y)
+	local dx,dy=p.d*p.u,p.d*p.v
+	line(x+0.5*dx,y+0.5*dy,x+8*dx,y+8*dy,8)
+	pset(x,y,7)
 end
 
 _g.update_static_part=function(self)
@@ -854,7 +854,7 @@ function lineofsight(x1,y1,x2,y2,dist)
 	local iy=dy>0 and 1 or -1
 	dy=shl(abs(dy),1)
 
-	if(dx==0 and dy==0) return true
+	if(dx==0 and dy==0) return true,0
 	
 	if dx>=dy then
 		error=dy-dx/2
@@ -867,8 +867,8 @@ function lineofsight(x1,y1,x2,y2,dist)
  	 error+=dy
  	 x1+=ix
  	 dist-=1
- 	 if(dist<0) return false
-	if(solid(x1,y1)) return false
+ 	 if(dist<0) return false,-1
+	if(solid(x1,y1)) return false,dist
  	end
 	else
  	error=dx-dy/2
@@ -882,11 +882,11 @@ function lineofsight(x1,y1,x2,y2,dist)
   	error+=dx
   	y1+=iy
 			dist-=1
-		 if(dist<0) return false
-	 	if(solid(x1,y1)) return false
+		 if(dist<0) return false,-1
+	 	if(solid(x1,y1)) return false,dist
  	end
  end
-	return true 
+	return true,dist
 end
 -- true if a will hit another
 -- actor after moving dx,dy
@@ -1116,14 +1116,31 @@ end
 
 function refresh_path(self)
 	self.path=go(self.x,self.y,plyr.x,plyr.y)
-	self.move_dly=48+flr(rnd(32))
-	self.move_t=time_t+self.move_dly
+	self.move_df=0.1
+	self.move_f=0
 end
 
-function npc_update(self)	
-	if self.wp and self.seek_t<time_t then
-		if lineofsight(self.x,self.y,plyr.x,plyr.y,8) then
-			self.can_fire=true
+function npc_update(self)
+	if self.move_f<#self.path then
+		local t=flr(self.move_f)+1
+		local dx,dy=self.x-self.path[t][1],self.y-self.path[t][2]
+		local d=dx*dx+dy*dy
+		if d!=0 then
+			d=sqrt(d)
+			self.dx+=-0.01*dx/d
+			self.dy+=-0.01*dy/d
+		end
+		self.move_f+=self.move_df
+		if t==#self.path then
+			self.seek_t=time_t+rnd(self.seek_dly)
+		end
+	elseif self.seek_t<time_t and sqr_dist(self.x,self.y,plyr.x,plyr.y)<32 then
+		refresh_path(self)
+	end
+
+	if self.wp and self.los_t<time_t then
+		self.can_fire=false
+		if lineofsight(self.x,self.y,plyr.x,plyr.y,self.los_dist) then
 			local dx,dy=plyr.x-self.x,plyr.y-self.y
 			local d=sqrt(dx*dx+dy*dy)
 			if(d<0.01) return
@@ -1131,37 +1148,23 @@ function npc_update(self)
 			dy/=d
 			self.angle=atan2(dx,dy)%1
 			self.facing=flr(8*self.angle)
-		else
-			self.can_fire=false
+			self.can_fire=true
+			if self.wp.sniper then
+				self.fire_t=time_t+8
+				make_part(self.x,self.y,0,{
+					d=d,
+					u=dx,v=dy,
+					dly=8,
+					zorder=3,
+					draw=draw_laser_part
+				})
+			end
 		end
-		self.seek_t=time_t+8+rnd(8)
+		self.los_t=time_t+8+rnd(8)
 	end
-	if self.can_fire and self.fire_dly<time_t then
-		make_blt(self,self.wp)		
-		self.fire_dly=time_t+self.wp.dly
-	end
-	--[[if self.move_t<time_t then
-		self.dx,self.dy=0.05*(rnd(2)-1),0.05*(rnd(2)-1)
-		self.move_t=time_t+8+rnd(8)
-	end
-	]]
-	
-	if not self.path and sqr_dist(self.x,self.y,plyr.x,plyr.y)<32 then
-		refresh_path(self)
-	end
-	if self.move_t>time_t then
-		local t=#self.path-flr(#self.path*(self.move_t-time_t)/self.move_dly)+1
-		if t>#self.path then
-			refresh_path(self)
-			return	
-		end
-		local dx,dy=self.x-self.path[t][1],self.y-self.path[t][2]
-		local d=dx*dx+dy*dy
-		if d!=0 then
-			d=sqrt(d)
-			self.dx+=-0.01*dx/d
- 		self.dy+=-0.01*dy/d
-		end		
+	if self.can_fire and self.fire_t<time_t then
+		make_blt(self,self.wp)
+		self.fire_t=time_t+self.wp.dly
 	end
 end
 _g.blast_on_hit=function(self,dmg)
@@ -1253,12 +1256,17 @@ function make_actor(x,y,src)
 		inertia=0.6,
 		bounce=1,
 		hp=1,
+		path={},
 		seek_t=0,
 		hit_t=0,
 		fire_t=0,
 		fire_dly=rnd(16),
 		w=0.4,
 		h=0.4,
+		move_f=0,
+		move_df=0.5,
+		los_t=0,
+		los_dist=64,
 		angle=0,
 		facing=0, -- trig order e/n/w/s
 		side=bad_side,
@@ -1347,13 +1355,13 @@ function draw_actor(a,sx,sy)
 	spr(s,sx,sy,sw,sh,flipx,flipy)
 	palt(tcol,false)
 	pal()
- 	palt(0,false)
- 	palt(14,true)
+ palt(0,false)
+ palt(14,true)
 	local wp=a.wp
 	if wp and wp.sx then
 		local u,v=cos(a.angle),sin(a.angle)
 		-- recoil animation
-		local f=-2*max(0,a.fire_t-time_t)/8
+		local f=-2*mid(a.fire_t-time_t,0,8)/8
 		rspr(wp.sx,wp.sy,sx+4*u+f*u,sy+4*v+f*v,1-a.angle)
 	end
 	palt(14,false)
@@ -1372,7 +1380,8 @@ function make_plyr()
 		wp=weapons.uzi,
 		ammo=weapons.minigun.ammo,
 		safe_t=time_t+30,
-		die=plyr_die
+		die=plyr_die,
+		update=nop
 	})
 	return plyr
 end
@@ -1476,7 +1485,9 @@ function _draw()
 	local cx,cy=lvl.cx or 0,lvl.cy or 0
 	local sx,sy=64-cam_x+8*cx,64-cam_y+8*cy-4
 	map(cx,cy,sx,sy,lvl.cw,lvl.ch,1)
-	zbuf_draw()
+	zbuf_draw(zbuf[1])
+	zbuf_draw(sort(zbuf[2]))
+	zbuf_draw(zbuf[3])
 	palt()
  
 	if lvl.borders then
