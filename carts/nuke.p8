@@ -404,17 +404,12 @@ function cmap_clear(objs)
 		end
 	end
 end
-function cmap_write(obj)
-	local h=flr(obj.x)+128*flr(obj.y)
-	cmap[h]=cmap[h] or {}
-	add(cmap[h],obj)
-end
 local cmap_i,cmap_cell,cmap_h
-function cmap_near_iterator(x,y)
+function cmap_iterator(x,y)
 	cmap_i,cmap_cell=1,1
 	cmap_h=flr(x)+128*flr(y)
 end
-function cmap_near_next()
+function cmap_next()
 	while(cmap_cell<=9) do
 		local h=cmap_h+cmap_cells[cmap_cell]
 		local objs=cmap[h]
@@ -427,15 +422,6 @@ function cmap_near_next()
 		cmap_cell+=1
 	end
 	return nil
-end
-function cmap_draw()
-	local h=flr(plyr.x)+128*flr(plyr.y)
-
-	for k,v in pairs(cmap) do
-		local s=(h==k and "*" or "")
-		local x,y=cam_project(k%128,flr(k/128))
-		print(s..(#v),x,y,7)
-	end
 end
 
 -- camera
@@ -518,7 +504,7 @@ _g.draw_txt_part=function(self,x,y)
 	print(self.txt,x-l+1,y-2,0)
 	print(self.txt,x-l,y-2,7)
 end
-local all_parts=json_parse('{"flash_part_cls":{"dly":4,"r":0.5,"c":7,"dr":-0.1,"update":"update_static_part","draw":"draw_circ_part"},"smoke_part_cls":{"dly":18,"dr":-0.01,"c":7,"rnd":{"r":[0.3,0.6]},"draw":"draw_circ_part"},"splat_part":{"zorder":1,"spr":129,"inertia":0,"draw":"draw_spr_part","rnd":{"dly":[900,1000]}}}')
+local all_parts=json_parse('{"flash_part_cls":{"dly":4,"r":0.5,"c":7,"dr":-0.1,"update":"update_static_part","draw":"draw_circ_part"},"smoke_part_cls":{"dly":18,"dr":-0.01,"rnd":{"r":[0.3,0.6],"c":[5,7]},"draw":"draw_circ_part"},"splat_part":{"zorder":1,"spr":129,"inertia":0,"draw":"draw_spr_part","rnd":{"dly":[900,1000]}}}')
 
 -- bullets
 function blt_update(self)
@@ -530,19 +516,17 @@ function blt_update(self)
 			self.dx*=inertia
 			self.dy*=inertia
 		end
-		local s=solid(x1,y0) or solid(x0,y1) or solid(x1,y1)
-		if s then
-			-- todo: blt hit wall
+		if solid(x1,y0) or solid(x0,y1) or solid(x1,y1) then
 			make_part(self.x,self.y,0.25,all_parts.flash_part_cls)
 			return false
 		end
 		
 		-- actors hit?
 		-- todo:get all hitable actors in range
-		for a in all(actors) do
-			if (self.side!=a.side or a.side==any_side) and circline_coll(a.x,a.y,a.w,x0,y0,x1,y1) then
+		for a in all(actors) do 
+			if bor(a.w,a.h)!=0 and (self.side!=a.side or a.side==any_side) and circline_coll(a.x,a.y,a.w,x0,y0,x1,y1) then
 				a:hit(self.wp.dmg)
-				-- impact!
+				-- law of conservation!
 				a.dx+=self.dx
 				a.dy+=self.dy
 		
@@ -677,6 +661,7 @@ function make_level(lvl)
 end
 function make_rooms(rules)
 	rooms={}
+	pos2roomidx={}
 	for i=0,rules.cw-1 do
 		for j=0,rules.ch-1 do
 			mset(i,j,rules.solid_tiles_base)
@@ -689,16 +674,6 @@ function make_rooms(rules)
 			rules.d,
 			rules)
 	make_walls(0,rules.cw-1,0,rules.ch-1,rules,true)
-	-- rooms dictionary
-	pos2roomidx={}
-	for k=1,#rooms do
-		local r=rooms[k]
-		for i=0,r.w do
-			for j=0,r.h do
-				pos2roomidx[r.x+i+shl(r.y+j,8)]=k
-			end
-		end
-	end
 end
 function whereami(a)
 	return pos2roomidx[flr(a.x)+shl(flr(a.y),8)] or 1
@@ -749,7 +724,7 @@ function make_room(x,y,w,h,ttl,rules)
 	local r={
 		x=x,y=y,
 		w=w,h=h}
-	r=dig(r,rules)
+	r=dig(r,rules,#rooms+1)
 	if r then
 		add(rooms,r)
 		local n=ttl*rndrng(rules.paths)
@@ -794,7 +769,7 @@ function make_path(x,y,a,n,ttl,rules)
 			a,n-1,ttl,rules)
 	end
 end
-function dig(r,rules)
+function dig(r,rules,idx)
 	local cw,ch=rules.cw-1,rules.ch-1
 	local x0,y0=mid(r.x,1,cw),mid(r.y,1,cw)
 	local x1,y1=mid(r.x+r.w,1,ch),mid(r.y+r.h,1,ch)
@@ -806,9 +781,10 @@ function dig(r,rules)
 			for j=y0,y1 do
 				if rnd()<0.9 then
 					mset(i,j,rules.floors[1])
-				else							
+				else
 					mset(i,j,rndarray(rules.floors))
 				end
+				if(idx) pos2roomidx[i+shl(j,8)]=idx
 			end
 		end
 		return {x=x0,y=y0,w=cw,h=ch}
@@ -895,8 +871,8 @@ end
 -- true if a will hit another
 -- actor after moving dx,dy
 function solid_actor(a,dx,dy)
-	cmap_near_iterator(a.x+dx,a.y+dy)
-	local a2=cmap_near_next()
+	cmap_iterator(a.x+dx,a.y+dy)
+	local a2=cmap_next()
 	while a2 do
   if a2 != a then
    local x,y=(a.x+dx)-a2.x,(a.y+dy)-a2.y
@@ -904,7 +880,7 @@ function solid_actor(a,dx,dy)
       abs(y)<(a.h+a2.h)
    then 
     -- collision damage?
-    if a2.dmg and band(a.side,a2.side)!=0 and a.hit then
+    if band(dmg_types.dmg_contact,a2.dmg or 0)!=0 and band(a.side,a2.side)!=0 and a.hit then
     	a:hit(a2.dmg)
     end
     
@@ -929,7 +905,7 @@ function solid_actor(a,dx,dy)
     end    
    end
   end
-	a2=cmap_near_next()
+	a2=cmap_next()
  end
  return false
 end
@@ -987,10 +963,8 @@ function hit_actor(self,dmg)
 	self.hp-=band(dmg_mask,dmg)
 	if not self.disable and self.hp<=0 then
 		self.hp=0
-	 -- avoid reentrancy
-	 self.disable=true
-	 if(self.die) self:die()	
-		-- splat
+		self.disable=true
+		if(self.die) self:die()
 		make_part(self.x,self.y,0,all_parts.splat_part)
 		del(actors,self)
 	end
@@ -1001,10 +975,10 @@ function make_blast(x,y)
 		local ttl=20+flr(rnd(10))
 		make_actor(x+0.4*(rnd(2)-1),y+0.4*(rnd(2)-1),{
 			w=0.8,
-			w=0.8,
+			h=0.8,
 			inertia=0,
 			bounce=0,
-			dmg=bor(dmg_phys,15),
+			dmg=0x10f,
 			side=any_side,
 			t=time_t+ttl,
 			ttl=ttl,
@@ -1133,7 +1107,7 @@ function refresh_path(self)
 end
 
 function npc_update(self)
-	if self.can_fire==false and self.path_i<#self.path then
+	if self.move_t<time_t and self.path_i<#self.path then
 		local t=flr(self.path_i)+1
 		local dx,dy=self.x-self.path[t][1],self.y-self.path[t][2]
 		local d=dx*dx+dy*dy
@@ -1159,6 +1133,7 @@ function npc_update(self)
 			self.facing=flr(8*self.angle)
 			self.can_fire=true
 			if self.wp.sight then
+				self.move_t=time_t+45
 				self.fire_t=time_t+30
 				if abs(dx)>0 and abs(dy)>0 then
 					local d=sqrt(dx*dx+dy*dy)
@@ -1256,7 +1231,7 @@ _g.throne_update=function(self)
 	end			
 end
 
-bad_actors=json_parse('{"barrel_cls":{"side":"any_side","inertia":0.8,"spr":128,"hit":"blast_on_hit"},"msl_cls":{"side":"any_side","inertia":1.01,"sx":80,"sy":24,"update":"smoke_emitter","draw":"draw_rspr_actor","hit":"blast_on_hit","touch":"blast_on_touch"},"grenade_cls":{"side":"any_side","w":0.2,"h":0.2,"inertia":0.91,"bounce":0.8,"sx":96,"sy":16,"update":"smoke_emitter","draw":"draw_rspr_actor","hit":"blast_on_hit","touch":"blast_on_touch"},"sandman_cls":{"flee":true,"hp":3,"wp":"base_gun","frames":[[4,5,6]],"move_t":0,"drop_value":3},"scorpion_cls":{"w":0.8,"h":0.8,"hp":10,"wp":"acid_gun","palt":5,"frames":[[131,133]],"move_t":0},"worm_cls":{"palt":3,"w":0.2,"h":0.2,"inertia":0.8,"dmg":0x201,"frames":[[7,8]],"move_t":0},"slime_cls":{"w":0.2,"h":0.2,"inertia":0.8,"dmg":0x201,"frames":[[29,30,31,30]],"move_t":0,"wp":"goo"},"dog_cls":{"inertia":0.2,"dmg":0x203,"frames":[[61,62]],"move_t":0},"bear_cls":{"inertia":0.2,"dmg_type":"dmg_contact","dmg":2,"frames":[[1,2,3]],"move_t":0},"throne_cls":{"w":2,"h":1.5,"hp":300,"palt":15,"inertia":0,"spr":139,"move_t":0,"update":"throne_update"},"health_cls":{"spr":48,"w":0,"h":0,"update":"health_pickup"},"ammo_cls":{"spr":32,"w":0,"h":0,"update":"ammo_pickup"},"wpdrop_cls":{"w":0,"h":0,"inertia":0.9,"btn_t":0,"near_plyr_t":0,"draw":"draw_txt_actor","update":"wpdrop_update"},"notice_cls":{"spr":145,"w":0,"h":0,"inertia":0,"txt":"dont touch","near_plyr_t":0,"draw":"draw_txt_actor","update":"notice_update"},"cop_cls":{"flee":true,"acc":0.05,"frames":[[13,14,15,14]],"wp":"rifle","move_t":0},"fireimp_cls":{"frames":[[45,46,47,46]],"move_t":0,"dmg":0x203,"hit":"blast_on_hit"}}')
+bad_actors=json_parse('{"barrel_cls":{"side":"any_side","inertia":0.8,"spr":128,"hit":"blast_on_hit"},"msl_cls":{"side":"any_side","inertia":1.01,"sx":80,"sy":24,"update":"smoke_emitter","draw":"draw_rspr_actor","hit":"blast_on_hit","touch":"blast_on_touch"},"grenade_cls":{"side":"any_side","w":0.2,"h":0.2,"inertia":0.91,"bounce":0.8,"sx":96,"sy":16,"update":"smoke_emitter","draw":"draw_rspr_actor","hit":"blast_on_hit","touch":"blast_on_touch"},"sandman_cls":{"flee":true,"hp":3,"wp":"base_gun","frames":[[4,5,6]],"drop_value":3},"scorpion_cls":{"w":0.8,"h":0.8,"hp":10,"wp":"acid_gun","palt":5,"frames":[[131,133]]},"worm_cls":{"palt":3,"w":0.2,"h":0.2,"inertia":0.8,"dmg":0x201,"frames":[[7,8]]},"slime_cls":{"w":0.2,"h":0.2,"inertia":0.8,"dmg":0x201,"frames":[[29,30,31,30]],"wp":"goo"},"dog_cls":{"inertia":0.2,"dmg":0x203,"frames":[[61,62]]},"bear_cls":{"inertia":0.2,"dmg_type":"dmg_contact","dmg":2,"frames":[[1,2,3]]},"throne_cls":{"w":2,"h":1.5,"hp":300,"palt":15,"inertia":0,"spr":139,"update":"throne_update"},"health_cls":{"spr":48,"w":0,"h":0,"update":"health_pickup"},"ammo_cls":{"spr":32,"w":0,"h":0,"update":"ammo_pickup"},"wpdrop_cls":{"w":0,"h":0,"inertia":0.9,"btn_t":0,"near_plyr_t":0,"draw":"draw_txt_actor","update":"wpdrop_update"},"notice_cls":{"spr":145,"w":0,"h":0,"inertia":0,"txt":"dont touch","near_plyr_t":0,"draw":"draw_txt_actor","update":"notice_update"},"cop_cls":{"flee":true,"acc":0.05,"frames":[[13,14,15,14]],"wp":"rifle"},"fireimp_cls":{"frames":[[45,46,47,46]],"dmg":0x203,"hit":"blast_on_hit"}}')
 
 -- actor
 -- x,y in map tiles (not pixels)
@@ -1274,6 +1249,7 @@ function make_actor(x,y,src)
 		hp=1,
 		path={},
 		path_i=0,
+		move_t=0,
 		seek_t=0,
 		seek_dly=8,
 		hit_t=0,
@@ -1305,7 +1281,7 @@ function move_actor(a)
 	end
 
  -- static? no collision check
-	if a.dx==0 and a.dy==0 then
+	if bor(a.dx,a.dy)==0 then
 		zbuf_write(a)
 		return
 	end
@@ -1412,7 +1388,7 @@ function control_player()
 	 if(btn(0)) plyr.dx-=plyr.acc dx=-1 angle=0.5
 	 if(btn(1)) plyr.dx+=plyr.acc dx=1 angle=0
 	 if(btn(2)) plyr.dy-=plyr.acc dy=-1 angle=0.25
-	 if(btn(3)) plyr.dy+=plyr.acc dy=1 angle=0.75	
+	 if(btn(3)) plyr.dy+=plyr.acc dy=1 angle=0.75
 		if(bor(dx,dy)!=0) angle=atan2(dx,dy)
 		
 		if wp and btn(4) and plyr.lock_dly<time_t then
@@ -1431,7 +1407,7 @@ function control_player()
 			plyr.facing=flr(8*angle)
 			plyr.angle=angle
 		end
-	end	
+	end
 	-- play a sound if moving
 	-- (every 4 ticks)
  
@@ -1460,20 +1436,6 @@ function next_level()
 	plyr.hit_t=0
 	plyr.safe_t=time_t+30
 	cam_track(plyr.x,plyr.y)
-end
-
-function spawner(n,src)
-	for i=1,n do
-		local x,y=0,0
-		local ttl=5
-		while(solid(x,y) and ttl>0) do
-			x,y=flr(rnd(16)),flr(rnd(16))
-			ttl-=1
-		end
-		if(ttl<0) return
-		-- found empty space!
-		make_actor(x+0.5,y+0.5,src)
-	end
 end
 
 -- game loop
@@ -1533,7 +1495,7 @@ function _draw()
 end
 function _init()
 	cls(0)
-	cur_level,cur_loop=6,1
+	cur_level,cur_loop=3,1
 	plyr=make_plyr()
 	next_level()
 end
