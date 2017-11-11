@@ -1,126 +1,193 @@
 pico-8 cartridge // http://www.pico-8.com
 version 8
 __lua__
+local rooms={}
+local corridors={}
+local mem={}
 function lerp(a,b,t)
-        return a*(1-t)+b*t
+	return a*(1-t)+b*t
+end
+function rndlerp(a,b)
+	return lerp(a,b,rnd())
 end
 function rndrng(ab)
-        return flr(lerp(ab[1],ab[2],rnd(1)))
+	return flr(rndlerp(ab[1],ab[2]))
 end
-function m2dotv2(u,v,p)
-        return {
-                p[1]*u[1]+p[2]*u[2],
-                p[1]*v[1]+p[2]*v[2]}
+function rndarray(a)
+	return a[flr(rnd(#a))+1]
 end
 function rotate(a,p)
-        local c,s=cos(a),-sin(a)
-        return {
-                p[1]*c-p[2]*s,
-                p[1]*s+p[2]*c}
+	local c,s=cos(a),-sin(a)
+	return {
+		p[1]*c-p[2]*s,
+		p[1]*s+p[2]*c}
+end
+function make_rooms(rules)
+	mem={}
+	rooms={}
+	paths={}
+	for i=0,rules.cw-1 do
+		for j=0,rules.ch-1 do
+			mem[i+128*j]=1
+		end
+	end
+	local cw,ch=rndrng(rules.w),rndrng(rules.h)
+	local cx,cy=rules.cw/2-cw,rules.ch/2-ch
+	make_room(
+			cx,cy,cw,ch,
+			rules.d,
+			rules)
+end
+function whereami(a)
+	return pos2roomidx[flr(a.x)+shl(flr(a.y),8)] or 1
 end
 
-local lvl1_rules={
-        w={2,4},
-        h={1,3},
-        paths={1,2},
-        path={
-                bends={0,4},
-                w={1,1},
-                len={2,3}
-        }
+function make_room(x,y,w,h,ttl,rules)
+	if(ttl<0) return
+	local r={
+		x=x,y=y,
+		w=w,h=h}
+	r=dig(r,rules,7)
+	if r then
+		add(rooms,r)
+		local n=ttl*rndrng(rules.paths)
+		for i=1,n do
+			local a=flr(rnd(4))/4
+			local v=rotate(a,{1,0})
+			local bends=rndrng(rules.path.bends)
+			-- starting point
+			local hw,hh=r.w/2,r.h/2
+			local cx,cy=r.x+hw,r.y+hh
+			x,y=cx+v[1]*hw,cy+v[2]*hh
+			make_path(x,y,a,
+				bends,ttl-1,rules)
+			mem[flr(cx)+128*flr(cy)]=8
+		end
+	end
+end
+function make_path(x,y,a,n,ttl,rules)
+	-- end of corridor?
+	if n<=0 then
+		make_room(
+			x,y,
+			rndrng(rules.w),
+			rndrng(rules.h),
+			ttl-1,
+			rules)
+		return
+	end
+	local w,h=
+		rndrng(rules.path.w),
+		rndrng(rules.path.len)
+	-- rotate
+	local wl=rotate(a,{h,w})
+	local c={
+		x=x,y=y,
+		w=wl[1],h=wl[2]
+	}
+	-- stop invalid paths
+	local c=dig(c,rules,14)
+	if c then
+		add(corridors,c)
+		a+=(rnd(1)>0.5 and 0.25 or -0.25)
+		make_path(
+			c.x+c.w,c.y+c.h,
+			a,n-1,ttl,rules)
+	end
+end
+function dig(r,rules,c)
+	local cw,ch=rules.cw-1,rules.ch-1
+	local x0,y0=mid(r.x,1,cw),mid(r.y,1,ch)
+	local x1,y1=mid(r.x+r.w,1,cw),mid(r.y+r.h,1,ch)
+	x0,x1=flr(min(x0,x1)),flr(max(x0,x1))
+	y0,y1=flr(min(y0,y1)),flr(max(y0,y1))
+	cw,ch=x1-x0,y1-y0
+	if cw>0 and ch>0 then
+		for i=x0,x1 do
+			for j=y0,y1 do
+				mem[i+128*j]=c
+			end
+		end
+		return {x=x0,y=y0,w=cw,h=ch}
+	end
+	return nil
+end
+
+local level={
+	d=3,
+	cw=32,
+	ch=31,
+	w={8,12},
+	h={6,8},
+	paths={1,3},
+	path={
+		bends={1,2},
+		w={3,4},
+		len={4,8}}	
 }
-local angles={0,0.25,0.5,0.75}
-local col=1
-function create_room(x,y,w,h,ttl,rules)
-        ttl=ttl or 3
-        if(ttl<0) return
-        local r={
-                x=x,y=y,
-                w=w,h=h}
-        dig(r,7)
-        local n=ttl*rndrng(rules.paths)
-        for i=1,n do
-                col+=1
-                local a=angles[flr(rnd(#angles))+1]
-                local v=rotate(a,{1,0})
-                local bends=rndrng(rules.path.bends)
-                -- starting point
-                local hh,hw=r.w/2,r.h/2
-                local cx,cy=r.x+hw,r.y+hh
-                x,y=cx+v[1]*hw,cy+v[2]*hh
-                --line(x*4,y*4,x*4+4*v[1],y*4+4*v[2],12)
-                create_path(x,y,a,bends,ttl-1,rules)
-        end
+local param=1
+local cur_idx=1
+function update_value(s,idx,inc)
+	for k,v in pairs(s) do
+		if type(v)=="table" then
+			update_value(v,idx,inc)
+		else
+			if idx==cur_idx then
+				s[k]=max(0,v+inc)
+			end
+			cur_idx+=1
+		end
+	end
 end
-function create_path(x,y,a,n,ttl,rules)
-        -- end of corridor?
-        if n<=0 then
-                create_room(
-                        x,y,
-                        rndrng(rules.w),
-                        rndrng(rules.h),
-                        ttl-1,
-                        rules)
-                return
-        end
-        local w,h=
-                rndrng(rules.path.w),
-                rndrng(rules.path.len)
-        -- rotate
-        local wl=rotate(a,{h,w})
-        local c={
-                x=x,y=y,
-                w=wl[1],h=wl[2]
-        }
-        --print(w.."-"..h..">"..a.."="..c.w.."-"..c.h)
-
-        col+=1
-        dig(c,col%16+1)
-        a+=(rnd(1)>0.5 and 0.25 or -0.25)
-        create_path(
-                c.x+c.w,c.y+c.h,
-                a,n-1,ttl,rules)
+function print_value(x,y,s,path,idx)
+	for k,v in pairs(s) do
+		if type(v)=="table" then
+			y=print_value(x,y,v,path.."."..k,idx)
+		else
+			print(path.."."..k..":"..v,x,y,idx==cur_idx and 10 or 7)	
+			cur_idx+=1
+			y+=8 
+		end
+	end
+	return y
 end
 
-local ii=0
-function dig(r,c)
-        c=7-- c or 7
-        local x0,y0=mid(r.x,0,32),mid(r.y,0,32)
-        local x1,y1=mid(r.x+r.w,0,32),mid(r.y+r.h,0,32)
-        x0,x1=min(x0,x1),max(x0,x1)
-        y0,y1=min(y0,y1),max(y0,y1)
-        for i=x0,x1 do
-                for j=y0,y1 do
-                        --mset(1,i,j)
-                        rectfill(
-                                i*4,j*4,
-                                (i+1)*4-1,(j+1)*4-1,c)
-                end
-        end
-        ii+=6
-        --print(r.w.."x"..r.h,2,ii,c)
-        --line(24,ii+3,x0*4,y0*4,c)
+local dirty=true
+function _update60()
+	local inc=0
+	if(btnp(0)) inc=-1 dirty=true
+	if(btnp(1)) inc=1 dirty=true
+	if(btnp(2)) param-=1
+	if(btnp(3)) param+=1
+	param=max(1,param)
+	 	
+	cur_idx=1
+	update_value(level,param,inc)
+	
+	if dirty or btnp(4) then
+		make_rooms(level)
+		dirty=false
+	end
 end
 
-function _update()
-        if btnp(4) or btnp(5) then
-                cls()
-                ii=0
-                create_room(
-                        16,16,4,4,
-                        rndrng({4,7}),
-                        lvl1_rules)
-        end
+function _draw()
+	for i=0,127 do
+		for j=0,127 do
+			pset(i,j,mem[i+128*j])
+		end
+	end
+	--local k=get_value(level,"",param)
+	cur_idx=1
+	print_value(64,2,level,"",param)
 end
-cls()
 
 __gfx__
-00000000666666660000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00700700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00077000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00077000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00700700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00077000000110000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00077000000ee0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00700700000770000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000

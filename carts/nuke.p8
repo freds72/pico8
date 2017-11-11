@@ -736,7 +736,7 @@ function make_room(x,y,w,h,ttl,rules)
 			local v=rotate(a,{1,0})
 			local bends=rndrng(rules.path.bends)
 			-- starting point
-			local hh,hw=r.w/2,r.h/2
+			local hw,hh=r.w/2,r.h/2
 			local cx,cy=r.x+hw,r.y+hh
 			x,y=cx+v[1]*hw,cy+v[2]*hh
 			make_path(x,y,a,
@@ -776,8 +776,8 @@ function dig(r,rules,idx)
 	local cw,ch=rules.cw-1,rules.ch-1
 	local x0,y0=mid(r.x,1,cw),mid(r.y,1,cw)
 	local x1,y1=mid(r.x+r.w,1,ch),mid(r.y+r.h,1,ch)
-	x0,x1=min(x0,x1),max(x0,x1)
-	y0,y1=min(y0,y1),max(y0,y1)
+	x0,x1=flr(min(x0,x1)),flr(max(x0,x1))
+	y0,y1=flr(min(y0,y1)),flr(max(y0,y1))
 	cw,ch=x1-x0,y1-y0
 	if cw>0 and ch>0 then
 		for i=x0,x1 do
@@ -1035,7 +1035,7 @@ end
 warp_cls={
 	w=0,
 	captured=false,
-	frames={92,93,80},
+	frames={80,81,82},
 	draw=nop,
 	update=function(self)
 	 --	dig_blast(self.x,self.y)
@@ -1506,7 +1506,7 @@ function _draw()
 end
 function _init()
 	cls(0)
-	cur_level,cur_loop=4,1
+	cur_level,cur_loop=3,1
 	plyr=make_plyr()
 	next_level()
 end
