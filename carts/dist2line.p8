@@ -15,14 +15,18 @@ end
 ]]
 function dist2line(x,y,r,x0,y0,x1,y1,r2)
 	local dx,dy=x1-x0,y1-y0
-	local ax,ay=x-x0,y-y1
+	local ax,ay=x-x0,y-y0
 	local t=ax*dx+ay*dy
  local d=dx*dx+dy*dy
-	t=mid(t,0,d)
-	--if(t< or t>d) return false
-	t/=d
+	if d==0 then
+		t=0
+	else
+		t=mid(t,0,d)
+		t/=d
+	end
 	local ix,iy=x0+t*dx-x,y0+t*dy-y
-	return (ix*ix+iy*iy)<(r*r+r2*r2)
+	r+=r2
+	return (ix*ix+iy*iy)<r*r
 end
 
 function _update()
@@ -35,11 +39,11 @@ function _update()
 	lw=mid(lw,0,8)
 end
 
-local x0,y0=32,32
-local x1,y1=54,32
+local x0,y0=32,24
+local x1,y1=64,85
 function _draw()
 	cls(0)
-	local hit=dist2line(x,y,8,x0,y0,x1,y1,2*lw)
+	local hit=dist2line(x,y,8,x0,y0,x1,y1,lw)
 	print("hit:"..(hit==true and "yes" or "no"),2,2,7)
 	print("width:"..lw,2,9,7)		
 	

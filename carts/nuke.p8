@@ -119,29 +119,48 @@ local all_loot={}
 local dmg_mask,dmg_types=0xff,json_parse('{"dmg_phys":0x0100,"dmg_contact":0x0200,"dmg_energy":0x0400,"dmg_poison":0x0800}')
 _g.draw_laser=function(self,x,y)
 	local x1,y1=cam_project(0,self.y1)
-	line(x,y,x,y1,8)
+	local w=self.w/2-2*rnd()
+	rectfill(x-w-2,y+5,x+w+2,y1,2)
+	rectfill(x-w,y+3,x+w,y1,8)
+	rectfill(x-w/4,y,x+w/4,y1,7)
 end
 _g.update_laser=function(self)
 	if self.t>time_t then
+		if(not self.dw) self.dw=0
+		self.dw+=1
+		self.w=lerp(1,10,smoothstep(self.dw/54))
 		local x0,y0,y1=self.x,self.y,self.y1 or self.y
-		y1+=self.dy
-		if circline_coll(plyr.x,plyr.y,plyr.w,x0,y0,x0,y1) then
+		y1+=self.dy		
+		if circline_coll(plyr.x,plyr.y,plyr.w,x0,y0,x0,y1,self.w/2) then
 			--plyr:hit(self.wp.dmg)			
-			plyr.dx+=self.dx
-			plyr.dy+=self.dy
+			plyr.dy+=self.dy/2
 			self.y1=plyr.y
 			make_part(plyr.x,plyr.y,0.25,{
-				dx=1.5*self.dx,
+				dx=0,
 				dy=1.5*self.dy,
 				dr=-0.02,
-				r=0.4,
-				dly=8,
+				r=rndlerp(0.3,0.4),
+				dly=rndlerp(8,12),
 				c=9+rnd(1),
 				draw=_g.draw_circ_part
 			})
 		elseif not solid(x0,y1) then
 			self.y1=y1
 		end
+		
+		make_part(x0+self.w*(rnd(2)-1)/16,lerp(y0,self.y1,rnd()),0,
+		{
+		  zorder=3,
+				dx=0,
+				inertia=1,
+				dy=0.04,
+				dr=0,
+				r=rndlerp(1/16,1/4),
+				dly=rndlerp(24,32),
+				c=7,
+				draw=_g.draw_circ_part
+			})
+
 		zbuf_write(self)
 		return true
 	end
@@ -394,9 +413,9 @@ function sort(t)
 end
 
 -- collision
-function circline_coll(x,y,r,x0,y0,x1,y1)
+function circline_coll(x,y,r,x0,y0,x1,y1,w)
 	local dx,dy=x1-x0,y1-y0
-	local ax,ay=x-x0,y-y1
+	local ax,ay=x-x0,y-y0
 	local t,d=ax*dx+ay*dy,dx*dx+dy*dy
 	if d==0 then
 		t=0
@@ -405,7 +424,8 @@ function circline_coll(x,y,r,x0,y0,x1,y1)
 		t/=d
 	end
 	local ix,iy=x0+t*dx-x,y0+t*dy-y
-	return (ix*ix+iy*iy)<r*r+0.4
+	r+=(w or 0.2)
+	return ix*ix+iy*iy<r*r
 end
 -- zbuffer
 function zbuf_clear()
