@@ -146,7 +146,7 @@ local dmg_mask,dmg_types=0xff,json_parse('{"dmg_phys":0x0100,"dmg_contact":0x020
 
 _g.draw_laser=function(self,x,y)
 	local x1,y1=cam_project(0,self.y1)
-	local w=self.w/2-2*rnd()
+	local w=self.w-2*rnd()
 	rectfill(x-w-2,y+5,x+w+2,y1,2)
 	rectfill(x-w,y+3,x+w,y1,8)
 	rectfill(x-w/4,y,x+w/4,y1,7)
@@ -156,10 +156,10 @@ _g.update_laser=function(self)
 	if self.t>time_t then
 		if(not self.dw) self.dw=0
 		self.dw+=1
-		self.w=lerp(1,10,smoothstep(self.dw/54))
+		self.w=lerp(0.5,5,smoothstep(self.dw/54))
 		local x0,y0,y1=self.x,self.y,self.y1 or self.y
 		y1+=self.dy		
-		if circline_coll(plyr.x,plyr.y,plyr.w,x0,y0,x0,y1) then
+		if circline_coll(plyr.x,plyr.y,plyr.w,x0,y0,x0,y1,self.w/8) then
 			--plyr:hit(self.wp.dmg)
 			plyr.dy+=self.dy/2
 			self.y1=plyr.y
@@ -239,20 +239,9 @@ _g.darken=function()
 		m+=64
 	end
 end
-
--- modifiers
---[[
-	weapon bounce
-	reduce fire dly
-	multiple bullets
-	reduced spread
-	reduced damage
-	world inertia
-]]
-
 -- levels
 local active_actors
-local cur_level,cur_loop
+local lvl,lvl_i,cur_loop
 _g.intro=function()
 end
 local level_cw,level_ch=64,32
@@ -406,21 +395,26 @@ function sort(t)
   i,j=lower,lower*2
   while j<=upper do
    if j<upper and t[j].key<t[j+1].key then
-    j += 1
+    j+=1
    end
    if temp.key<t[j].key then
-    t[i] = t[j]
-    i = j
-    j += i
+    t[i]=t[j]
+    i=j
+    j+=i
    else
-    j = upper + 1
+    j=upper+1
    end
   end
-  t[i] = temp
+  t[i]=temp
  end
  return t
 end
-
+function wait_async(t,fn)
+	for i=1,t do 
+		if fn then fn(i) end
+		yield()
+	end
+end
 -- collision
 function circline_coll(x,y,r,x0,y0,x1,y1,w)
 	local dx,dy=x1-x0,y1-y0
@@ -549,9 +543,6 @@ function draw_laser_part(p,x,y)
 	local dx,dy=p.d*p.u,p.d*p.v
 	line(x+0.5*dx,y+0.5*dy,x+80*dx,y+80*dy,8)
 end
-
-
-
 -- bullets
 function update_blt(self)
 	if self.t>time_t then
@@ -574,14 +565,14 @@ function update_blt(self)
 					a.dy+=self.dy
 				end
 					
-				make_part(self.x,self.y,0.25,all_parts.hit,1.5*self.dx,1.5*self.dy)
+				make_part(self.x,self.y,0.25,all_parts.hit,self.dx/2,self.dy/2)
 				return false
 			end
 		end
 
 		if solid(x1,y0) or solid(x0,y1) or solid(x1,y1) then
 			goto die
-		end		
+		end
 		
 		self.prevx,self.prevy=x0,y0
 		self.x,self.y=x1,y1
@@ -678,21 +669,19 @@ end
 local rooms,pos2roomidx
 local tile_sides=json_parse('[[0,0],[1,0],[0,1],[-1,0],[0,-1]]')
 
-function make_level(lvl)
+function make_level()
 	-- spawn entities
 	active_actors=0
 	
-	local rules=levels[lvl]
-	if rules.builtin then
-		for s in all(rules.spawn) do
+	lvl=levels[lvl_i]
+	if lvl.builtin then
+		for s in all(lvl.spawn) do
 			make_actor(s.x,s.y,all_actors[s.a])
 		end
 	else
-		make_rooms(rules)
-		-- invalid level
-		if(not rules.spawn) print(cur_level.." "..rules.n) assert()
+		make_rooms()
 		for i=2,#rooms do
-			local r,sp=rooms[i],rndarray(rules.spawn)
+			local r,sp=rooms[i],rndarray(lvl.spawn)
 			local n=rndrng(sp)
 			for k=1,n do
 				local x,y=r.x+rndlerp(0,r.w),r.y+rndlerp(0,r.h)
@@ -704,21 +693,19 @@ function make_level(lvl)
 		end
 	end
 end
-function make_rooms(rules)
+function make_rooms()
 	rooms={}
 	pos2roomidx={}
 	for i=0,level_cw-1 do
 		for j=0,level_ch-1 do
-			mset(i,j,rules.solid_tiles_base)
+			mset(i,j,lvl.solid_tiles_base)
 		end
 	end
-	local cw,ch=rndrng(rules.w),rndrng(rules.h)
+	local cw,ch=rndrng(lvl.w),rndrng(lvl.h)
 	local cx,cy=level_cw/2-cw,level_ch/2-ch
 	make_room(
-			cx,cy,cw,ch,
-			rules.d,
-			rules)
-	make_walls(0,level_cw-1,0,level_ch-2,rules,true)
+			cx,cy,cw,ch,lvl.d)
+	make_walls(0,level_cw-1,0,level_ch-2,true)
 end
 function whereami(a)
 	return pos2roomidx[flr(a.x)+shl(flr(a.y),8)] or 1
@@ -735,7 +722,7 @@ function ftile(cx,cy)
 	return c
 end
 
-function make_walls(x0,x1,y0,y1,rules,shadow)
+function make_walls(x0,x1,y0,y1,shadow)
 	local tf,t
 	local walls={}
 	for i=x0,x1 do
@@ -749,9 +736,9 @@ function make_walls(x0,x1,y0,y1,rules,shadow)
 				-- south not solid?
 				if band(tf,0x2)==0 then
 					if rnd()<0.8 then
-						t=rules.walls[1]
+						t=lvl.walls[1]
 					else
-						t=rndarray(rules.walls)
+						t=rndarray(lvl.walls)
 					end
 					add(walls,{i,j+1,t})
 				end
@@ -760,46 +747,45 @@ function make_walls(x0,x1,y0,y1,rules,shadow)
 	end
 	for w in all(walls) do
 		mset(w[1],w[2],w[3])
-		if(shadow)mset(w[1],w[2]+1,rules.shadow)
+		if(shadow)mset(w[1],w[2]+1,lvl.shadow)
 	end
 end
 
-function make_room(x,y,w,h,ttl,rules)
+function make_room(x,y,w,h,ttl)
 	if(ttl<0) return
 	local r={
 		x=x,y=y,
 		w=w,h=h}
-	r=dig(r,rules,#rooms+1)
+	r=dig(r,#rooms+1)
 	if r then
 		add(rooms,r)
-		local n=ttl*rndrng(rules.paths)
+		local n=ttl*rndrng(lvl.paths)
 		for i=1,n do
 			local a=flr(rnd(4))/4
 			local v=rotate(a,{1,0})
-			local bends=rndrng(rules.path.bends)
+			local bends=rndrng(lvl.path.bends)
 			-- starting point
 			local hw,hh=r.w/2,r.h/2
 			local cx,cy=r.x+hw,r.y+hh
 			x,y=cx+v[1]*hw,cy+v[2]*hh
 			make_path(x,y,a,
-				bends,ttl-1,rules)
+				bends,ttl-1)
 		end
 	end
 end
-function make_path(x,y,a,n,ttl,rules)
+function make_path(x,y,a,n,ttl)
 	-- end of corridor?
 	if n<=0 then
 		make_room(
 			x,y,
-			rndrng(rules.w),
-			rndrng(rules.h),
-			ttl-1,
-			rules)
+			rndrng(lvl.w),
+			rndrng(lvl.h),
+			ttl-1)
 		return
 	end
 	local w,h=
-		rndrng(rules.path.w),
-		rndrng(rules.path.len)
+		rndrng(lvl.path.w),
+		rndrng(lvl.path.len)
 	-- rotate
 	local wl=rotate(a,{h,w})
 	local c={
@@ -807,14 +793,14 @@ function make_path(x,y,a,n,ttl,rules)
 		w=wl[1],h=wl[2]
 	}
 	-- stop invalid paths
-	if dig(c,rules) then
+	if dig(c) then
 		a+=(rnd(1)>0.5 and 0.25 or -0.25)
 		make_path(
 			c.x+c.w,c.y+c.h,
-			a,n-1,ttl,rules)
+			a,n-1,ttl)
 	end
 end
-function dig(r,rules,idx)
+function dig(r,idx)
 	local cw,ch=level_cw-1,level_ch-3
 	local x0,y0=mid(r.x,1,cw),mid(r.y,1,ch)
 	local x1,y1=mid(r.x+r.w,1,cw),mid(r.y+r.h,1,ch)
@@ -825,9 +811,9 @@ function dig(r,rules,idx)
 		for i=x0,x1 do
 			for j=y0,y1 do
 				if rnd()<0.9 then
-					mset(i,j,rules.floors[1])
+					mset(i,j,lvl.floors[1])
 				else
-					mset(i,j,rndarray(rules.floors))
+					mset(i,j,rndarray(lvl.floors))
 				end
 				if(idx) pos2roomidx[i+shl(j,8)]=idx
 			end
@@ -836,22 +822,21 @@ function dig(r,rules,idx)
 	end
 	return nil
 end
-function clear_walls(x,y,rules)
+function clear_walls(x,y)
 	if fget(mget(x,y),2) then
-		local t=rules.floors[1]
+		local t=lvl.floors[1]
 		mset(x,y,t)
 		mset(x,y+1,t)
 	end
 end
 function dig_blast(x,y)
-	local rules=levels[cur_level]	
-	clear_walls(x+1,y,rules)
-	clear_walls(x-1,y,rules)
-	clear_walls(x,y+1,rules)
+	clear_walls(x+1,y)
+	clear_walls(x-1,y)
+	clear_walls(x,y+1)
 	for s in all(tile_sides) do
-		mset(x+s[1],y+s[2],rules.blast_tile)
+		mset(x+s[1],y+s[2],lvl.blast_tile)
 	end
-	make_walls(x-2,x+2,y-2,y+2,rules,false)
+	make_walls(x-2,x+2,y-2,y+2,false)
  -- todo: fix walls
 end
 
@@ -967,7 +952,25 @@ function draw_anim_spr(a,x,y)
 end
 
 function plyr_die(self)
-	
+	futures_add(function()
+		plyr_playing=false
+		local t=0
+		while btnp(4)==false do
+			t=min(t+1,90)
+			local j,c=48*smoothstep(t/90),lvl.bkg_col
+			rectfill(0,0,127,j,c)
+			rectfill(0,127,127,128-j,c)
+			if t==90 then
+				txt_options(true,c==0 and 1 or 0,true)
+				txt_print("you are dead",64,32,6)
+				txt_print(cur_loop.."-"..lvl_i,64,96,7)
+			end
+			yield()
+		end
+		lvl_i,cur_loop=1,1
+		plyr=make_plyr()
+		next_level()
+	end,after_draw)
 end
 
 function die_actor(self)
@@ -976,9 +979,8 @@ function die_actor(self)
 	if active_actors==0 then
 		-- create portal
 		make_actor(self.x,self.y,all_actors.warp_cls)
-	else	
+	else
 		local r=rnd()
-		local lvl=levels[cur_level]
 		if r>0.8 and lvl.loot then
 			local cost=rndrng(lvl.loot)
 			local wp=rndarray(all_loot[cost])
@@ -1086,11 +1088,11 @@ _g.warp_update=function(self)
 				yield()
 			end
 			plyr_playing=true
-			cur_level+=1
+			lvl_i+=1
 			-- loop?
-			if cur_level>#levels then
+			if lvl_i>#levels then
 				cur_loop+=1
-				cur_level=1
+				lvl_i=1
 			end
 			del(actors,self)
 
@@ -1259,12 +1261,6 @@ _g.wpdrop_update=function(self)
 		end
 	end
 end
-function wait_async(t,fn)
-	for i=1,t do 
-		if fn then fn() end
-		yield()
-	end
-end
 _g.throne_init=function(self)
 	self.angle=0.75
 	futures_add(function()
@@ -1301,14 +1297,13 @@ _g.throne_draw=function(a,x,y)
 	-- shadow
 	palt(0,false)	
 	--rectfill(x,y+4,x+8*a.cw,y+4+8*a.ch,1)
-	--palt(14,false)	
+	--palt(14,false)
 	for j=y+8*a.ch-4,y+8*a.ch do
 		if j>=0 and j<128 then
-			local mem=0x6000+64*j+flr(x/2)
-			for i=x,x+8*a.cw,2 do
-				if i>=0 and i<128 then
-					poke(mem,shade[peek(mem)])
-					mem+=1
+			local mem=0x6000+64*j
+			for i=band(x,-2)/2,band(x+8*a.cw,-2)/2 do
+				if i>=0 and i<64 then
+					poke(mem+i,shade[peek(mem+i)])
 				end
 			end
 		end
@@ -1540,10 +1535,9 @@ end
 function next_level()
 	time_t=0
 	actors={}
-	make_level(cur_level)
+	make_level()
 	add(actors,plyr)
 	
-	local lvl=levels[cur_level]
 	if lvl.builtin then
 		plyr.x,plyr.y=lvl.plyr_pos[1]+0.5,lvl.plyr_pos[2]+0.5
 	else
@@ -1555,6 +1549,7 @@ function next_level()
 	plyr.fire_t=0
 	plyr.hit_t=0
 	plyr.safe_t=time_t+30
+	plyr_playing=true
 	cam_track(plyr.x,plyr.y)
 end
 
@@ -1579,7 +1574,6 @@ function _update60()
 end
 
 function _draw()
-	local lvl=levels[cur_level]
  cls(lvl.bkg_col)
 	local cx,cy=lvl.cx or 0,lvl.cy or 0
 	local sx,sy=64-cam_x+8*cx,64-cam_y+8*cy-4
@@ -1599,26 +1593,28 @@ function _draw()
 	pal()
 	if(lvl.shader) lvl.shader()
 	
-	futures_update(after_draw)	
+	futures_update(after_draw)
 
-	rectfill(1,1,34,9,0)
-	rect(2,2,33,8,6)
-	local hp=max(0,plyr.hp)
-	rectfill(3,3,flr(32*hp/plyr_hpmax),7,8)
-	txt_options(false,0)
-	txt_print(hp.."/"..plyr_hpmax,12,3,7)
-
-	palt(14,true)
-	palt(0,false)
-	spr(plyr.wp.icon,2,10)
-	txt_print(plyr.ammo,14,12,7)
-
+	if lvl_i>1 then
+		rectfill(1,1,34,9,0)
+		rect(2,2,33,8,6)
+		local hp=max(0,plyr.hp)
+		rectfill(3,3,3+flr(32*hp/plyr_hpmax),7,8)
+		txt_options(false,0)
+		txt_print(hp.."/"..plyr_hpmax,12,3,7)
+	
+		palt(14,true)
+		palt(0,false)
+		spr(plyr.wp.icon,2,10)
+		txt_print(plyr.ammo,14,12,7)
+	end
+	
 	txt_print(stat(1),2,120,7)
 end
 
 function _init()
 	cls(0)
-	cur_level,cur_loop=7,1
+	lvl_i,cur_loop=2,1
 	plyr=make_plyr()
 	next_level()
 end
