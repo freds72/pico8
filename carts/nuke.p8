@@ -107,12 +107,11 @@ end
 local plyr
 local plyr_playing,plyr_hpmax
 local plyr_score
---local plyr_frames=json_parse('[[17,18,19,18,17]]')
---local idle_frames=json_parse('[[17,33,34,33]]')
-
-local plyr_frames=json_parse('[[49,50,51,50,49]]')
-local idle_frames=json_parse('[[49,56,57,56]]')
-
+local all_plyrs=json_parse('{"bob":{"strips":[[17,18,19,18,17],[17,33,34,33]]},"susie":{"strips":[[49,50,51,50,49],[49,56,57,56]],"palt":3}}')
+local plyr_names={}
+for k,_ in pairs(all_plyrs) do
+	add(plyr_names,k)
+end
 local pause_t=0
 -- blast
 local blast_frames=json_parse('[192,194,194,196,198,200,202]')
@@ -274,7 +273,9 @@ function futures_update(futures)
 	end
 end
 function futures_add(fn,futures)
-	add(futures or before_update,cocreate(fn))
+	local cor=cocreate(fn)
+	add(futures or before_update,cor)
+	return cor
 end
 -- print text helper
 local txt_center,txt_shade,txt_border=false,-1,false
@@ -414,7 +415,9 @@ function sort(t)
 end
 function wait_async(t,fn)
 	for i=1,t do 
-		if fn then fn(i) end
+		if fn and not fn(i) then
+			return 
+		end
 		yield()
 	end
 end
@@ -495,7 +498,10 @@ end
 function cam_update()
 	shkx*=-0.7-rnd(0.2)
 	shky*=-0.7-rnd(0.2)
-	if(abs(shkx)>0.5 or abs(shky)>0.5) camera(shkx,shky)
+	if abs(shkx)<0.5 and abs(shky)<0.5 then
+		shkx,shky=0,0
+	end
+	camera(shkx,shky)
 end
 function cam_track(x,y)
 	cam_x,cam_y=(x*8)-4,(y*8)-4
@@ -960,12 +966,11 @@ function plyr_die(self)
 	futures_add(function()
 		plyr_playing=false
 		local t=0
-		camera(0,0)
 		while btnp(4)==false do
 			t=min(t+1,90)
-			local j,c=48*smoothstep(t/90),lvl.bkg_col
-			rectfill(0,0,127,j,c)
-			rectfill(0,127,127,128-j,c)
+			local j=48*smoothstep(t/90)
+			rectfill(0,0,127,j,0)
+			rectfill(0,127,127,128-j,0)
 			if t==90 then
 				txt_options(true,c==0 and 1 or 0,true)
 				txt_print("you are dead",64,32,6)
@@ -1075,6 +1080,19 @@ function go(x0,y0,x1,y1,fn,cb)
 end
 
 -- custom actors
+function warp_draw_async(r0,r1)
+	for i=0,90 do
+		local r=lerp(r0,r1,1-smoothstep(i/90))
+		local r2=r*r
+		for j=0,127 do
+			local y=64-j
+			local x=sqrt(max(0,r2-y*y))
+			line(0,j,64-x,j,0)
+			line(64+x,j,127,j,0)
+		end	
+		yield()
+	end
+end
 _g.warp_update=function(self)
 	--dig_blast(self.x,self.y)
 	mset(self.x+0.5,self.y+0.5,self.frames[flr(time_t/8)%#self.frames+1])
@@ -1084,17 +1102,7 @@ _g.warp_update=function(self)
 	if d<4 then
 		self.captured=true
 		futures_add(function()
-			for i=0,90 do
-				local r=64*(1-smoothstep(i/90))
-				local r2=r*r
-				for j=0,128 do
-					local y=64-j
-					local x=sqrt(max(0,r2-y*y))
-					line(0,j,64-x,j,0)
-					line(64+x,j,127,j,0)
-				end	
-				yield()
-			end
+			warp_draw_async(0,48)
 		end,after_draw)
 		futures_add(function()
 			plyr_playing=false
@@ -1115,6 +1123,9 @@ _g.warp_update=function(self)
 			end
 			del(actors,self)
 
+			futures_add(function()
+				warp_draw_async(96,48)
+			end,after_draw)
 			next_level()
 		end)
 	end
@@ -1282,16 +1293,23 @@ _g.wpdrop_update=function(self)
 end
 _g.throne_init=function(self)
 	self.angle=0.75
+	local isalive=function()
+		return plyr.hp>0 and self.hp>0
+	end
 	futures_add(function()
-		while(abs(plyr.y-self.y)>4) do
+		local hp=self.hp
+		while(abs(plyr.y-self.y)>4 and hp==self.hp) do
 			yield()
 		end
-		wait_async(60)
+		wait_async(60,isalive)
+		if not isalive() then
+			return
+		end
 		make_blt(self,weapons.laser)
-		wait_async(60)
+		wait_async(60,isalive)
 		local l=1
-		while(self.y<48) do
-			wait_async(160)
+		while(self.y<48 and isalive()) do
+			wait_async(160,isalive)
 			if l%4==0 then
 				make_blt(self,weapons.laser)
 			else
@@ -1300,7 +1318,8 @@ _g.throne_init=function(self)
 				make_blt({x=self.x+2,y=self.y+1,angle=0.75+ang,side=bad_side},weapons.mega_gun)
 			end
 			wait_async(20,function()
-				self.y+=0.05
+				self.y+=0.01
+				return isalive()
 			end)
 			l+=1
 		end
@@ -1310,6 +1329,9 @@ _g.throne_update=function(self)
 	local ang=rnd()
 	local u,v=0.16*cos(ang),0.15*sin(ang)
 	make_part(self.x+u,self.y+v-0.5,0,all_parts.fart)
+	if plyr.hp==0 or self.hp==0 then
+		
+	end
 end
 _g.throne_draw=function(a,x,y)
 	x,y=x-4*a.cw,y-4*a.ch
@@ -1342,7 +1364,7 @@ _g.throne_draw=function(a,x,y)
 	palt(0,false)
 end
 
-all_actors=json_parse('{"barrel_cls":{"side":"any_side","inertia":0.8,"spr":128,"hit":"blast_on_hit"},"msl_cls":{"side":"any_side","inertia":1.01,"sx":80,"sy":24,"update":"smoke_emitter","draw":"draw_rspr_actor","hit":"blast_on_hit","touch":"blast_on_touch"},"grenade_cls":{"side":"any_side","w":0.2,"h":0.2,"inertia":0.91,"bounce":0.8,"sx":96,"sy":16,"update":"smoke_emitter","draw":"draw_rspr_actor","hit":"blast_on_hit","touch":"blast_on_touch"},"bandit_cls":{"hp":3,"wp":"base_gun","frames":[[4,5,6]],"npc":true},"scorpion_cls":{"fire_dly":180,"pause_dly":120,"w":0.8,"h":0.8,"hp":10,"wp":"acid_gun","palt":5,"frames":[[131,133]],"npc":true},"worm_cls":{"palt":3,"w":0.2,"h":0.2,"inertia":0.8,"dmg":1,"frames":[[7,8]]},"slime_cls":{"w":0.2,"h":0.2,"inertia":0.8,"dmg":1,"frames":[[29,30,31,30]],"wp":"goo","npc":true},"dog_cls":{"inertia":0.2,"dmg":3,"frames":[[61,62]],"npc":true},"bear_cls":{"inertia":0.2,"dmg":2,"frames":[[1,2,3]],"npc":true},"throne_cls":{"zorder":1,"w":8,"h":4,"hp":300,"palt":15,"inertia":0,"cx":87,"cy":18,"cw":12,"ch":5,"update":"throne_update","draw":"throne_draw","init":"throne_init","npc":true},"health_cls":{"spr":48,"w":0,"h":0,"update":"health_pickup"},"ammo_cls":{"spr":32,"w":0,"h":0,"update":"ammo_pickup"},"wpdrop_cls":{"w":0,"h":0,"inertia":0.9,"btn_t":0,"near_plyr_t":0,"draw":"draw_txt_actor","update":"wpdrop_update"},"notice_cls":{"spr":145,"w":0,"h":0,"inertia":0,"txt":"dont touch","near_plyr_t":0,"draw":"draw_txt_actor","update":"notice_update"},"cop_cls":{"flee":true,"acc":0.05,"frames":[[13,14,15,14]],"wp":"rifle","npc":true},"fireimp_cls":{"frames":[[45,46,47,46]],"dmg":3,"hit":"blast_on_hit","npc":true},"turret_cls":{"w":1,"h":1,"wp":"rpg","hp":10,"acc":0,"bounce":0,"frames":[[163]],"fire_dly":180,"pause_dly":120,"splat":"turret_splat","npc":true},"horror_cls":{"hp":10,"frames":[[160,161,162]],"fire_dly":180,"pause_dly":120,"splat":"goo_splat","npc":true},"warp_cls":{"w":0,"h":0,"captured":false,"frames":[80,81,82],"draw":nop,"update":"warp_update"}}')
+all_actors=json_parse('{"barrel_cls":{"side":"any_side","inertia":0.8,"spr":128,"hit":"blast_on_hit"},"msl_cls":{"side":"any_side","inertia":1.01,"sx":80,"sy":24,"update":"smoke_emitter","draw":"draw_rspr_actor","hit":"blast_on_hit","touch":"blast_on_touch"},"grenade_cls":{"side":"any_side","w":0.2,"h":0.2,"inertia":0.91,"bounce":0.8,"sx":96,"sy":16,"update":"smoke_emitter","draw":"draw_rspr_actor","hit":"blast_on_hit","touch":"blast_on_touch"},"bandit_cls":{"hp":3,"wp":"base_gun","frames":[4,5,6],"npc":true,"rnd":{"fire_dly":[90,120],"pause_dly":[90,120]}},"scorpion_cls":{"rnd":{"fire_dly":[160,180]},"pause_dly":120,"w":0.8,"h":0.8,"hp":10,"wp":"acid_gun","palt":5,"frames":[131,133],"npc":true},"worm_cls":{"palt":3,"w":0.2,"h":0.2,"inertia":0.8,"dmg":1,"frames":[7,8]},"slime_cls":{"w":0.2,"h":0.2,"inertia":0.8,"dmg":1,"frames":[29,30,31,30],"wp":"goo","npc":true},"dog_cls":{"inertia":0.2,"dmg":3,"frames":[61,62],"npc":true},"bear_cls":{"inertia":0.2,"dmg":2,"frames":[1,2,3],"npc":true},"throne_cls":{"zorder":1,"w":8,"h":4,"hp":300,"palt":15,"inertia":0,"cx":87,"cy":18,"cw":12,"ch":5,"update":"throne_update","draw":"throne_draw","init":"throne_init","npc":true},"health_cls":{"spr":48,"w":0,"h":0,"update":"health_pickup"},"ammo_cls":{"spr":32,"w":0,"h":0,"update":"ammo_pickup"},"wpdrop_cls":{"w":0,"h":0,"inertia":0.9,"btn_t":0,"near_plyr_t":0,"draw":"draw_txt_actor","update":"wpdrop_update"},"notice_cls":{"spr":145,"w":0,"h":0,"inertia":0,"txt":"dont touch","near_plyr_t":0,"draw":"draw_txt_actor","update":"notice_update"},"cop_cls":{"flee":true,"acc":0.05,"frames":[13,14,15,14],"rnd":{"fire_dly":[160,210],"pause_dly":[120,160]},"wp":"rifle","npc":true},"fireimp_cls":{"frames":[45,46,47,46],"dmg":3,"hit":"blast_on_hit","npc":true},"turret_cls":{"w":1,"h":1,"wp":"rpg","hp":10,"acc":0,"bounce":0,"frames":[163],"fire_dly":180,"pause_dly":120,"splat":"turret_splat","npc":true},"horror_cls":{"hp":10,"frames":[160,161,162],"fire_dly":180,"pause_dly":120,"splat":"goo_splat","npc":true},"warp_cls":{"w":0,"h":0,"captured":false,"frames":[80,81,82],"draw":nop,"update":"warp_update"}}')
 
 -- actor
 -- x,y in map tiles (not pixels)
@@ -1382,6 +1404,9 @@ function make_actor(x,y,src)
 	if src then
 		for k,v in pairs(src) do
 			a[k]=v
+		end
+		for k,v in pairs(src.rnd or {}) do
+			a[k]=rndlerp(v[1],v[2])
 		end
 	end
 	add(actors,a)
@@ -1449,17 +1474,16 @@ function draw_actor(a,sx,sy)
  	end
  	local s,flipx=a.spr,false
  	if a.frames then
- 		flipx=face1strip[a.facing+1]
- 		local frames=a.frames[1]
-		 s=frames[flr(a.frame%#frames)+1]
+		flipx=face1strip[a.facing+1]
+		s=a.frames[flr(a.frame%#a.frames)+1]
 	end
 	-- actor
- palt(0,false)
+	palt(0,false)
 	palt(tcol,true)
 	spr(s,sx,sy,sw,sh,flipx,flipy)
 	palt(tcol,false)
 	pal()
- palt(14,true)
+	palt(14,true)
 	local wp=a.wp
 	if wp and wp.sx then
 		local u,v=cos(a.angle),sin(a.angle)
@@ -1475,17 +1499,18 @@ function make_plyr()
 	plyr_score=0
 	plyr_playing=true
 	plyr_hpmax=8
+	local body=all_plyrs[rndarray(plyr_names)]
 	plyr=make_actor(18,18,{
 		acc=0.05,
 		hp=plyr_hpmax,
 		side=good_side,
-		-- todo: rename to strips
-		frames=plyr_frames,
+		strips=body.strips,
+		frames=body.strips[2],
 		wp=weapons.uzi,
 		ammo=weapons.uzi.ammo,
 		safe_t=time_t+30,
 		idle_t=time_t+30,
-		palt=3,
+		palt=body.palt or 14,
 		die=plyr_die,
 		update=nop
 	})
@@ -1508,11 +1533,11 @@ function control_player()
 				plyr.fire_t=time_t+8
 				plyr.lock_dly=time_t+wp.dly
 				make_blt(plyr,wp)
+				local u=face2unit[plyr.facing+1]
+				plyr.dx-=0.05*u[1]
+				plyr.dy-=0.05*u[2]
 				if wp.shk_pow then
-					local u=face2unit[plyr.facing+1]
-					plyr.dx-=0.05*u[1]
-					plyr.dy-=0.05*u[2]
-					cam_shake(u[1],u[2],wp.shk_pow)
+				cam_shake(u[1],u[2],wp.shk_pow)
 				end
 			end
 		elseif plyr.lock_dly<time_t then
@@ -1520,15 +1545,13 @@ function control_player()
 			plyr.angle=angle
 		end
 	end
-	-- play a sound if moving
-	-- (every 4 ticks)
- 
+	
  if (abs(plyr.dx)+abs(plyr.dy))>0.1 then
-  plyr.frames=plyr_frames
+  plyr.frames=plyr.strips[1]
   plyr.idle_t=time_t+30
  end
  if plyr.idle_t<time_t then
-		plyr.frames=idle_frames
+		plyr.frames=plyr.strips[2]
 		if (time_t%8)==0 then
 			plyr.frame+=1
 		end
