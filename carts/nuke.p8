@@ -227,7 +227,6 @@ _g.darken=function()
 		local l=lights[r][y]
 		local x0,x1,x2=l[1],l[2],l[3]
 		for x=0,x0 do
-			--poke(m+x,shade[shade[peek(m+x)]])
 			poke(m+x,0)
 			poke(m+63-x,0)
 		end
@@ -244,11 +243,9 @@ _g.darken=function()
 end
 -- levels
 local active_actors
-local lvl,lvl_i,cur_loop
-_g.intro=function()
-end
+local lvl_i,cur_loop,lvl=0,1
 local level_cw,level_ch=64,32
-local levels=json_parse('[{"n":"intro","shader":"intro","builtin":true,"bkg_col":1,"cx":88,"cy":0,"cw":11,"ch":13,"plyr_pos":[94,5],"spawn":[{"a":"notice_cls","x":93,"y":8},{"a":"warp_cls","x":93,"y":9}]},{"n":"desert","loot":[1,3],"blast_tile":69,"floors":[68,64,65,67,111],"walls":[66],"shadow":110,"bkg_col":1,"d":3,"w":[8,12],"h":[6,8],"paths":[1,3],"path":{"bends":[1,2],"w":[3,4],"len":[4,8]},"spawn":[[1,3,"bandit_cls"],[1,3,"worm_cls"],[0,1,"scorpion_cls"]]},{"n":"sewers","shader":"darken","floors":[86,87,87,88],"walls":[90,89,91],"shadow":94,"borders":[10,11,3],"bkg_col":3,"d":3,"w":[5,8],"h":[4,6],"paths":[3,4],"path":{"bends":[2,3],"w":[1,2],"len":[6,9]},"spawn":[[1,3,"slime_cls"],[0,1,"barrel_cls"]]},{"n":"snow plains","floors":[70,71,72],"walls":[74],"shadow":95,"blast_tile":75,"borders":[1,12,6],"bkg_col":6,"d":3,"w":[4,6],"h":[4,6],"paths":[2,4],"path":{"bends":[2,3],"w":[3,6],"len":[8,12]},"spawn":[[1,2,"dog_cls"],[0,2,"bear_cls"],[1,1,"turret_cls"]]},{"n":"palace","floors":[96,100],"walls":[97,98,99,108],"shadow":101,"borders":[7,0,5],"bkg_col":9,"d":4,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]},"spawn":[[2,4,"horror_cls"]]},{"n":"lab","floors":[102,105],"walls":[103,104,106],"shadow":107,"borders":[6,7,5],"bkg_col":5,"blast_tile":92,"shader":"darken","d":3,"w":[4,6],"h":[3,5],"paths":[4,4],"path":{"bends":[0,2],"w":[1,2],"len":[8,12]},"spawn":[[1,2,"cop_cls"],[1,2,"fireimp_cls"]]},{"n":"throne","builtin":true,"bkg_col":0,"borders":[7,0,5],"cx":103,"cy":0,"cw":13,"ch":31,"plyr_pos":[110,28],"spawn":[{"a":"throne_cls","x":112,"y":6},{"a":"ammo_cls","x":106,"y":27},{"a":"ammo_cls","x":107,"y":27},{"a":"ammo_cls","x":106,"y":28},{"a":"ammo_cls","x":107,"y":28},{"a":"health_cls","x":112,"y":27},{"a":"health_cls","x":113,"y":27},{"a":"health_cls","x":112,"y":28},{"a":"health_cls","x":113,"y":28}]}]')
+local levels=json_parse('[{"n":"desert","loot":[1,3],"blast_tile":69,"floors":[68,64,65,67,111],"walls":[66],"shadow":110,"bkg_col":1,"d":3,"w":[8,12],"h":[6,8],"paths":[1,3],"path":{"bends":[1,2],"w":[3,4],"len":[4,8]},"spawn":[[1,3,"bandit_cls"],[1,3,"worm_cls"],[0,1,"scorpion_cls"]]},{"n":"sewers","shader":"darken","floors":[86,87,87,88],"walls":[90,89,91],"shadow":94,"borders":[10,11,3],"bkg_col":3,"d":3,"w":[5,8],"h":[4,6],"paths":[3,4],"path":{"bends":[2,3],"w":[1,2],"len":[6,9]},"spawn":[[1,3,"slime_cls"],[0,1,"barrel_cls"]]},{"n":"snow plains","floors":[70,71,72],"walls":[74],"shadow":95,"blast_tile":75,"borders":[1,12,6],"bkg_col":6,"d":3,"w":[4,6],"h":[4,6],"paths":[2,4],"path":{"bends":[2,3],"w":[3,6],"len":[8,12]},"spawn":[[1,2,"dog_cls"],[0,2,"bear_cls"],[1,1,"turret_cls"]]},{"n":"palace","floors":[96,100],"walls":[97,98,99,108],"shadow":101,"borders":[7,0,5],"bkg_col":9,"d":4,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]},"spawn":[[2,4,"horror_cls"]]},{"n":"lab","floors":[102,105],"walls":[103,104,106],"shadow":107,"borders":[6,7,5],"bkg_col":5,"blast_tile":92,"shader":"darken","d":3,"w":[4,6],"h":[3,5],"paths":[4,4],"path":{"bends":[0,2],"w":[1,2],"len":[8,12]},"spawn":[[1,2,"cop_cls"],[1,2,"fireimp_cls"]]},{"n":"throne","builtin":true,"bkg_col":0,"borders":[7,0,5],"cx":103,"cy":0,"cw":13,"ch":31,"plyr_pos":[110,28],"spawn":[{"a":"throne_cls","x":112,"y":6},{"a":"ammo_cls","x":106,"y":27},{"a":"ammo_cls","x":107,"y":27},{"a":"ammo_cls","x":106,"y":28},{"a":"ammo_cls","x":107,"y":28},{"a":"health_cls","x":112,"y":27},{"a":"health_cls","x":113,"y":27},{"a":"health_cls","x":112,"y":28},{"a":"health_cls","x":113,"y":28}]}]')
 
 local blts={len=0}
 local parts={len=0}
@@ -284,19 +281,19 @@ function txt_options(c,s,b)
 	txt_shade=s or -1
 	txt_border=b or false
 end
-function txt_print(s,x,y,col)
+function txt_print(str,x,y,col)
 	if txt_center then
-		x-=flr((4*#s)/2+0.5)
+		x-=flr((4*#str)/2+0.5)
 	end
 	if txt_shade!=-1 then	
-		print(s,x+1,y,txt_shade)
+		print(str,x+1,y,txt_shade)
 		if txt_border then
-			print(s,x-1,y,txt_shade)
-			print(s,x,y-1,txt_shade)
-			print(s,x,y+1,txt_shade)
+			print(str,x-1,y,txt_shade)
+			print(str,x,y-1,txt_shade)
+			print(str,x,y+1,txt_shade)
 		end
 	end
-	print(s,x,y,col)
+	print(str,x,y,col)
 end
 -- helper
 function foreach_update(a)
@@ -366,6 +363,13 @@ function rspr(sx,sy,x,y,a)
   dx0+=ddx0
   dy0+=ddy0
  end
+end
+function bpset(x,y,c)
+	local d=bor(0x6000,x)+shl(y,7)
+	c=sget(min(c,7),8)
+	c=bor(c,shl(c,4))
+	poke(d,c)
+	poke(d+64,c)
 end
 function sqr_dist(x0,y0,x1,y1)
 	local dx,dy=x1-x0,y1-y0
@@ -574,7 +578,7 @@ function update_blt(self)
 					a.dy+=self.dy
 				end
 					
-				make_part(self.x,self.y,0.25,all_parts.hit,self.dx/2,self.dy/2)
+				make_part(self.x,self.y,0.25,all_parts.hit,self.dx/4,self.dy/4)
 				sfx(61)
 				return false
 			end
@@ -966,7 +970,7 @@ function plyr_die(self)
 	futures_add(function()
 		plyr_playing=false
 		local t=0
-		while btnp(4)==false do
+		while not btnp(4) do
 			t=min(t+1,90)
 			local j=48*smoothstep(t/90)
 			rectfill(0,0,127,j,0)
@@ -974,13 +978,12 @@ function plyr_die(self)
 			if t==90 then
 				txt_options(true,c==0 and 1 or 0,true)
 				txt_print("you are dead",64,32,6)
-				txt_print(cur_loop.."-"..lvl_i,64,96,7)
+				--txt_print(cur_loop.."-"..lvl_i,64,96,7)
 			end
+
 			yield()
 		end
-		lvl_i,cur_loop=1,1
-		plyr=make_plyr()
-		next_level()
+		lvl_i,cur_loop=0,1
 	end,after_draw)
 end
 
@@ -1368,39 +1371,19 @@ all_actors=json_parse('{"barrel_cls":{"side":"any_side","inertia":0.8,"spr":128,
 
 -- actor
 -- x,y in map tiles (not pixels)
+local actor_id=1
+local actor_cls=json_parse('{"dx":0,"dy":0,"acc":0.02,"frame":0,"inertia":0.6,"bounce":1,"hp":1,"contact_t":0,"path":[],"path_i":0,"move_t":0,"seek_t":0,"seek_dly":8,"hit_t":0,"can_fire":false,"fire_t":0,"fire_dly_t":0,"w":0.4,"h":0.4,"los_t":0,"los_dist":64,"angle":0,"facing":0,"side":"bad_side"}')
 function make_actor(x,y,src)
-	local a={
-		id=flr(rnd(256)),
+	actor_id+=1
+	actor_id%=512
+	local a=clone(actor_cls,{
+		id=actor_id,
 		x=x,
 		y=y,
-		dx=0,
-		dy=0,
-		acc=0.02,
-		frame=0,
-		inertia=0.6,
-		bounce=1,
-		hp=1,
-		contact_t=0,
-		path={},
-		path_i=0,
-		move_t=0,
-		seek_t=0,
-		seek_dly=8,
-		hit_t=0,
-		can_fire=false,
-		fire_t=0,
-		fire_dly_t=0,
-		w=0.4,
-		h=0.4,
-		los_t=0,
-		los_dist=64,
-		angle=0,
-		facing=0, -- trig order e/n/w/s
-		side=bad_side,
 		draw=draw_actor,
 		update=npc_update,
 		die=die_actor,
-		hit=hit_actor}
+		hit=hit_actor})
 	if src then
 		for k,v in pairs(src) do
 			a[k]=v
@@ -1582,8 +1565,27 @@ function next_level()
 end
 
 -- game loop
+ga=0
+gia=.01
+gr=.01
+function update_game_start()
+	ga+=gia
+	if btnp(4) or btnp(5) then
+		lvl_i,cur_loop=1,1
+		plyr=make_plyr()
+		next_level()
+		futures_add(function()
+				warp_draw_async(96,48)
+			end,after_draw)
+	end
+end
+
 function _update60()
 	time_t+=1
+	if lvl_i==0 then
+		update_game_start()
+		return
+	end
 	futures_update(before_update)
 	
 	pause_t-=1
@@ -1601,8 +1603,34 @@ function _update60()
 	cam_update()
 end
 
+function draw_game_start()
+	local x,y,y2,a,r,u,v
+	for y=0,31 do
+		y2=y*y
+		for x=0,31 do
+			a=4*atan2(y,x)
+			r=sqrt(x*x+y2)
+			u=gr*r+ga
+			v=flr(4+4*cos(u+a))
+			bpset(31+x,31-y,v)
+			v=flr(4+4*cos(u+2-a))
+			bpset(31-x,31-y,v)
+			v=flr(4+4*cos(u+a+2))
+			bpset(31-x,31+y,v)
+			v=flr(4+4*cos(u+4-a))
+			bpset(31+x,31+y,v)
+		end
+	end
+	local x,y=cos(time_t/64),sin(time_t/64)
+ rspr(8,0,64+16*x,64+16*y,time_t/16)
+end
+
 function _draw()
- cls(lvl.bkg_col)
+	if lvl_i==0 then
+		draw_game_start()
+		return
+	end
+	cls(lvl.bkg_col)
 	local cx,cy=lvl.cx or 0,lvl.cy or 0
 	local sx,sy=64-cam_x+8*cx,64-cam_y+8*cy-4
 	palt()
@@ -1623,7 +1651,7 @@ function _draw()
 	
 	futures_update(after_draw)
 
-	if lvl_i>1 then
+	if plyr_playing then
 		rectfill(1,1,34,9,0)
 		rect(2,2,33,8,6)
 		local hp=max(0,flr(plyr.hp))
@@ -1642,9 +1670,6 @@ end
 
 function _init()
 	cls(0)
-	lvl_i,cur_loop=1,1
-	plyr=make_plyr()
-	next_level()
 end
 
 __gfx__
@@ -1688,14 +1713,14 @@ e0000000303333033303303333300333eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee3000000330000003
 44555444444444444040404044494444444444444450949477777777775555577777677777657777c5c5c1c775151557ddddddddddd12e1d2121de21dd0dd0dd
 44444444444444440404040444454444444444444440040477777777777755577777777777577777515c7ccc77515717dddddddddddd11dd12121d12d2dd02d0
 44444444444444444040404044444444444444440445544477777777777777777777777777777777c115c7c577777777dddddddddddddddd2121212100dd2ddd
-ee2222eeeeeeeeee2eeeeee2eee00eeeeee00eee66666666555555555555555555666655375555753131313135353535dddddddd000000001111111111111111
-e2eeee2eee2222eeeeeeeeeee00bb0eee00bb00e66666566555555555555554556000065567777631313131353777753d6d00dd0000000005151515171717171
-2ee22ee2e2eeee2eee2222ee0b05300ee07bb70e6666666655555555555555556016610635666655313131313700007510d106d1000000001515151517171717
-2e2ee2e2e2e22e2eee2ee2ee030350b0e037730e665666665555555555555555606556065355555313131313560000630ddd10dd000000005555555577777777
-2e2ee2e2e2e22e2eee2ee2eee0353530e033330e66666666555555555445555560611606375555753131313136222065d106d1dd000000005555555577777777
-2ee22ee2e2eeee2eee2222eeee03500ee033330e66666666555555555445555560166106567777631313131355eee653dd106d6d000000005555555577777777
-e2eeee2eee2222eeeeeeeeeeee0530eee003300e66666566555555555555545516000061356666553131313135225535ddd00d0d000000005555555577777777
-ee2222eeeeeeeeee2eeeeee2ee0000eeeee00eee666666665555555555555555516666155355555313131313532253530dd11ddd000000005555555577777777
+ee2222eeeeeeeeee2eeeeee2eee00eeeeee00eee66666666555555555555555555dddd55375555753131313135353535dddddddd000000001111111111111111
+e2eeee2eee2222eeeeeeeeeee00bb0eee00bb00e6666656655555555555555455d5555d5567777631313131353777753d6d00dd0000000005151515171717171
+2ee22ee2e2eeee2eee2222ee0b05300ee07bb70e666666665555555555555555d55dd55d35666655313131313700007510d106d1000000001515151517171717
+2e2ee2e2e2e22e2eee2ee2ee030350b0e037730e665666665555555555555555d5d51d5d5355555313131313560000630ddd10dd000000005555555577777777
+2e2ee2e2e2e22e2eee2ee2eee0353530e033330e666666665555555554455555d5d11d5d375555753131313136222065d106d1dd000000005555555577777777
+2ee22ee2e2eeee2eee2222eeee03500ee033330e666666665555555554455555d55dd55d567777631313131355eee653dd106d6d000000005555555577777777
+e2eeee2eee2222eeeeeeeeeeee0530eee003300e6666656655555555555554555d5555d5356666553131313135225535ddd00d0d000000005555555577777777
+ee2222eeeeeeeeee2eeeeee2ee0000eeeee00eee66666666555555555555555555dddd555355555313131313532253530dd11ddd000000005555555577777777
 666166669995999999000009906000606660666600000000dddd11116666666667676666ddddd11d6dddddd65555555599959999999599995555555544444444
 661516664495444440445440402222206605066611010111dddd11116555555665656666dddd11116dd77dd6111100004aaaa774449544445555555544444444
 615551665555555550095900508000806666666610111011dddd11116000000665656666dddd11116d7667d6111100005acccc75555555555454545447444744
