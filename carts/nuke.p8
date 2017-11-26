@@ -275,6 +275,7 @@ function futures_add(fn,futures)
 	return cor
 end
 -- print text helper
+local txt_offsets=json_parse("[[-1,0],[0,-1],[0,1],[-1,-1],[1,1],[-1,1],[1,-1]]")
 local txt_center,txt_shade,txt_border=false,-1,false
 function txt_options(c,s,b)
 	txt_center=c or false
@@ -288,9 +289,9 @@ function txt_print(str,x,y,col)
 	if txt_shade!=-1 then	
 		print(str,x+1,y,txt_shade)
 		if txt_border then
-			print(str,x-1,y,txt_shade)
-			print(str,x,y-1,txt_shade)
-			print(str,x,y+1,txt_shade)
+			for _,v in pairs(txt_offsets) do
+				print(str,x+v[1],y+v[2],txt_shade)
+			end
 		end
 	end
 	print(str,x,y,col)
@@ -364,9 +365,10 @@ function rspr(sx,sy,x,y,a)
   dy0+=ddy0
  end
 end
-function bpset(x,y,c)
+function bpset(x,y,c,r)
 	local d=bor(0x6000,x)+shl(y,7)
-	c=sget(min(c,7),8)
+	r=7-flr(7*r/21.213)
+	c=sget(24+c%8,16+flr(r))
 	c=bor(c,shl(c,4))
 	poke(d,c)
 	poke(d+64,c)
@@ -976,9 +978,9 @@ function plyr_die(self)
 			rectfill(0,0,127,j,0)
 			rectfill(0,127,127,128-j,0)
 			if t==90 then
-				txt_options(true,c==0 and 1 or 0,true)
-				txt_print("you are dead",64,32,6)
-				--txt_print(cur_loop.."-"..lvl_i,64,96,7)
+				txt_options(true,2,true)
+				txt_print("you are dead",64,32,14)
+				txt_print(cur_loop.."-"..lvl_i,64,96,14)
 			end
 
 			yield()
@@ -1150,12 +1152,14 @@ end
 _g.ammo_pickup=function(self)
 	local dx,dy=plyr.x-self.x,plyr.y-self.y
 	if abs(dx)<0.5 and abs(dy)<0.5 then
-		plyr.ammo=min(plyr.wp.ammo,plyr.ammo+10)
+		local amax=plyr.wp.ammo
+		local inc=flr(amax/2)
+		plyr.ammo=min(amax,plyr.ammo+inc)
 		make_part(self.x,self.y,0,{
 			dz=0.1,
 			inertia=0.91,
 			dly=72,
-			txt=(plyr.wp.ammo==plyr.ammo) and "max. ammo" or "ammo+10",
+			txt=(amax==plyr.ammo) and "max. ammo" or "ammo+"..inc,
 			draw=_g.draw_txt_part})
 		del(actors,self)
 	end
@@ -1567,13 +1571,14 @@ end
 -- game loop
 ga=0
 gia=.01
-gr=.01
+gr=.03
 function update_game_start()
 	ga+=gia
 	if btnp(4) or btnp(5) then
-		lvl_i,cur_loop=1,1
+		lvl_i,cur_loop=6,1
 		plyr=make_plyr()
 		next_level()
+		poke(0x5f2c,0)
 		futures_add(function()
 				warp_draw_async(96,48)
 			end,after_draw)
@@ -1604,29 +1609,49 @@ function _update60()
 end
 
 function draw_game_start()
+	poke(0x5f2c,3)
 	local x,y,y2,a,r,u,v
-	for y=0,31 do
+	for y=0,15 do
 		y2=y*y
-		for x=0,31 do
+		for x=0,15 do
 			a=4*atan2(y,x)
 			r=sqrt(x*x+y2)
 			u=gr*r+ga
 			v=flr(4+4*cos(u+a))
-			bpset(31+x,31-y,v)
+			bpset(15+x,15-y,v,r)
 			v=flr(4+4*cos(u+2-a))
-			bpset(31-x,31-y,v)
+			bpset(15-x,15-y,v,r)
 			v=flr(4+4*cos(u+a+2))
-			bpset(31-x,31+y,v)
+			bpset(15-x,15+y,v,r)
 			v=flr(4+4*cos(u+4-a))
-			bpset(31+x,31+y,v)
+			bpset(15+x,15+y,v,r)
 		end
 	end
-	local x,y=cos(time_t/64),sin(time_t/64)
- rspr(8,0,64+16*x,64+16*y,time_t/16)
+	
+	local x,y=cos(time_t/64),sin(-time_t/64)
+ rspr(8,8,32+16*x,32+16*y,atan2(x,y))
+
+	palt(0,false)
+	palt(14,true)
+	y=2
+	rectfill(24,y,31,y+16,0)
+	txt_options(true,0,true)
+	txt_print("nu  lear",32,y+2,7)
+	spr(144,24,y+0)
+	txt_options(true,0,true)
+	txt_print("  lone",36,y+11,7)
+	spr(144,24,y+9)
+	palt(0,true)
+	palt(14,false)
+
+	if time_t%32>16 then
+		txt_options(true,3)
+		txt_print("press start",32,54,11)
+	end
 end
 
 function _draw()
-	if lvl_i==0 then
+	if lvl_i==0 then		
 		draw_game_start()
 		return
 	end
@@ -1645,7 +1670,7 @@ function _draw()
 		pal(9,lvl.borders[2])
 		pal(1,lvl.borders[3])
 	end
- map(cx,cy,sx,sy,level_cw,level_ch,2)
+	map(cx,cy,sx,sy,level_cw,level_ch,2)
 	pal()
 	if(lvl.shader) lvl.shader()
 	
@@ -1665,7 +1690,8 @@ function _draw()
 		txt_print(plyr.ammo,14,12,7)
 	end
 	
-	txt_print(stat(1),2,120,7)
+	print(stat(1),2,120,7)
+	print(stat(0),96,120,7)
 end
 
 function _init()
@@ -1689,14 +1715,14 @@ eeeeeeee044455500444455004444450ee000eeeee707eeee0113110e70000070335505070000707
 eeeeeeee0333bab003333ba0033333b0eee0eeeeeee7eeeee0000000e77777770550000070077777eee33eeeeee33eee3777777303bbbbb003bbbbb0e03bbb0e
 eeeeeeee05000050e050050ee005500eeee0eeeeeee7eeeeeeeeeeeeeeeeeeee0660eeee7007eeeeeeeeeeeeeeeeeeeee377773e03bbbbb003bbbbb003bbbbb0
 eeeeeeeee0eeee0eee0ee0eeeee00eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000eeee7777eeeeeeeeeeeeeeeeeeeeee3333ee000000000000000000000000
-ee00000eee00000eeeeeeeeeee00000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee7777eeeeeeeeeee000000ee000000ee000000e
-e0bbbbb0e0999aa0ee00000ee0999aa0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee733337eee00eeee022898900228898002288890
-e077777009944440e0999aa009941410ee000000ee777777eeee0e0eeeee7e7eeeeeeeeeeeeeeeeeeeeaaeee73333337e0e00eee0228a8a002288a80022888a0
-e0373730094414100994141009444440e0496660e7000007ee001010ee770707e0000000e7777777eea77aee73333337ee0670ee022888800228888002288880
-e0353530044444400944444004445550e0445550e7000007e055c1c0e70000070046666077000007eea77aee73333337ee0560ee022767600228767002288760
-e033333004445550044455500333bab0e0400000e7077777e0501010e70707070410000070077777eeeaaeee73333337eee00eee022686800228686002288680
-e05333500333bab00333bab005000050ee0eeeeeee7eeeeeee0e0e0eee7e7e7ee00eeeeee77eeeeeeeeeeeeee733337eeeeeeeee02000020e020010ee002100e
-ee00000ee000000ee000000ee0eeee0eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee7777eeeeeeeeee00eeee00ee0ee0eeeee00eee
+ee00000eee00000eeeeeeeeee222222eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee7777eeeeeeeeeee000000ee000000ee000000e
+e0bbbbb0e0999aa0ee00000ee222222eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee733337eee00eeee022898900228898002288890
+e077777009944440e0999aa0e222222eee000000ee777777eeee0e0eeeee7e7eeeeeeeeeeeeeeeeeeeeaaeee73333337e0e00eee0228a8a002288a80022888a0
+e03737300944141009941410e222222ee0496660e7000007ee001010ee770707e0000000e7777777eea77aee73333337ee0670ee022888800228888002288880
+e03535300444444009444440e222222ee0445550e7000007e055c1c0e70000070046666077000007eea77aee73333337ee0560ee022767600228767002288760
+e03333300444555004445550e222222ee0400000e7077777e0501010e70707070410000070077777eeeaaeee73333337eee00eee022686800228686002288680
+e05333500333bab00333bab0ee2222eeee0eeeeeee7eeeeeee0e0e0eee7e7e7ee00eeeeee77eeeeeeeeeeeeee733337eeeeeeeee02000020e020010ee002100e
+ee00000ee000000ee000000eeee22eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee7777eeeeeeeeee00eeee00ee0ee0eeeee00eee
 ee00000e330000033300000333000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee3300000333333333eeeeeeee0082018fe00ee00ee0e0eeeee0e0eeeeeeeeeeee
 e066666030222ee0302222e030222220eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee30222ee033000003ee88eeee10941d9a04900490090900ee0909000eeeeeeeee
 e0777770022f1f100222f1f002222f10ee00000eee77777eee000000ee777777022ffff030222ee0e000000e21a92ea7044848400dd8480e0dd84540eeeeeeee
