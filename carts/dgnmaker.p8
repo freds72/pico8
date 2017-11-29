@@ -8,7 +8,7 @@ function lerp(a,b,t)
 	return a*(1-t)+b*t
 end
 function rndlerp(a,b)
-	return lerp(a,b,rnd())
+	return lerp(b,a,1-rnd())
 end
 function rndrng(ab)
 	return flr(rndlerp(ab[1],ab[2]))
@@ -25,14 +25,14 @@ end
 function make_rooms(rules)
 	mem={}
 	rooms={}
-	paths={}
+	corridors={}
 	for i=0,rules.cw-1 do
 		for j=0,rules.ch-1 do
 			mem[i+128*j]=1
 		end
 	end
 	local cw,ch=rndrng(rules.w),rndrng(rules.h)
-	local cx,cy=rules.cw/2-cw,rules.ch/2-ch
+	local cx,cy=flr(rules.cw/2)-cw,flr(rules.ch/2)-ch
 	make_room(
 			cx,cy,cw,ch,
 			rules.d,
@@ -44,35 +44,33 @@ end
 
 function make_room(x,y,w,h,ttl,rules)
 	if(ttl<0) return
-	local r={
-		x=x,y=y,
-		w=w,h=h}
-	r=dig(r,rules,7)
+	local r=dig({x=x,y=y,w=w,h=h},rules,7)
 	if r then
 		add(rooms,r)
-		local n=ttl*rndrng(rules.paths)
+		if(ttl<1) return
+		local n=rndrng(rules.paths)
 		for i=1,n do
 			local a=flr(rnd(4))/4
 			local v=rotate(a,{1,0})
 			local bends=rndrng(rules.path.bends)
 			-- starting point
-			local hw,hh=r.w/2,r.h/2
+			local hw,hh=flr(r.w/2),flr(r.h/2)
 			local cx,cy=r.x+hw,r.y+hh
 			x,y=cx+v[1]*hw,cy+v[2]*hh
 			make_path(x,y,a,
 				bends,ttl-1,rules)
-			mem[flr(cx)+128*flr(cy)]=8
 		end
 	end
 end
 function make_path(x,y,a,n,ttl,rules)
 	-- end of corridor?
 	if n<=0 then
+		local w,h=rndrng(rules.w),rndrng(rules.h)
+		local v=rotate(a,{w,h})
 		make_room(
-			x,y,
-			rndrng(rules.w),
-			rndrng(rules.h),
-			ttl-1,
+			min(x,x+v[1]),min(y,y+v[2]),
+			w,h,
+			ttl,
 			rules)
 		return
 	end
@@ -89,7 +87,7 @@ function make_path(x,y,a,n,ttl,rules)
 	local c=dig(c,rules,14)
 	if c then
 		add(corridors,c)
-		a+=(rnd(1)>0.5 and 0.25 or -0.25)
+		a+=(rnd()>0.5 and 0.25 or -0.25)
 		make_path(
 			c.x+c.w,c.y+c.h,
 			a,n-1,ttl,rules)
@@ -102,7 +100,7 @@ function dig(r,rules,c)
 	x0,x1=flr(min(x0,x1)),flr(max(x0,x1))
 	y0,y1=flr(min(y0,y1)),flr(max(y0,y1))
 	cw,ch=x1-x0,y1-y0
-	if cw>0 and ch>0 then
+	if cw>1 and ch>1 then
 		for i=x0,x1 do
 			for j=y0,y1 do
 				mem[i+128*j]=c
@@ -115,7 +113,7 @@ end
 
 local level={
 	d=3,
-	cw=32,
+	cw=64,
 	ch=31,
 	w={8,12},
 	h={6,8},
@@ -153,6 +151,7 @@ function print_value(x,y,s,path,idx)
 end
 
 local dirty=true
+local show=1
 function _update60()
 	local inc=0
 	if(btnp(0)) inc=-1 dirty=true
@@ -168,17 +167,45 @@ function _update60()
 		make_rooms(level)
 		dirty=false
 	end
+	if btnp(5) then
+		show+=1
+		if show>3 then
+			show=1
+		end
+	end
 end
 
 function _draw()
-	for i=0,127 do
-		for j=0,127 do
-			pset(i,j,mem[i+128*j])
+	if show==1 then
+		for i=0,127 do
+			for j=0,127 do
+				pset(i,j,mem[i+128*j])
+			end
+		end
+	elseif show==2 then
+		cls(0)
+		for r in all(rooms) do
+			rectfill(r.x,r.y,r.x+r.w,r.y+r.h,7)
+		end
+		for r in all(corridors) do
+			rect(r.x,r.y,r.x+r.w,r.y+r.h,8)
+		end
+	elseif show==3 then
+		cls(0)
+		for r in all(rooms) do
+			rect(r.x,r.y,r.x+r.w,r.y+r.h,7)
+		end
+		for r in all(corridors) do
+			rectfill(r.x,r.y,r.x+r.w,r.y+r.h,8)
 		end
 	end
 	--local k=get_value(level,"",param)
 	cur_idx=1
 	print_value(64,2,level,"",param)
+
+	print("rooms:"..#rooms,2,105,7)
+	print("corridors:"..#corridors,2,112,7)	
+	print("mode:"..show,2,120,7)
 end
 
 __gfx__

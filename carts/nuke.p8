@@ -1550,26 +1550,31 @@ end
 ga=0
 gia=.01
 gr=.03
+starting=false
 function update_game_start()
 	ga+=gia
-	if btnp(4) or btnp(5) then
-		lvl_i,cur_loop=2,1
-		plyr=make_plyr()
-		next_level()
-		poke(0x5f2c,0)
+	if starting==false and (btnp(4) or btnp(5)) then
+		starting=true
 		futures_add(function()
-				warp_draw_async(96,48)
-			end,after_draw)
+			warp_draw_async(16,96)
+			lvl_i,cur_loop=6,1
+			plyr=make_plyr()
+			next_level()
+			warp_draw_async(96,16)
+			starting=false
+		end,after_draw)		
 	end
 end
 
 function _update60()
 	time_t+=1
+
+	futures_update(before_update)
+
 	if lvl_i==0 then
 		update_game_start()
 		return
 	end
-	futures_update(before_update)
 	
 	pause_t-=1
 	if(pause_t>0) return
@@ -1587,27 +1592,19 @@ function _update60()
 end
 
 function draw_game_start()
-	poke(0x5f2c,3)
-	local x,y,y2,a,r,u,v
-	for y=0,15 do
-		y2=y*y
-		for x=0,15 do
-			a=4*atan2(y,x)
-			r=sqrt(x*x+y2)
-			u=gr*r+ga
-			v=flr(4+4*cos(u+a))
-			bpset(15+x,15-y,v,r)
-			v=flr(4+4*cos(u+2-a))
-			bpset(15-x,15-y,v,r)
-			v=flr(4+4*cos(u+a+2))
-			bpset(15-x,15+y,v,r)
-			v=flr(4+4*cos(u+4-a))
-			bpset(15+x,15+y,v,r)
-		end
+	--poke(0x5f2c,3)
+	cls(2)
+	local a,r=time_t/32,0
+	local x,y
+	for i=1,196 do
+		x,y=r*cos(a),r*sin(a)
+		circfill(64+x,64-y,max(2,r/8),14)
+		a+=0.02
+		r+=0.5
 	end
 	
-	local x,y=cos(time_t/64),sin(-time_t/64)
- rspr(8,8,32+16*x,32+16*y,atan2(x,y))
+	x,y=cos(time_t/64),sin(-time_t/64)
+ rspr(8,8,64+32*x,64+32*y,atan2(x,y))
 
 	palt(0,false)
 	palt(14,true)
@@ -1631,6 +1628,7 @@ end
 function _draw()
 	if lvl_i==0 then		
 		draw_game_start()
+		futures_update(after_draw)
 		return
 	end
 	cls(lvl.bkg_col)
