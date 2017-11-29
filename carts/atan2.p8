@@ -1,24 +1,40 @@
 pico-8 cartridge // http://www.pico-8.com
 version 8
 __lua__
+local lights={}
 local x,y=64,64
-function _update60()
-	if(btn(0)) x-=1
-	if(btn(1)) x+=1
-	if(btn(2)) y-=1
-	if(btn(3)) y+=1
+for r=42,44 do
+	local light={}
+	for y=0,127 do
+		local dy=64-y
+		if dy*dy<r*r then
+			local x1,x2,x3=flr(sqrt(r*r-dy*dy)/2),0,0
+			local r2=0.8*r
+			if dy*dy<r2*r2 then
+				x2=flr(sqrt(r2*r2-dy*dy)/2)
+			end
+			r2*=0.8
+			if dy*dy<r2*r2 then
+				x3=flr(sqrt(r2*r2-dy*dy)/2)
+			end
+			add(light,{31-x1,31-x2,31-x3})
+		else
+			add(light,{31,31,31})
+		end
+	end
+	add(lights,light)
 end
-function _draw()
-	cls()
-	local dx,dy=64-x,64-y
-	local ang=(atan2(dx,dy)-0.5)%1
-	
-	line(64,64,x,y,7)
-	print(ang,x,y,8)
-	
-	local cx,sy=cos(ang),sin(ang)
-	circ(64+16*cx,64+16*sy,4,5)
+
+for i=1,#lights do
+	local s="["
+	local l=lights[i]
+	for j=1,#l do
+		s=s.."["..l[j][1]..","..l[j][2]..","..l[j][3].."],"
+	end
+	s=s.."],"
+	printh(s)
 end
+
 __gfx__
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000

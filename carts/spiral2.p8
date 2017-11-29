@@ -1,198 +1,87 @@
 pico-8 cartridge // http://www.pico-8.com
 version 8
 __lua__
-local rooms={}
-local corridors={}
-local mem={}
-function lerp(a,b,t)
-	return a*(1-t)+b*t
-end
-function rndlerp(a,b)
-	return lerp(a,b,rnd())
-end
-function rndrng(ab)
-	return flr(rndlerp(ab[1],ab[2]))
-end
-function rndarray(a)
-	return a[flr(rnd(#a))+1]
-end
-function rotate(a,p)
-	local c,s=cos(a),-sin(a)
-	return {
-		p[1]*c-p[2]*s,
-		p[1]*s+p[2]*c}
-end
-function make_rooms(rules)
-	mem={}
-	rooms={}
-	corridors={}
-	local cw,ch=rndrng(rules.w),rndrng(rules.h)
-	local cx,cy=flr(rules.cw/2)-cw,flr(rules.ch/2)-ch
+local r={}
 
-	--[[	
-	local a=rules.d/4
-	diga({x=cx,y=cy,w=cw,h=ch},rules,5,a)
-	mem[cx+128*cy]=8
-	]]
-	
-	make_room(
-			cx,cy,0,
-			rules.d,
-			rules,{})
-end
-
-function make_room(x,y,a,ttl,rules,paths)
-	if(ttl<0) return
-	add(rooms,{x0=x,y0=y,t="room",a=a,paths=paths})
- --commit path
-	for p in all(paths) do
-		add(corridors,p)
-	end
-	local n=rndrng(rules.paths)
-	local ra=flr(rnd(9))
-	local angles={-0.25,0,0.25}
-	for i=1,n do
-		local a1=a+angles[(ra+i)%#angles+1]
-		-- starting point
-		make_path(x,y,a1,ttl-1,rules,{})
+function _init()
+	for i=1,8 do
+		add(r,{key=i*12,c=sget(8+i%4,0)})
 	end
 end
 
-function make_path(x,y,a,ttl,rules,paths)
-	local len=rndrng(rules.path.len)
-	-- stop invalid paths
-	local c=dig(x,y,len,a,"corridor",rules)
-	if c then
-		add(paths,c)
-		make_room(
-			c.sx,c.sy,a,
-			ttl,rules,paths)
-	end
-end
-function dig(x,y,len,a,t,rules)
-	local u=rotate(a,{len,0})
-	local cw,ch=rules.cw-1,rules.ch-1
-	local x0,y0=mid(x,1,cw),mid(y,1,ch)
-	local x1,y1=mid(x+u[1],1,cw),mid(y+u[2],1,ch)
-	local sx,sy=x1,y1
-	x0,x1=flr(min(x0,x1)),flr(max(x0,x1))
-	y0,y1=flr(min(y0,y1)),flr(max(y0,y1))
+function sort(t)
+	local n=#t
+	if (n<2) return
+ local i,j,temp
+ local lower = flr(n/2)+1
+ local upper = n
+ while 1 do
+  if lower>1 then
+   lower-=1
+   temp=t[lower]
+  else
+   temp=t[upper]
+   t[upper]=t[1]
+   upper-=1
+   if upper==1 then
+    t[1]=temp
+    return
+   end
+  end
 
-	local dx,dy=x1-x0,y1-y0
-	if dx*dx+dy*dy>0 then
-		return {x0=x0,y0=y0,x1=x1,y1=y1,a=a,t=t,sx=sx,sy=sy}
-	end
-	return nil
-end
-
-local level={
-	d=3,
-	cw=64,
-	ch=31,
-	w={8,12},
-	h={6,8},
-	paths={1,3},
-	path={
-		w={3,4},
-		len={8,10}}
-}
-local param=1
-local cur_idx=1
-function update_value(s,idx,inc)
-	for k,v in pairs(s) do
-		if type(v)=="table" then
-			update_value(v,idx,inc)
-		else
-			if idx==cur_idx then
-				s[k]=max(0,v+inc)
-			end
-			cur_idx+=1
-		end
-	end
-end
-function print_value(x,y,s,path,idx)
-	for k,v in pairs(s) do
-		if type(v)=="table" then
-			y=print_value(x,y,v,path.."."..k,idx)
-		else
-			print(path.."."..k..":"..v,x,y,idx==cur_idx and 10 or 7)	
-			cur_idx+=1
-			y+=8 
-		end
-	end
-	return y
+  i=lower
+  j=lower*2
+  while j<=upper do
+   if j<upper and t[j].key>t[j+1].key then
+    j += 1
+   end
+   if temp.key>t[j].key then
+    t[i] = t[j]
+    i = j
+    j += i
+   else
+    j = upper + 1
+   end
+  end
+  t[i] = temp
+ end
 end
 
-local dirty=true
-local mode=1
 function _update60()
-	local inc=0
-	
-	if(btnp(0)) inc=-1 dirty=true
-	if(btnp(1)) inc=1 dirty=true
-	if(btnp(2)) param-=1
-	if(btnp(3)) param+=1
-	param=max(1,param)
-	 	
-	if btnp(5) then
-		mode+=1
-		if mode>2 then
-			mode=1
-		end
+	for i=1,#r do
+		local ri=r[i]
+		ri.key+=1
+		ri.key%=96
+		ri.r2=ri.key*ri.key
 	end
-	cur_idx=1
-	update_value(level,param,inc)
-	
-	if dirty or btnp(4) then
-		make_rooms(level)
-		dirty=false
-	end
+	sort(r)
 end
 
 function _draw()
-	cls(1)
-	if mode==1 then
-		for r in all(rooms) do
-			if bxor(r.x0,r.y0)>4 then
-				rectfill(r.x0-2,r.y0-2,r.x0+2,r.y0+2,7)
-			end
-			--local s=2+flr(4*(r.a%1))
-			--spr(s,r.x,r.y)
-		end
-		local y=0
-		--[[
-		for r in all(corridors) do
-			line(r.x0,r.y0+y,r.x1,r.y1+y,8)
-			local s=2+flr(4*(r.a%1))
-			--spr(s,r.x0,r.y0+y)
-			--y+=8
-		end
-		]]
-	else
-		local c,y=1,0
-		for room in all(rooms) do
-			circfill(room.x0,room.y0+y,2,c)
-			for r in all(room.paths) do
-				line(r.x0,r.y0+y,r.x1,r.y1+y,c)
-			end
-			c+=1
-			y+=24
-		end
+	cls(r[#r-1].c)
+	for j=0,128 do
+		local y=64-j
+			local x0=0
+		 for i=1,#r do
+		 	local c=r[i].c
+				local x=min(sqrt(max(0,r[i].r2-y*y,0)),64)
+				line(x0,j,64-x,j,c)
+				line(64+x,j,128-x0,j,c)
+		 	x0=64-x
+		 end
 	end
-	--local k=get_value(level,"",param)
-	cur_idx=1
-	print_value(64,2,level,"",param)
-end
 
+	print(stat(1),2,120,7)
+end
 __gfx__
-00000000000000000000700000777700000700000007700000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000670000666600007600000076670000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00700700000000007777667000666600076677770766667000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00077000000110006666666700666600766666667666666700000000000000000000000000000000000000000000000000000000000000000000000000000000
-00077000000ee0006666666677666677666666660066660000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00700700000770006666666006666660066666660066660000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000660000666600006600000066660000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000600000066000000600000066660000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000000007cd100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00700700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00077000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00077000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00700700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
