@@ -127,9 +127,6 @@ _g.update_static_part=function(self)
 	zbuf_write(self)
 	return true
 end
-_g.draw_circ_part=function(self,x,y)
-	circfill(x,y,8*self.r,self.c)
-end
 _g.draw_spr_part=function(self,x,y)
 	local sw=self.sw or 1
 	palt(0,false)
@@ -144,7 +141,7 @@ _g.draw_txt_part=function(self,x,y)
 	print(self.txt,x-l+1,y-2,0)
 	print(self.txt,x-l,y-2,7)
 end
-local all_parts=json_parse('{"flash":{"dly":4,"r":0.5,"c":7,"dr":-0.1,"update":"update_static_part","draw":"draw_circ_part"},"smoke":{"dly":18,"dr":-0.01,"rnd":{"r":[0.3,0.6],"c":[5,7]},"draw":"draw_circ_part"},"default_splat":{"zorder":1,"spr":129,"draw":"draw_spr_part","rnd":{"dly":[900,1000]}},"turret_splat":{"zorder":1,"spr":165,"sw":2,"sh":2,"draw":"draw_spr_part","rnd":{"dly":[900,1000]}},"goo_splat":{"zorder":1,"spr":130,"draw":"draw_spr_part","rnd":{"dly":[900,1000]}},"fart":{"dy":-0.05,"rnd":{"r":[0.05,0.2],"dly":[24,32],"c":[11,3,true]},"draw":"draw_circ_part"},"laser_spark":{"zorder":3,"dx":0,"dy":0.04,"c":7,"rnd":{"r":[0.1,0.2],"dly":[24,32]},"draw":"draw_circ_part"},"hit":{"dr":-0.02,"rnd":{"r":[0.3,0.4],"dly":[8,12],"c":[9,10,true]},"draw":"draw_circ_part"},"blast_smoke":{"inertia":0.95,"dr":-0.03,"rnd":{"r":[0.5,0.8],"dly":[15,30]},"c":1,"draw":"draw_circ_part"},"slash":{"sx":16,"sy":72,"draw":"draw_rspr_part","rnd":{"dly":[24,32]}}}')
+local all_parts=json_parse('{"flash":{"dly":4,"r":0.5,"c":7,"dr":-0.1,"update":"update_static_part"},"smoke":{"dly":18,"dr":-0.01,"rnd":{"r":[0.3,0.6],"c":[5,7]}},"blood_splat":{"zorder":1,"spr":129,"draw":"draw_spr_part","rnd":{"dly":[900,1000]}},"turret_splat":{"zorder":1,"spr":165,"sw":2,"sh":2,"draw":"draw_spr_part","rnd":{"dly":[900,1000]}},"goo_splat":{"zorder":1,"spr":130,"draw":"draw_spr_part","rnd":{"dly":[900,1000]}},"fart":{"dy":-0.05,"rnd":{"r":[0.05,0.2],"dly":[24,32],"c":[11,3,true]}},"laser_spark":{"zorder":3,"dx":0,"dy":0.04,"c":7,"rnd":{"r":[0.1,0.2],"dly":[24,32]}},"hit":{"dr":-0.02,"rnd":{"r":[0.3,0.4],"dly":[8,12],"c":[9,10,true]}},"blast_smoke":{"inertia":0.95,"dr":-0.03,"rnd":{"r":[0.5,0.8],"dly":[15,30]},"c":1},"slash":{"sx":16,"sy":72,"draw":"draw_rspr_part","rnd":{"dly":[24,32]}},"green_part":{"c":3,"rnd":{"r":[0.3,0.5],"dr":[-0.01,-0.02],"dz":[0.01,0.03],"dly":[24,32]}},"candle":{"w":0.1,"h":0.1,"inertia":0.9,"rnd":{"c":[8,9,10],"r":[0.1,0.2],"dr":[-0.01,-0.02],"dz":[0.04,0.06],"dly":[12,24]}}}')
 
 -- weapons catalog
 local all_loot={}
@@ -346,14 +343,6 @@ function rspr(sx,sy,x,y,a)
   dy0+=ddy0
  end
 end
-function bpset(x,y,c,r)
-	local d=bor(0x6000,x)+shl(y,7)
-	r=7-flr(7*r/21.213)
-	c=sget(24+c%8,16+flr(r))
-	c=bor(c,shl(c,4))
-	poke(d,c)
-	poke(d+64,c)
-end
 function sqr_dist(x0,y0,x1,y1)
 	local dx,dy=x1-x0,y1-y0
 	if abs(dx)>128 or abs(dy)>128 then
@@ -512,6 +501,9 @@ function update_part(self)
 	zbuf_write(self)
 	return true
 end
+function draw_part(self,x,y)
+	circfill(x,y,8*self.r,self.c)
+end
 function make_part(x,y,z,src,dx,dy,dz,a)
 	local p={
 		x=x,y=y,z=z,
@@ -520,6 +512,7 @@ function make_part(x,y,z,src,dx,dy,dz,a)
 		dz=dz or 0,
 		r=1,dr=0,
 		angle=a,
+		draw=draw_part,
 		update=update_part
 	}
 	for k,v in pairs(src) do
@@ -937,7 +930,7 @@ function plyr_die(self)
 			rectfill(0,127,127,128-j,0)
 			if t==90 then
 				txt_options(true,2,true)
-				txt_print("you are dead",64,32,14)
+				txt_print("game over",64,32,14)
 				txt_print(cur_loop.."-"..lvl_i,64,96,14)
 			end
 
@@ -969,7 +962,7 @@ function die_actor(self)
 		elseif r>0.4 and plyr.hp!=plyr_hpmax then
 			make_actor(self.x,self.y,all_actors.health_cls)
 		end
-		make_part(self.x,self.y,0, all_parts[self.splat or "default_splat"])
+		make_part(self.x,self.y,0, all_parts[self.splat or "blood_splat"])
 	end
 end
 
@@ -1275,14 +1268,22 @@ _g.throne_update=function(self)
 	local ang=rnd()
 	local u,v=0.16*cos(ang),0.15*sin(ang)
 	make_part(self.x+u,self.y+v-0.5,0,all_parts.fart)
-	if plyr.hp==0 or self.hp==0 then
-		
-	end
+end
+_g.throne_die=function(self)
+	futures_add(function()
+		for i=1,10 do
+			if (lvl_i==0) return
+			make_blast(
+				self.x+rndlerp(-6,6),
+				self.y+rndlerp(-4,4))
+			wait_async(rnd(8))
+		end
+	end)
 end
 _g.throne_draw=function(a,x,y)
 	x,y=x-4*a.cw,y-4*a.ch
 	-- shadow
-	palt(0,false)	
+	palt(0,false)
 	--rectfill(x,y+4,x+8*a.cw,y+4+8*a.ch,1)
 	--palt(14,false)
 	for j=y+8*a.ch-4,y+8*a.ch do
@@ -1338,11 +1339,8 @@ _g.update_blast=function(self)
 	end 
 end
 
-all_actors=json_parse('{"barrel_cls":{"side":"any_side","inertia":0.8,"spr":128,"hit":"blast_on_hit"},"msl_cls":{"side":"any_side","inertia":1.01,"sx":80,"sy":24,"update":"smoke_emitter","draw":"draw_rspr_actor","hit":"blast_on_hit","touch":"blast_on_touch"},"grenade_cls":{"side":"any_side","w":0.2,"h":0.2,"inertia":0.91,"bounce":0.8,"sx":96,"sy":16,"update":"smoke_emitter","draw":"draw_rspr_actor","hit":"blast_on_hit","touch":"blast_on_touch"},"bandit_cls":{"hp":3,"wp":"base_gun","frames":[4,5,6],"npc":true,"rnd":{"fire_dly":[90,120],"pause_dly":[90,120]}},"scorpion_cls":{"rnd":{"fire_dly":[160,180]},"pause_dly":120,"w":0.8,"h":0.8,"hp":10,"wp":"acid_gun","palt":5,"frames":[131,133],"npc":true},"worm_cls":{"palt":3,"w":0.2,"h":0.2,"inertia":0.8,"dmg":1,"frames":[7,8],"npc":true},"slime_cls":{"w":0.2,"h":0.2,"inertia":0.8,"dmg":1,"frames":[29,30,31,30],"wp":"goo","npc":true,"splat":"goo_splat"},"dog_cls":{"los_dist":1,"inertia":0.2,"hp":5,"acc":0.06,"wp":"bite","frames":[61,62],"npc":true},"bear_cls":{"inertia":0.2,"dmg":2,"frames":[1,2,3],"npc":true},"throne_cls":{"zorder":1,"w":8,"h":4,"hp":300,"palt":15,"inertia":0,"cx":87,"cy":18,"cw":12,"ch":5,"update":"throne_update","draw":"throne_draw","init":"throne_init","npc":true},"health_cls":{"spr":48,"w":0,"h":0,"update":"health_pickup"},"ammo_cls":{"spr":32,"w":0,"h":0,"update":"ammo_pickup"},"wpdrop_cls":{"w":0,"h":0,"inertia":0.9,"btn_t":0,"near_plyr_t":0,"draw":"draw_txt_actor","update":"wpdrop_update"},"notice_cls":{"spr":145,"w":0,"h":0,"inertia":0,"txt":"dont touch","near_plyr_t":0,"draw":"draw_txt_actor","update":"notice_update"},"cop_cls":{"flee":true,"acc":0.05,"frames":[13,14,15,14],"rnd":{"fire_dly":[160,210],"pause_dly":[120,160]},"wp":"rifle","npc":true},"fireimp_cls":{"frames":[45,46,47,46],"dmg":3,"hit":"blast_on_hit","npc":true},"turret_cls":{"w":1,"h":1,"wp":"rpg","hp":10,"acc":0,"bounce":0,"frames":[163],"fire_dly":180,"pause_dly":120,"splat":"turret_splat","npc":true},"horror_cls":{"hp":10,"frames":[160,161,162],"fire_dly":180,"pause_dly":120,"splat":"goo_splat","npc":true},"warp_cls":{"w":0,"h":0,"captured":false,"frames":[80,81,82],"draw":"nop","update":"warp_update"},"cactus":{"inertia":0.8,"acc":0,"spr":83,"die":"nop","update":"nop"},"blast_cls":{"w":0.8,"h":0.8,"acc":0,"inertia":0,"bounce":0,"dmg":0,"side":"any_side","frames":[192,193,194,195,196,197,198,199],"hit":"nop","update":"update_blast","draw":"draw_blast"}}')
+all_actors=json_parse('{"barrel_cls":{"side":"any_side","inertia":0.8,"spr":128,"hit":"blast_on_hit"},"msl_cls":{"side":"any_side","inertia":1.01,"sx":80,"sy":24,"update":"smoke_emitter","draw":"draw_rspr_actor","hit":"blast_on_hit","touch":"blast_on_touch"},"grenade_cls":{"side":"any_side","w":0.2,"h":0.2,"inertia":0.91,"bounce":0.8,"sx":96,"sy":16,"update":"smoke_emitter","draw":"draw_rspr_actor","hit":"blast_on_hit","touch":"blast_on_touch"},"bandit_cls":{"hp":3,"wp":"base_gun","frames":[4,5,6],"npc":true,"rnd":{"fire_dly":[90,120],"pause_dly":[90,120]}},"scorpion_cls":{"rnd":{"fire_dly":[160,180]},"pause_dly":120,"w":0.8,"h":0.8,"hp":10,"wp":"acid_gun","palt":5,"frames":[131,133],"npc":true},"worm_cls":{"palt":3,"w":0.2,"h":0.2,"inertia":0.8,"dmg":1,"frames":[7,8],"npc":true},"slime_cls":{"w":0.2,"h":0.2,"inertia":0.8,"dmg":1,"frames":[29,30,31,30],"wp":"goo","npc":true,"splat":"goo_splat"},"dog_cls":{"los_dist":1,"inertia":0.2,"hp":5,"acc":0.06,"wp":"bite","frames":[61,62],"npc":true},"bear_cls":{"inertia":0.2,"dmg":2,"frames":[1,2,3],"npc":true},"throne_cls":{"zorder":1,"w":8,"h":4,"hp":5,"palt":15,"inertia":0,"cx":87,"cy":18,"cw":12,"ch":5,"update":"throne_update","draw":"throne_draw","init":"throne_init","die":"throne_die","npc":true},"health_cls":{"spr":48,"w":0,"h":0,"update":"health_pickup"},"ammo_cls":{"spr":32,"w":0,"h":0,"update":"ammo_pickup"},"wpdrop_cls":{"w":0,"h":0,"inertia":0.9,"btn_t":0,"near_plyr_t":0,"draw":"draw_txt_actor","update":"wpdrop_update"},"notice_cls":{"spr":145,"w":0,"h":0,"inertia":0,"txt":"dont touch","near_plyr_t":0,"draw":"draw_txt_actor","update":"notice_update"},"cop_cls":{"flee":true,"acc":0.05,"frames":[13,14,15,14],"rnd":{"fire_dly":[160,210],"pause_dly":[120,160]},"wp":"rifle","npc":true},"fireimp_cls":{"frames":[45,46,47,46],"dmg":3,"hit":"blast_on_hit","npc":true},"turret_cls":{"w":1,"h":1,"wp":"rpg","hp":10,"acc":0,"bounce":0,"frames":[163],"fire_dly":180,"pause_dly":120,"splat":"turret_splat","npc":true},"horror_cls":{"part":"green_part","part_dly":8,"part_t":0,"hp":25,"frames":[160,161,162],"fire_dly":180,"pause_dly":120,"splat":"goo_splat","npc":true},"warp_cls":{"w":0,"h":0,"captured":false,"frames":[80,81,82],"draw":"nop","update":"warp_update"},"cactus":{"inertia":0.8,"acc":0,"spr":83,"die":"nop","update":"nop"},"candle_cls":{"part":"candle","part_dly":4,"part_t":0,"inertia":0.8,"acc":0,"spr":178,"die":"nop"},"blast_cls":{"w":0.8,"h":0.8,"acc":0,"inertia":0,"bounce":0,"dmg":0,"side":"any_side","frames":[192,193,194,195,196,197,198,199],"hit":"nop","update":"update_blast","draw":"draw_blast"}}')
 
-if not all_actors.slime_cls.splat then
-	assert()
-end
 	
 -- actor
 -- x,y in map tiles (not pixels)
@@ -1378,6 +1376,14 @@ function move_actor(a)
 		end
 	end
 
+ if a.part and a.part_t<time_t then
+ 	make_part(
+ 		a.x+rndlerp(-a.w,a.w),a.y-0.5,0,
+ 		all_parts[a.part],
+ 		a.part_dx or 0,a.part_dy or 0,a.part_dz or 0)
+ 	a.part_t=time_t+a.part_dly
+ end
+
  -- static? no collision check
 	if bor(a.dx,a.dy)==0 then
 		zbuf_write(a)
@@ -1403,7 +1409,7 @@ function move_actor(a)
  if touch and a.touch then
  	a:touch()
  end
- 
+  
  -- apply inertia
  a.dx*=a.inertia
  a.dy*=a.inertia
@@ -1559,10 +1565,10 @@ start_screen.update=function()
 			end,after_draw)
 		futures_add(function()
 			wait_async(90)
-			lvl_i,cur_loop=1,1
+			lvl_i,cur_loop=0,1
 			plyr=make_plyr()
 			next_level()
-			make_actor(plyr.x,plyr.y+0.5,all_actors.dog_cls)
+			make_actor(plyr.x,plyr.y+0.5,all_actors.candle_cls)
 			starting=false
 			cur_screen=game_screen
 			wait_async(90)
@@ -1748,30 +1754,30 @@ ee0000eeeeeeeeeeeb2eeeeb55000122122100555550012222210005cccccccccc5502eee7e055cc
 03b03bb0eee55eeeee82eeee50200070007000205020007000700020c033330ccc110256762011ccccccccc00cccccccccc1100000011ccccc1111cc00000000
 033003b0eee99eeeeeeeeeee55011101110110205020110111011105cc1111cccccc00567600ccccccccccc00cccccccccc1105555011ccccccccccc00000000
 0000e000eee99eeeeeeeeeee55551111111111055501111111111555cccccccccccc1156760cccccccccccc00ccccccccccc11000011cccccccccccc00000000
-eee0ee0eeeee0eeeee0ee0eeeeeeee0000eeeeeeeeeeeeeeeeeeeeeecccccccccccccc56671cccccccccccc00cccccccccc7e222222e7cccccccccc000000000
-e00b00b00000b00ee0b00b0eeeee00666600eeeeeeeeeeeeeeeeeeee777777777777775005777777777777700777777777777777777777777777777000000000
-0b0b0bb00bb0b0b00bbb0b0eeee0666666660eeeeeeeeeeeeeeeeeee111111111111115005111111111111100111111111152222222251111111111000000000
+eee3ee3eeeee3eeeee3ee3eeeeeeee0000eeeeeeeeeeeeeeeeeeeeeecccccccccccccc56671cccccccccccc00cccccccccc7e222222e7cccccccccc000000000
+e33b33b0e333b33ee3b33b3eeeee00666600eeeeeeeeeeeeeeeeeeee777777777777775005777777777777700777777777777777777777777777777000000000
+0b3b3bb00bb3b3b00bbb3b3eeee0666666660eeeeeeeeeeeeeeeeeee111111111111115005111111111111100111111111152222222251111111111000000000
 0bbbbbb00bbbbbb00bbbbbb0eee0666666660eeeeeeeeeeeeeeeeeee111111111111111551111111111111100111111111152222222251111111111000000000
 0bbb33300bbbb3300bbbbb30ee056666666650eeeeeeeeeeeeeee55e111111111111111111111111111111100111111111152222222251111111111000000000
 0bbbbbb00bbbbbb00bbbbbb0e06577666677560ee0eeeeeeeeee000e000000000000000000000000000000000000000000055555555550000000000000000000
 0b0000b0e0b0030e000b3000056055777755065005e00e5e66eeee50cccccccccccccc0000ccccccccccccc00cccccccccc7eeeeeeee7ccccccccccc00000000
 00eeee00ee0ee0eeeee00eee0560005555000650eee6ee5e6000eeeeccccccccccccccccccccccccccccccc00cccccccccc7eeeeeeee7ccccccccccc00000000
-eeeeeeeeeeeeeeee000000000556000000006550eeee00ee0500eeeeccccccccccccccccffffffffccccccc00cccccccccc7eeeeeeee7ccc6667eeeeeeee7666
-eeeeeeeeeeeeeeee000000000555660000665550eeee05eeeeeeeeee7777777777777777ffffffff777777700777777777777777777777776617eeeeeeee7666
-0eeeeeeee0eeeeee00000000055555666655555005eeeeeeeeeeeeee1111111111000111ffffffff111111100111111111152222222251116157eeeeeeee7166
-e0eee0ee0eeee0ee00000000055555555555555006ee5ee5eeeeeeee1111111110567011ffffffff111111100111111111152222222251111557eeeeeeee7516
-0ee00f0ee0e00f0e00000000e05550505055550ee06eeeeeeeeeee0e1111111110567011ffffffff111111100111111111152222222251116557eeeeeeee7566
-0e05580e0e05580e00000000ee055151515550ee500eeeeeee5e655e0000000000576000ffffffff000000000000000000000000000000006657eeeeeeee7666
-e0555550e055555000000000eee0055555500eee555ee556eeeee50efffffffff00650ffffffffffffffffffffffffffffffffffffffffff6667eeeeeeee7666
-ee00000eee00000e00000000eeeee000000eeeeeeeeee0000eeee00effffffffff000fffffffffffffffffffffffffffffffffffffffffff6667eeeeeeee7666
-eeeee777eeeeeeeeeeeeeeeeeeeeeeeeeeeee111eeeeee1eeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eee77777eeeeeeeeeeeeeeeeeeeeee88eee11111eee1e1e1eeeee1e1eeeeeee10000000000000000000000000000000000000000000000000000000000000000
-ee777777eeeee000eeeeeeeeeeee8899ee111888ee1e1e1eee1eeeeeee1eeeee0000000000000000000000000000000000000000000000000000000000000000
-e7777777eeee0000eeeee888eee899aae1188888e1e1eeeeeee1eeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-e7777777eee00000eeee8999ee89aaaae1188999ee1eeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-77777777ee000000eee899aaee89a77711889999e1eeeeeee1eeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-77777777ee000000eee89aa7e89aa7771188999a1eeeeeee1eeeeeee1eeeeeee0000000000000000000000000000000000000000000000000000000000000000
-77777777ee000000eee89a77e89aa777118899a7e1eeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeee0556000000006550eeee00ee0500eeeeccccccccccccccccffffffffccccccc00cccccccccc7eeeeeeee7ccc6667eeeeeeee7666
+eeeeeeeeeeeeeeeeeeeaeeee0555660000665550eeee05eeeeeeeeee7777777777777777ffffffff777777700777777777777777777777776617eeeeeeee7666
+0eeeeeeee0eeeeeeee070eee055555666655555005eeeeeeeeeeeeee1111111111000111ffffffff111111100111111111152222222251116157eeeeeeee7166
+e0eee0ee0eeee0eee06760ee055555555555555006ee5ee5eeeeeeee1111111110567011ffffffff111111100111111111152222222251111557eeeeeeee7516
+0ee00f0ee0e00f0eee060eeee05550505055550ee06eeeeeeeeeee0e1111111110567011ffffffff111111100111111111152222222251116557eeeeeeee7566
+0e05580e0e05580eee050eeeee055151515550ee500eeeeeee5e655e0000000000576000ffffffff000000000000000000000000000000006657eeeeeeee7666
+e0555550e0555550e05050eeeee0055555500eee555ee556eeeee50efffffffff00650ffffffffffffffffffffffffffffffffffffffffff6667eeeeeeee7666
+ee00000eee00000ee00e00eeeeeee000000eeeeeeeeee0000eeee00effffffffff000fffffffffffffffffffffffffffffffffffffffffff6667eeeeeeee7666
+eeeee777eeeeeeeeeeeeeeeeeeeeeeeeeeeee111eeeeee1eeeeeeeeeeeeeeeee00000000eee0ee0eeeee0eeeee0ee0ee00000000000000000000000000000000
+eee77777eeeeeeeeeeeeeeeeeeeeee88eee11111eee1e1e1eeeee1e1eeeeeee100000000e00b00b00000b00ee0b00b0e00000000000000000000000000000000
+ee777777eeeee000eeeeeeeeeeee8899ee111888ee1e1e1eee1eeeeeee1eeeee000000000b0b0bb00bb0b0b00bbb0b0e00000000000000000000000000000000
+e7777777eeee0000eeeee888eee899aae1188888e1e1eeeeeee1eeeeeeeeeeee000000000bbbbbb00bbbbbb00bbbbbb000000000000000000000000000000000
+e7777777eee00000eeee8999ee89aaaae1188999ee1eeeeeeeeeeeeeeeeeeeee000000000bbb33300bbbb3300bbbbb3000000000000000000000000000000000
+77777777ee000000eee899aaee89a77711889999e1eeeeeee1eeeeeeeeeeeeee000000000bbbbbb00bbbbbb00bbbbbb000000000000000000000000000000000
+77777777ee000000eee89aa7e89aa7771188999a1eeeeeee1eeeeeee1eeeeeee000000000b0000b0e0b0030e000b300000000000000000000000000000000000
+77777777ee000000eee89a77e89aa777118899a7e1eeeeeeeeeeeeeeeeeeeeee0000000000eeee00ee0ee0eeeee00eee00000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
