@@ -227,7 +227,7 @@ end
 local active_actors
 local lvl_i,cur_loop,lvl=0,1
 local level_cw,level_ch=64,32
-local levels=json_parse('[{"n":"desert","loot":[1,3],"blast_tile":69,"floors":[68,64,65,67,111],"walls":[66],"shadow":110,"bkg_col":1,"d":3,"w":[8,12],"h":[6,8],"paths":[1,3],"path":{"bends":[1,2],"w":[3,4],"len":[4,8]},"spawn":[[1,3,"bandit_cls"],[1,3,"worm_cls"],[1,2,"scorpion_cls"],[2,3,"cactus"]]},{"n":"sewers","shader":"darken","floors":[86,87,87,88],"walls":[90,89,91],"shadow":94,"borders":[10,11,3],"bkg_col":3,"d":3,"w":[5,8],"h":[4,6],"paths":[3,4],"path":{"bends":[2,3],"w":[1,2],"len":[6,9]},"spawn":[[1,3,"slime_cls"],[1,2,"barrel_cls"],[1,1,"frog_cls"]]},{"n":"snow plains","floors":[70,71,72],"walls":[74],"shadow":95,"blast_tile":75,"borders":[1,12,6],"bkg_col":6,"d":3,"w":[4,6],"h":[4,6],"paths":[2,4],"path":{"bends":[2,3],"w":[3,6],"len":[8,12]},"spawn":[[1,2,"dog_cls"],[1,2,"bear_cls"],[1,1,"turret_cls"]]},{"n":"palace","floors":[96,100],"walls":[97,98,99,108],"shadow":101,"borders":[7,0,5],"bkg_col":9,"d":4,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[2,3]},"spawn":[[2,4,"horror_cls"]]},{"n":"lab","floors":[102,105],"walls":[103,104,106],"shadow":107,"borders":[6,7,5],"bkg_col":5,"blast_tile":92,"shader":"darken","d":3,"w":[4,6],"h":[3,5],"paths":[4,4],"path":{"bends":[0,2],"w":[1,2],"len":[8,12]},"spawn":[[1,2,"cop_cls"],[1,2,"fireimp_cls"]]},{"n":"throne","builtin":true,"bkg_col":0,"borders":[7,0,5],"cx":103,"cy":0,"cw":13,"ch":31,"plyr_pos":[110,28],"spawn":[{"a":"throne_cls","x":112,"y":6},{"a":"ammo_cls","x":106,"y":27},{"a":"ammo_cls","x":107,"y":27},{"a":"ammo_cls","x":106,"y":28},{"a":"ammo_cls","x":107,"y":28},{"a":"health_cls","x":112,"y":27},{"a":"health_cls","x":113,"y":27},{"a":"health_cls","x":112,"y":28},{"a":"health_cls","x":113,"y":28}]}]')
+local levels=json_parse('[{"n":"desert","loot":[1,3],"blast_tile":69,"floors":[68,64,65,67,111],"walls":[66],"shadow":110,"bkg_col":1,"d":12,"w":[8,12],"h":[6,8],"paths":[1,3],"path":{"bends":[1,2],"w":[3,4],"len":[4,8]},"spawn":[[5,8,"bandit_cls"],[1,3,"worm_cls"],[0,1,"scorpion_cls"],[2,3,"cactus"]]},{"n":"sewers","shader":"darken","floors":[86,87,87,88],"walls":[90,89,91],"shadow":94,"borders":[10,11,3],"bkg_col":3,"d":3,"w":[5,8],"h":[4,6],"paths":[3,4],"path":{"bends":[2,3],"w":[1,2],"len":[6,9]},"spawn":[[1,3,"slime_cls"],[1,2,"barrel_cls"],[1,1,"frog_cls"]]},{"n":"snow plains","floors":[70,71,72],"walls":[74],"shadow":95,"blast_tile":75,"borders":[1,12,6],"bkg_col":6,"d":3,"w":[4,6],"h":[4,6],"paths":[2,4],"path":{"bends":[2,3],"w":[3,6],"len":[8,12]},"spawn":[[1,2,"dog_cls"],[1,2,"bear_cls"],[1,1,"turret_cls"]]},{"n":"palace","floors":[96,100],"walls":[97,98,99,108],"shadow":101,"borders":[7,0,5],"bkg_col":9,"d":10,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[5,8]},"spawn":[[2,4,"horror_cls"]]},{"n":"lab","floors":[102,105],"walls":[103,104,106],"shadow":107,"borders":[6,7,5],"bkg_col":5,"blast_tile":92,"shader":"darken","d":3,"w":[4,6],"h":[3,5],"paths":[4,4],"path":{"bends":[0,2],"w":[1,2],"len":[8,12]},"spawn":[[1,2,"cop_cls"],[1,2,"fireimp_cls"]]},{"n":"throne","builtin":true,"bkg_col":0,"borders":[7,0,5],"cx":103,"cy":0,"cw":13,"ch":31,"plyr_pos":[110,28],"spawn":[{"a":"throne_cls","x":112,"y":6},{"a":"ammo_cls","x":106,"y":27},{"a":"ammo_cls","x":107,"y":27},{"a":"ammo_cls","x":106,"y":28},{"a":"ammo_cls","x":107,"y":28},{"a":"health_cls","x":112,"y":27},{"a":"health_cls","x":113,"y":27},{"a":"health_cls","x":112,"y":28},{"a":"health_cls","x":113,"y":28}]}]')
 
 local blts,parts={len=0},{len=0}
 local zbuf={{},{},{}}
@@ -676,12 +676,12 @@ function make_level()
 		end
 	else
 		make_rooms()
-		for i=2,#rooms do
-			local r,sp=rooms[i],rndarray(lvl.spawn)
+		for sp in all(lvl.spawn) do
 			local n=rndrng(sp)
-			for k=1,n do
+			for i=1,n do			
+				local r=rooms[flr(rnd()*#rooms)+1]
 				local x,y=r.x+rndlerp(0,r.w),r.y+rndlerp(0,r.h)
-				local a=make_actor(x,y,all_actors[sp[3]])
+				make_actor(x,y,all_actors[sp[3]])
 			end
 		end
 	end
@@ -689,15 +689,12 @@ end
 function make_rooms()
 	rooms={}
 	pos2roomidx={}
-	for i=0,level_cw-1 do
-		for j=0,level_ch-1 do
-			mset(i,j,lvl.solid_tiles_base)
-		end
+	for i=0,level_ch-1 do
+		memset(0x2000,127,level_cw-1)
 	end
-	local cw,ch=rndrng(lvl.w),rndrng(lvl.h)
-	local cx,cy=level_cw/2-cw,level_ch/2-ch
+	local cx,cy=level_cw/2,level_ch/2
 	make_room(
-			cx,cy,cw,ch,lvl.d)
+			cx,cy,0,lvl.d)
 	make_walls(0,level_cw-1,0,level_ch-2,true)
 end
 function whereami(a)
@@ -744,53 +741,41 @@ function make_walls(x0,x1,y0,y1,shadow)
 	end
 end
 
-function make_room(x,y,w,h,ttl)
+function make_room(x,y,a,ttl)
 	if(ttl<0) return
-	local r={
-		x=x,y=y,
-		w=w,h=h}
-	r=dig(r,#rooms+1)
-	if r then
-		add(rooms,r)
-		local n=ttl*rndrng(lvl.paths)
-		for i=1,n do
-			local a=flr(rnd(4))/4
-			local v=rotate(a,{1,0})
-			local bends=rndrng(lvl.path.bends)
-			-- starting point
-			local hw,hh=r.w/2,r.h/2
-			local cx,cy=r.x+hw,r.y+hh
-			x,y=cx+v[1]*hw,cy+v[2]*hh
-			make_path(x,y,a,
-				bends,ttl-1)
+	if rnd()>0.5 then
+		local wl=rotate(a,{rndrng(lvl.w),rndrng(lvl.h)})
+		local r={
+			x=x-wl[1]/2,y=y-wl[2]/2,
+			w=wl[1],h=wl[2]}
+		r=dig(r,#rooms+1)
+		if r then
+			add(rooms,r)
 		end
 	end
-end
-function make_path(x,y,a,n,ttl)
-	-- end of corridor?
-	if n<=0 then
-		make_room(
-			x,y,
-			rndrng(lvl.w),
-			rndrng(lvl.h),
-			ttl-1)
-		return
+	local n,arnd=rndrng(lvl.paths),flr(rnd(3))
+	local angles={-0.25,0,0.25}
+	for i=1,n do
+		local a1=a+angles[(arnd+i)%#angles+1]
+		make_path(x,y,a1,ttl-1)
 	end
+end
+function make_path(x,y,a,ttl)
 	local w,h=
-		rndrng(lvl.path.w),
-		rndrng(lvl.path.len)
+		rndrng(lvl.path.len),
+		rndrng(lvl.path.w)
 	-- rotate
-	local wl=rotate(a,{h,w})
+	local wl=rotate(a,{w,h})
 	local c={
 		x=x,y=y,
-		w=wl[1],h=wl[2]
-	}
+		w=wl[1],h=wl[2]}
+	c=dig(c)
 	-- stop invalid paths
-	if dig(c) then
-		a+=(rnd(1)>0.5 and 0.25 or -0.25)
-		make_path(
-			c.x+c.w,c.y+c.h,
-			a,n-1,ttl)
+	if c then
+		wl=rotate(a,{w,0})
+		make_room(
+			x+wl[1],y+wl[2],
+			a,ttl-1)
 	end
 end
 function dig(r,idx)
@@ -1566,10 +1551,10 @@ start_screen.update=function()
 			end,after_draw)
 		futures_add(function()
 			wait_async(90)
-			lvl_i,cur_loop=3,1
+			lvl_i,cur_loop=0,1
 			plyr=make_plyr()
 			next_level()
-			make_actor(plyr.x,plyr.y+0.5,all_actors.dog_cls)
+			--make_actor(plyr.x,plyr.y+0.5,all_actors.dog_cls)
 			starting=false
 			cur_screen=game_screen
 			wait_async(90)
