@@ -6,6 +6,7 @@ local before_update={}
 local after_draw={}
 
 local actors={} --all actors in world
+local use_mouse=0
 
 -- side
 local no_side,good_side,bad_side,any_side=0x0,0x1,0x2,0x3
@@ -110,7 +111,6 @@ local game_screen,start_screen,cur_screen={},{}
 -- player settings
 local plyr
 local plyr_playing,plyr_hpmax
-local plyr_score
 local all_plyrs=json_parse('{"bob":{"strips":[[17,18,19,18,17],[17,33,34,33]]},"susie":{"strips":[[49,50,51,50,49],[49,56,57,56]],"palt":3}}')
 local plyr_names={}
 for k,_ in pairs(all_plyrs) do
@@ -227,7 +227,7 @@ end
 local active_actors
 local lvl_i,cur_loop,lvl=0,1
 local level_cw,level_ch=64,32
-local levels=json_parse('[{"n":"desert","loot":[1,3],"blast_tile":69,"floors":[68,64,65,67,111],"walls":[66],"shadow":110,"bkg_col":1,"d":12,"w":[8,12],"h":[6,8],"paths":[1,3],"path":{"bends":[1,2],"w":[3,4],"len":[4,8]},"spawn":[[5,8,"bandit_cls"],[1,3,"worm_cls"],[0,1,"scorpion_cls"],[2,3,"cactus"]]},{"n":"sewers","shader":"darken","floors":[86,87,87,88],"walls":[90,89,91],"shadow":94,"borders":[10,11,3],"bkg_col":3,"d":3,"w":[5,8],"h":[4,6],"paths":[3,4],"path":{"bends":[2,3],"w":[1,2],"len":[6,9]},"spawn":[[1,3,"slime_cls"],[1,2,"barrel_cls"],[1,1,"frog_cls"]]},{"n":"snow plains","floors":[70,71,72],"walls":[74],"shadow":95,"blast_tile":75,"borders":[1,12,6],"bkg_col":6,"d":3,"w":[4,6],"h":[4,6],"paths":[2,4],"path":{"bends":[2,3],"w":[3,6],"len":[8,12]},"spawn":[[1,2,"dog_cls"],[1,2,"bear_cls"],[1,1,"turret_cls"]]},{"n":"palace","floors":[96,100],"walls":[97,98,99,108],"shadow":101,"borders":[7,0,5],"bkg_col":9,"d":10,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[5,8]},"spawn":[[2,4,"horror_cls"]]},{"n":"lab","floors":[102,105],"walls":[103,104,106],"shadow":107,"borders":[6,7,5],"bkg_col":5,"blast_tile":92,"shader":"darken","d":3,"w":[4,6],"h":[3,5],"paths":[4,4],"path":{"bends":[0,2],"w":[1,2],"len":[8,12]},"spawn":[[1,2,"cop_cls"],[1,2,"fireimp_cls"]]},{"n":"throne","builtin":true,"bkg_col":0,"borders":[7,0,5],"cx":103,"cy":0,"cw":13,"ch":31,"plyr_pos":[110,28],"spawn":[{"a":"throne_cls","x":112,"y":6},{"a":"ammo_cls","x":106,"y":27},{"a":"ammo_cls","x":107,"y":27},{"a":"ammo_cls","x":106,"y":28},{"a":"ammo_cls","x":107,"y":28},{"a":"health_cls","x":112,"y":27},{"a":"health_cls","x":113,"y":27},{"a":"health_cls","x":112,"y":28},{"a":"health_cls","x":113,"y":28}]}]')
+local levels=json_parse('[{"n":"desert","loot":[1,3],"blast_tile":69,"floors":[68,64,65,67,111],"walls":[66],"shadow":110,"bkg_col":1,"d":12,"w":[8,12],"h":[6,8],"paths":[1,3],"path":{"bends":[1,2],"w":[3,4],"len":[4,8]},"spawn":[[5,8,"bandit_cls"],[1,3,"worm_cls"],[0,1,"scorpion_cls"],[2,3,"cactus"]]},{"n":"sewers","shader":"darken","floors":[86,87,87,88],"walls":[90,89,91],"shadow":94,"borders":[10,11,3],"bkg_col":3,"d":3,"w":[5,8],"h":[4,6],"paths":[3,4],"path":{"bends":[2,3],"w":[1,2],"len":[6,9]},"spawn":[[1,3,"slime_cls"],[1,2,"barrel_cls"],[1,1,"frog_cls"]]},{"n":"snow plains","cursor":93,"floors":[70,71,72],"walls":[74],"shadow":95,"blast_tile":75,"borders":[1,12,6],"bkg_col":6,"d":3,"w":[4,6],"h":[4,6],"paths":[2,4],"path":{"bends":[2,3],"w":[3,6],"len":[8,12]},"spawn":[[1,2,"dog_cls"],[1,2,"bear_cls"],[1,1,"turret_cls"]]},{"n":"palace","floors":[96,100],"walls":[97,98,99,108],"shadow":101,"borders":[7,0,5],"bkg_col":9,"d":10,"w":[4,6],"h":[4,6],"paths":[1,2],"path":{"bends":[1,2],"w":[1,2],"len":[5,8]},"spawn":[[2,4,"horror_cls"]]},{"n":"lab","floors":[102,105],"walls":[103,104,106],"shadow":107,"borders":[6,7,5],"bkg_col":5,"blast_tile":92,"shader":"darken","d":3,"w":[4,6],"h":[3,5],"paths":[4,4],"path":{"bends":[0,2],"w":[1,2],"len":[8,12]},"spawn":[[1,2,"cop_cls"],[1,2,"fireimp_cls"]]},{"n":"throne","builtin":true,"bkg_col":0,"borders":[7,0,5],"cx":103,"cy":0,"cw":13,"ch":31,"plyr_pos":[110,28],"spawn":[{"a":"throne_cls","x":112,"y":6},{"a":"ammo_cls","x":106,"y":27},{"a":"ammo_cls","x":107,"y":27},{"a":"ammo_cls","x":106,"y":28},{"a":"ammo_cls","x":107,"y":28},{"a":"health_cls","x":112,"y":27},{"a":"health_cls","x":113,"y":27},{"a":"health_cls","x":112,"y":28},{"a":"health_cls","x":113,"y":28}]}]')
 
 local blts,parts={len=0},{len=0}
 local zbuf={{},{},{}}
@@ -472,8 +472,8 @@ end
 
 -- camera
 function cam_shake(u,v,pow)
-	shkx=pow*u
-	shky=pow*v
+	shkx=min(4,shkx+pow*u)
+	shky=min(4,shky+pow*v)
 end
 function cam_update()
 	shkx*=-0.7-rnd(0.2)
@@ -690,7 +690,7 @@ function make_rooms()
 	rooms={}
 	pos2roomidx={}
 	for i=0,level_ch-1 do
-		memset(0x2000,127,level_cw-1)
+		memset(0x2000+i*128,127,level_cw-1)
 	end
 	local cx,cy=level_cw/2,level_ch/2
 	make_room(
@@ -1183,7 +1183,7 @@ end
 _g.wpdrop_update=function(self)
 	if self.btn_t<time_t and sqr_dist(plyr.x,plyr.y,self.x,self.y)<4 then
 		self.near_plyr_t=time_t+30
-		if btnp(5) then
+		if btnp(5) or stat(34)==2 then
 			self.near_plyr_t=0
 			make_part(self.x,self.y,0,{
 				zorder=3,
@@ -1256,7 +1256,7 @@ _g.throne_die=function(self)
 			make_blast(
 				self.x+rndlerp(-6,6),
 				self.y+rndlerp(-4,4))
-			wait_async(rnd(8))
+			wait_async(rnd(8))			
 		end
 	end)
 end
@@ -1351,7 +1351,7 @@ function make_actor(x,y,src)
 	end
 	add(actors,a)
 	if(a.init) a:init()
-	if(a.npc)active_actors+=1
+	if(a.npc) active_actors+=1
 	return a
 end
 
@@ -1422,9 +1422,9 @@ function draw_actor(a,sx,sy)
 	if a.hit_t>time_t then
 		memset(0x5f00,0xf,16)
 		pal(tcol,tcol)
- 	end
- 	local s,flipx=a.spr,false
- 	if a.frames then
+ end
+ local s,flipx=a.spr,false
+ if a.frames then
 		flipx=face1strip[a.facing+1]
 		s=a.frames[flr(a.frame%#a.frames)+1]
 	end
@@ -1436,7 +1436,7 @@ function draw_actor(a,sx,sy)
 	pal()
 	palt(14,true)
 	local wp=a.wp
-	if wp and wp.sx then
+	if wp.sx then
 		local u,v=cos(a.angle),sin(a.angle)
 		-- recoil animation
 		local f=-mid(a.fire_t-time_t,0,8)/4
@@ -1447,11 +1447,11 @@ end
 
 -- player actor
 function make_plyr()
-	plyr_score=0
 	plyr_playing=true
 	plyr_hpmax=8
 	local body=all_plyrs[rndarray(plyr_names)]
 	plyr=make_actor(18,18,{
+		mousex=0,mousey=0,
 		acc=0.05,
 		hp=plyr_hpmax,
 		side=good_side,
@@ -1470,32 +1470,37 @@ end
 
 function control_player()
  if plyr_playing then
-		local wp,angle=plyr.wp,plyr.angle
-	 -- how fast to accelerate
-	 local dx,dy=0,0
-	 if(btn(0)) plyr.dx-=plyr.acc dx=-1 angle=0.5
-	 if(btn(1)) plyr.dx+=plyr.acc dx=1 angle=0
-	 if(btn(2)) plyr.dy-=plyr.acc dy=-1 angle=0.25
-	 if(btn(3)) plyr.dy+=plyr.acc dy=1 angle=0.75
-		if(bor(dx,dy)!=0) angle=atan2(dx,dy)
-		
-		if wp and btn(4) and plyr.lock_dly<time_t then
+		local wp,angle,fire,dx,dy=plyr.wp,plyr.angle,false,0,0
+		if(btn(0)) plyr.dx-=plyr.acc dx=-1 angle=0.5
+		if(btn(1)) plyr.dx+=plyr.acc dx=1 angle=0
+		if(btn(2)) plyr.dy-=plyr.acc dy=-1 angle=0.25
+		if(btn(3)) plyr.dy+=plyr.acc dy=1 angle=0.75
+	
+		if use_mouse==1 then
+			fire=stat(34)==1
+			dx,dy=stat(32),stat(33)
+			plyr.mousex,plyr.mousey=dx,dy
+			angle=(0.5+atan2(64-dx,64-dy))%1
+		else
+			fire=btn(4)
+			if(bor(dx,dy)!=0) angle=atan2(dx,dy)
+		end
+	
+		if fire and plyr.fire_t<time_t then
 			if plyr.ammo>0 then
-				plyr.fire_t=time_t+8
-				plyr.lock_dly=time_t+wp.dly
+				plyr.fire_t=time_t+wp.dly
+				plyr.lock_t=time_t+8
 				make_blt(plyr,wp)
-				local u=face2unit[plyr.facing+1]
+				local u={cos(angle),sin(angle)}
 				plyr.dx-=0.05*u[1]
 				plyr.dy-=0.05*u[2]
-				if wp.shk_pow then
-				cam_shake(u[1],u[2],wp.shk_pow)
-				end
+				cam_shake(u[1],u[2],wp.shk_pow or 0)
 			end
-		elseif plyr.lock_dly<time_t then
-			plyr.facing=flr(8*angle)
-			plyr.angle=angle
 		end
-	end
+		if use_mouse==1 or plyr.lock_t<time_t then
+			plyr.angle,plyr.facing=angle,flr(8*angle)
+		end
+ end
 	
  if (abs(plyr.dx)+abs(plyr.dy))>0.1 then
   plyr.frames=plyr.strips[1]
@@ -1503,7 +1508,7 @@ function control_player()
  end
  if plyr.idle_t<time_t then
 		plyr.frames=plyr.strips[2]
-		if (time_t%8)==0 then
+		if time_t%8==0 then
 			plyr.frame+=1
 		end
  end
@@ -1531,10 +1536,7 @@ function next_level()
 		local r=rooms[1]
 		plyr.x,plyr.y=r.x+r.w/2,r.y+r.h/2
 	end
-	plyr.lock_dly=0
-	plyr.dx,plyr.dy=0,0
-	plyr.fire_t=0
-	plyr.hit_t=0
+	plyr.dx,plyr.dy,plyr.hit_t,plyr.fire_t,plyr.lock_t=0,0,0,0,0
 	plyr.safe_t=time_t+30
 	plyr_playing=true
 	cam_track(plyr.x,plyr.y)
@@ -1543,7 +1545,7 @@ end
 -- start screen
 local starting=false
 start_screen.update=function()
-	if starting==false and (btnp(4) or btnp(5)) then
+	if not starting and (btnp(4) or btnp(5) or stat(34)!=0) then
 		starting=true
 		futures_add(function()
 			warp_draw_async(16,96)
@@ -1624,6 +1626,10 @@ game_screen.draw=function()
 	end
 	map(cx,cy,sx,sy,level_cw,level_ch,2)
 	pal()
+
+	if use_mouse==1 then
+		spr(lvl.cursor or 35,plyr.mousex-3,plyr.mousey-3)
+	end	
 	if(lvl.shader) lvl.shader()
 
 	if plyr_playing then
@@ -1658,6 +1664,14 @@ function _draw()
 end
 
 function _init()
+	poke(0x5f2d, 1)
+	if cartdata("freds72_nuklear_klone") then
+		use_mouse=dget(0)
+	end
+	menuitem(1,"mouse on/off", function() 
+		use_mouse=bxor(use_mouse,1)
+		dset(0,use_mouse)
+	end)
 	cls(0)
 	cur_screen=start_screen
 end
@@ -1679,11 +1693,11 @@ eeeeeeee044455500444455004444450ee000eeeee707eeee0113110e70000070335505070000707
 eeeeeeee0333bab003333ba0033333b0eee0eeeeeee7eeeee0000000e77777770550000070077777eee33eeeeee33eee3777777303bbbbb003bbbbb0e03bbb0e
 eeeeeeee05000050e050050ee005500eeee0eeeeeee7eeeeeeeeeeeeeeeeeeee0660eeee7007eeeeeeeeeeeeeeeeeeeee377773e03bbbbb003bbbbb003bbbbb0
 eeeeeeeee0eeee0eee0ee0eeeee00eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000eeee7777eeeeeeeeeeeeeeeeeeeeee3333ee000000000000000000000000
-ee00000eee00000eeeeeeeee00000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee7777eeeeeeeeeee000000ee000000ee000000e
-e0bbbbb0e0999aa0ee00000e00000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee733337eee00eeee022898900228898002288890
-e077777009944440e0999aa000000000ee000000ee777777eeee0e0eeeee7e7eeeeeeeeeeeeeeeeeeeeaaeee73333337e0e00eee0228a8a002288a80022888a0
-e0373730094414100994141000000000e0496660e7000007ee001010ee770707e0000000e7777777eea77aee73333337ee0670ee022888800228888002288880
-e0353530044444400944444000000000e0445550e7000007e055c1c0e70000070046666077000007eea77aee73333337ee0560ee022767600228767002288760
+ee00000eee00000eeeeeeeee77077000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee7777eeeeeeeeeee000000ee000000ee000000e
+e0bbbbb0e0999aa0ee00000e70007000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee733337eee00eeee022898900228898002288890
+e077777009944440e0999aa000700000ee000000ee777777eeee0e0eeeee7e7eeeeeeeeeeeeeeeeeeeeaaeee73333337e0e00eee0228a8a002288a80022888a0
+e0373730094414100994141070007000e0496660e7000007ee001010ee770707e0000000e7777777eea77aee73333337ee0670ee022888800228888002288880
+e0353530044444400944444077077000e0445550e7000007e055c1c0e70000070046666077000007eea77aee73333337ee0560ee022767600228767002288760
 e0333330044455500444555000000000e0400000e7077777e0501010e70707070410000070077777eeeaaeee73333337eee00eee022686800228686002288680
 e05333500333bab00333bab000000000ee0eeeeeee7eeeeeee0e0e0eee7e7e7ee00eeeeee77eeeeeeeeeeeeee733337eeeeeeeee02000020e020010ee002100e
 ee00000ee000000ee000000e00000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee7777eeeeeeeeee00eeee00ee0ee0eeeee00eee
@@ -1703,11 +1717,11 @@ e0000000303333033303303333300333eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee3000000330000003
 44555444444444444040404044494444444444444450949477777777775555577777677777657777c5c5c1c775151557ddddddddddd12e1d2121de21dd0dd0dd
 44444444444444440404040444454444444444444440040477777777777755577777777777577777515c7ccc77515717dddddddddddd11dd12121d12d2dd02d0
 44444444444444444040404044444444444444444445544477777777777777777777777777777777c115c7c577777777dddddddddddddddd2121212100dd2ddd
-ee2222eeeeeeeeee2eeeeee2eee00eeeeee00eee66666666555555555555555555dddd55361111613131313135353535dddddddd000000001111111111111111
-e2eeee2eee2222eeeeeeeeeee00bb0eee00bb00e6666656655555555555555455d5555d5156666531313131353777753d6d00dd0000000005151515171717171
-2ee22ee2e2eeee2eee2222ee0b05300ee07bb70e666666665555555555555555d55dd55d31555511313131313700007510d106d1000000001515151517171717
-2e2ee2e2e2e22e2eee2ee2ee030350b0e037730e665666665555555555555555d5d51d5d1311111313131313560000630ddd10dd000000005555555577777777
-2e2ee2e2e2e22e2eee2ee2eee0353530e033330e666666665555555554455555d5d11d5d361111613131313136222065d106d1dd000000005555555577777777
+ee2222eeeeeeeeee2eeeeee2eee00eeeeee00eee66666666555555555555555555dddd55361111613131313135353535dddddddd110110001111111111111111
+e2eeee2eee2222eeeeeeeeeee00bb0eee00bb00e6666656655555555555555455d5555d5156666531313131353777753d6d00dd0100010005151515171717171
+2ee22ee2e2eeee2eee2222ee0b05300ee07bb70e666666665555555555555555d55dd55d31555511313131313700007510d106d1001000001515151517171717
+2e2ee2e2e2e22e2eee2ee2ee030350b0e037730e665666665555555555555555d5d51d5d1311111313131313560000630ddd10dd100010005555555577777777
+2e2ee2e2e2e22e2eee2ee2eee0353530e033330e666666665555555554455555d5d11d5d361111613131313136222065d106d1dd110110005555555577777777
 2ee22ee2e2eeee2eee2222eeee03500ee033330e666666665555555554455555d55dd55d156666531313131355eee653dd106d6d000000005555555577777777
 e2eeee2eee2222eeeeeeeeeeee0530eee003300e6666656655555555555554555d5555d5315555113131313135225535ddd00d0d000000005555555577777777
 ee2222eeeeeeeeee2eeeeee2ee0000eeeee00eee66666666555555555555555555dddd551311111313131313532253530dd11ddd000000005555555577777777
