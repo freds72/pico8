@@ -164,7 +164,7 @@ _g.update_laser=function(self)
 		self.dw+=1
 		self.w=lerp(0.5,5,smoothstep(self.dw/54))
 		local x0,y0,y1=self.x,self.y,self.y1 or self.y
-		y1+=self.dy		
+		y1+=self.dy
 		if circline_coll(plyr.x,plyr.y,plyr.w,x0,y0,x0,y1,self.w/8) then
 			plyr:hit(self.wp.dmg)
 			plyr.dy+=self.dy/2
@@ -302,6 +302,12 @@ function clone(src,dst)
 	dst=dst or {}
 	for k,v in pairs(src) do
 		if(not dst[k]) dst[k]=v
+	end
+	-- randomize selected values
+	if src.rnd then
+		for k,v in pairs(src.rnd) do
+			dst[k]=v[3] and rndarray(v) or rndlerp(v[1],v[2])
+		end
 	end
 	return dst
 end
@@ -509,27 +515,20 @@ function draw_part(self,x,y)
 	circfill(x,y,8*self.r,self.c)
 end
 function make_part(x,y,z,src,dx,dy,dz,a)
-	local p={
-		x=x,y=y,z=z,
-		dx=dx or 0,
+	local p=clone({
+		x=x,
+		y=y,
+		z=z,
+	 dx=dx or 0,
 		dy=dy or 0,
 		dz=dz or 0,
 		r=1,dr=0,
 		angle=a,
 		draw=draw_part,
-		update=update_part
-	}
-	for k,v in pairs(src) do
-		p[k]=v
-	end
-	-- randomize selected values
-	if src.rnd then
-		for k,v in pairs(src.rnd) do
-			p[k]=v[3] and rndarray(v) or rndlerp(v[1],v[2])
-		end
-	end
-	p.t=time_t+p.dly
+		update=update_part},
+		clone(src))
 	
+	p.t=time_t+p.dly
 	parts.len+=1
 	parts[parts.len]=p
 	return p
@@ -926,7 +925,7 @@ function plyr_die(self)
 	end,after_draw)
 end
 
-function die_actor(self)
+_g.die_actor=function(self)
 	-- last actor?
 	if(self.npc) active_actors-=1
 	if active_actors==0 then
@@ -952,7 +951,7 @@ function die_actor(self)
 	end
 end
 
-function hit_actor(self,dmg)
+_g.hit_actor=function(self,dmg)
 	self.hit_t=time_t+8
 	self.hp-=dmg
 	if not self.disable and self.hp<=0 then
@@ -1093,7 +1092,7 @@ function refresh_path(self)
 	self.seek_t=time_t+rnd(self.seek_dly)
 end
 
-function npc_update(self)
+_g.npc_update=function(self)
 	if self.move_t<time_t and self.path_i<#self.path then
 		local t=flr(self.path_i)+1
 		local dx,dy=self.x-self.path[t][1],self.y-self.path[t][2]
@@ -1170,7 +1169,7 @@ _g.draw_rspr_actor=function(self,x,y)
 	rspr(self.sx,self.sy,x-4,y-4,ang)
 end
 _g.draw_txt_actor=function(self,x,y)
-	draw_actor(self,x,y)
+	_g.draw_actor(self,x,y)
 	if self.near_plyr_t>time_t then
 		_g.draw_txt_part(self,x,y-8)
 	end
@@ -1264,18 +1263,7 @@ _g.throne_draw=function(a,x,y)
 	x,y=x-4*a.cw,y-4*a.ch
 	-- shadow
 	palt(0,false)
-	--rectfill(x,y+4,x+8*a.cw,y+4+8*a.ch,1)
-	--palt(14,false)
-	for j=y+8*a.ch-4,y+8*a.ch do
-		if j>=0 and j<128 then
-			local mem=0x6000+64*j
-			for i=band(x,-2)/2,band(x+8*a.cw,-2)/2 do
-				if i>=0 and i<64 then
-					poke(mem+i,shade[peek(mem+i)])
-				end
-			end
-		end
-	end
+	rectfill(x,y+4,x+8*a.cw,y+4+8*a.ch,1)
 	
 	-- hit effect
 	local tcol=a.palt or 14
@@ -1324,31 +1312,59 @@ _g.update_blast=function(self)
 		del(actors,self)
 	end 
 end
+_g.draw_actor=function(a,sx,sy)
+	if a.safe_t and a.safe_t>time_t and band(time_t,1)==0 then
+		return
+	end
+	
+	local sw,sh=max(1,flr(2*a.w+0.5)),max(1,flr(2*a.h+0.5))
+	sx,sy=sx-4*sw,sy-4*sh
+	-- shadow
+	palt(14,true)	
+	sspr(0,8,8,8,sx,sy+7*sh,8*sw,8)
+	palt(14,false)	
+	-- hit effect
+	local tcol=a.palt or 14
+	if a.hit_t>time_t then
+		memset(0x5f00,0xf,16)
+		pal(tcol,tcol)
+ end
+ local s,flipx=a.spr,false
+ if a.frames then
+		flipx=face1strip[a.facing+1]
+		s=a.frames[flr(a.frame%#a.frames)+1]
+	end
+	-- actor
+	palt(0,false)
+	palt(tcol,true)
+	spr(s,sx,sy,sw,sh,flipx,flipy)
+	palt(tcol,false)
+	pal()
+	palt(14,true)
+	local wp=a.wp
+	if wp and wp.sx then
+		local u,v=cos(a.angle),sin(a.angle)
+		-- recoil animation
+		local f=-mid(a.fire_t-time_t,0,8)/4
+		rspr(wp.sx,wp.sy,sx+4*u+f*u,sy+4*v+f*v,1-a.angle)
+	end
+ palt()
+end
 
 all_actors=json_parse('{"barrel_cls":{"side":"any_side","inertia":0.8,"spr":128,"hit":"blast_on_hit"},"msl_cls":{"side":"any_side","inertia":1.01,"sx":80,"sy":24,"update":"smoke_emitter","draw":"draw_rspr_actor","hit":"blast_on_hit","touch":"blast_on_touch"},"grenade_cls":{"side":"any_side","w":0.2,"h":0.2,"inertia":0.91,"bounce":0.8,"sx":96,"sy":16,"update":"smoke_emitter","draw":"draw_rspr_actor","hit":"blast_on_hit","touch":"blast_on_touch"},"bandit_cls":{"hp":3,"wp":"base_gun","frames":[4,5,6],"npc":true,"rnd":{"fire_dly":[90,120],"pause_dly":[90,120]}},"scorpion_cls":{"rnd":{"fire_dly":[160,180]},"pause_dly":120,"w":0.8,"h":0.8,"hp":10,"wp":"acid_gun","palt":5,"frames":[131,133],"npc":true},"worm_cls":{"palt":3,"w":0.2,"h":0.2,"inertia":0.8,"dmg":1,"frames":[7,8],"npc":true},"slime_cls":{"w":0.2,"h":0.2,"inertia":0.8,"dmg":1,"frames":[29,30,31,30],"wp":"goo","npc":true,"splat":"goo_splat"},"dog_cls":{"los_dist":1,"inertia":0.2,"hp":5,"acc":0.06,"wp":"bite","frames":[61,62],"npc":true},"bear_cls":{"inertia":0.2,"frames":[1,2,3],"npc":true,"wp":"snowball"},"throne_cls":{"zorder":1,"w":8,"h":4,"hp":5,"palt":15,"inertia":0,"cx":87,"cy":18,"cw":12,"ch":5,"update":"throne_update","draw":"throne_draw","init":"throne_init","die":"throne_die","npc":true},"health_cls":{"spr":48,"w":0,"h":0,"update":"health_pickup"},"ammo_cls":{"spr":32,"w":0,"h":0,"update":"ammo_pickup"},"wpdrop_cls":{"w":0,"h":0,"inertia":0.9,"btn_t":0,"near_plyr_t":0,"draw":"draw_txt_actor","update":"wpdrop_update"},"notice_cls":{"spr":145,"w":0,"h":0,"inertia":0,"txt":"dont touch","near_plyr_t":0,"draw":"draw_txt_actor","update":"notice_update"},"cop_cls":{"flee":true,"acc":0.05,"frames":[13,14,15,14],"rnd":{"fire_dly":[160,210],"pause_dly":[120,160]},"wp":"rifle","npc":true},"fireimp_cls":{"frames":[45,46,47,46],"dmg":3,"hit":"blast_on_hit","npc":true},"turret_cls":{"w":1,"h":1,"wp":"rpg","hp":10,"acc":0,"bounce":0,"frames":[163],"fire_dly":180,"pause_dly":120,"splat":"turret_splat","npc":true},"horror_cls":{"part":"green_part","part_dly":8,"part_t":0,"hp":25,"frames":[160,161,162],"fire_dly":180,"pause_dly":120,"splat":"goo_splat","npc":true},"warp_cls":{"w":0,"h":0,"captured":false,"frames":[80,81,82],"draw":"nop","update":"warp_update"},"cactus":{"inertia":0.8,"acc":0,"spr":83,"die":"nop","update":"nop"},"candle_cls":{"part":"candle","part_dly":4,"part_t":0,"inertia":0.8,"acc":0,"spr":178,"die":"nop"},"blast_cls":{"w":0.8,"h":0.8,"acc":0,"inertia":0,"bounce":0,"dmg":0,"side":"any_side","frames":[192,193,208,209,194,195,210,211],"hit":"nop","update":"update_blast","draw":"draw_blast"},"frog_cls":{"rnd":{"fire_dly":[160,180]},"pause_dly":120,"w":0.8,"h":0.8,"hp":15,"wp":"acid_gun","frames":[231,233,235,233],"npc":true},"horror_spwnr_cls":{"frames":[84],"acc":0,"npc":true,"hp":10,"wp":"horror_spwn"}}')
 
-	
 -- actor
 -- x,y in map tiles (not pixels)
 local actor_id=1
-local actor_cls=json_parse('{"dx":0,"dy":0,"acc":0.02,"frame":0,"inertia":0.6,"bounce":1,"hp":1,"contact_t":0,"path":[],"path_i":0,"move_t":0,"seek_t":0,"seek_dly":8,"hit_t":0,"can_fire":false,"fire_t":0,"fire_dly_t":0,"w":0.4,"h":0.4,"los_t":0,"los_dist":64,"angle":0,"facing":0,"side":"bad_side"}')
+local actor_cls=json_parse('{"dx":0,"dy":0,"acc":0.02,"frame":0,"inertia":0.6,"bounce":1,"hp":1,"contact_t":0,"path":[],"path_i":0,"move_t":0,"seek_t":0,"seek_dly":8,"hit_t":0,"can_fire":false,"fire_t":0,"fire_dly_t":0,"w":0.4,"h":0.4,"los_t":0,"los_dist":64,"angle":0,"facing":0,"side":"bad_side","draw":"draw_actor","hit":"hit_actor","update":"npc_update","die":"die_actor"}')
 function make_actor(x,y,src)
 	actor_id+=1
 	actor_id%=512
-	local a=clone(actor_cls,{
-		id=actor_id,
-		x=x,
-		y=y,
-		draw=draw_actor,
-		update=src.npc and npc_update or nop,
-		die=src.npc and die_actor or nop,
-		hit=hit_actor})
-	for k,v in pairs(src) do
-		a[k]=v
-	end
-	for k,v in pairs(src.rnd or {}) do
-		a[k]=v[3] and rndarray(v) or rndlerp(v[1],v[2])
-	end
+	local a=clone(actor_cls,
+		clone(src,{
+			id=actor_id,
+			x=x,
+			y=y}))
 	add(actors,a)
 	if(a.init) a:init()
 	if(a.npc) active_actors+=1
@@ -1406,44 +1422,6 @@ function move_actor(a)
  zbuf_write(a)
 end
 
-function draw_actor(a,sx,sy)
-	if a.safe_t and a.safe_t>time_t and band(time_t,1)==0 then
-		return
-	end
-	
-	local sw,sh=max(1,flr(2*a.w+0.5)),max(1,flr(2*a.h+0.5))
-	sx,sy=sx-4*sw,sy-4*sh
-	-- shadow
-	palt(14,true)	
-	sspr(0,8,8,8,sx,sy+7*sh,8*sw,8)
-	palt(14,false)	
-	-- hit effect
-	local tcol=a.palt or 14
-	if a.hit_t>time_t then
-		memset(0x5f00,0xf,16)
-		pal(tcol,tcol)
- end
- local s,flipx=a.spr,false
- if a.frames then
-		flipx=face1strip[a.facing+1]
-		s=a.frames[flr(a.frame%#a.frames)+1]
-	end
-	-- actor
-	palt(0,false)
-	palt(tcol,true)
-	spr(s,sx,sy,sw,sh,flipx,flipy)
-	palt(tcol,false)
-	pal()
-	palt(14,true)
-	local wp=a.wp
-	if wp.sx then
-		local u,v=cos(a.angle),sin(a.angle)
-		-- recoil animation
-		local f=-mid(a.fire_t-time_t,0,8)/4
-		rspr(wp.sx,wp.sy,sx+4*u+f*u,sy+4*v+f*v,1-a.angle)
-	end
- palt()
-end
 
 -- player actor
 function make_plyr()
