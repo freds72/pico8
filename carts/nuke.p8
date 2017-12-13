@@ -1531,7 +1531,7 @@ start_screen.update=function()
 			end,after_draw)
 		futures_add(function()
 			wait_async(90)
-			lvl_i,cur_loop=0,1
+			lvl_i,cur_loop=2,1
 			plyr=make_plyr()
 			next_level()
 			--make_actor(plyr.x,plyr.y+0.5,all_actors.dog_cls)
@@ -1625,18 +1625,24 @@ game_screen.draw=function()
 	end
 end
 
+local perf_update,perf_draw=0,0
 function _update60()
 	time_t+=1
 
+	local t=stat(1)
 	futures_update(before_update)
 	cur_screen.update()
+	perf_update=stat(1)-t
 end
 
 function _draw()
+	local t=stat(1)
 	cur_screen.draw()
 	futures_update(after_draw)
+	perf_draw=stat(1)-t
 	
-	print(stat(1),2,120,7)
+	print((100*perf_update).."%",2,112,7)
+	print((100*perf_draw).."%",2,120,7)
 	print(stat(0),96,120,7)
 	print(active_actors,48,120,6)
 end
