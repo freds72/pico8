@@ -6,7 +6,7 @@ __lua__
 
 -- turn on to see the pathfinding process
 debugflood = true
-path={}
+local gradient={}
 
 ppos={1,1} --player pos
 cpos={8,8} --cursor pos
@@ -17,18 +17,6 @@ imod=0     --indicator modifier
 t=0        --ticks
 
 local dirs={{1,0}, {0,1}, {-1,0}, {0,-1}}
-
-function movep()
-	--check the current pos firts
-	local x,y=cpos[1],cpos[2]
-	if check(x,y) then
-		sfx(2)
-		tpos={x=x,y=y}
-		getpath(ppos[1],ppos[2],x,y)
-	else
-		sfx(3)
-	end
-end
 
 function cost(a,b)
 	local dx,dy=abs(a.x-b.x),abs(a.y-b.y)
@@ -43,7 +31,7 @@ function lowest(nodes,scores)
 	local score,node=32000
 	local i=1 --debug
 	for _,v in pairs(nodes) do
-		local vscore=scores[v.x+64*v.y].f
+		local vscore=scores[v.x+64*v.y]
 		if vscore<score then
 			score=vscore
 			node=v
@@ -62,21 +50,33 @@ function move_cost(x,y)
 	return c
 end
 
+function closest(a,closedset,scores)
+	local score,node=32000
+	for _,d in pairs(dirs) do
+		local x,y=a.x+d[1],a.y+d[2]
+		local k=x+64*y
+		if not closedset[k] then
+			local vscore=scores[k]
+			if vscore<score then
+				score=vscore
+				node={x=x,y=y}
+			end
+		end
+	end
+	return node
+end
+
 function getpath(x0,y0,x1,y1)
-	path={}
+	local path={}
 	
-	local start,goal={x=x0,y=y0},{x=x1,y=y1}
-	local flood={start}
+	local flood={{x=x0,y=y0}}
 	local camefrom={}
 	local closedset={}
-	local ss=x0+64*y0
-	local scores={[ss]={
-		g=0,
-		f=cost(start,goal)}}
 	local i,current=0
 	
 	while #flood>0 do
-		current=lowest(flood,scores)
+		current=lowest(flood,gradient)
+
 		local x,y=current.x,current.y
 		if (x==x1 and y==y1) break
 		del(flood,current)
@@ -90,21 +90,7 @@ function getpath(x0,y0,x1,y1)
 				if not closedset[sn] then
 					if not camefrom[sn] then
 						add(flood,{x=nx,y=ny})
-					end
-					
-					local score=scores[sc].g + move_cost(nx,ny)
-					local g=scores[sn] and scores[sn].g or 32000
-					if score<g then
 						camefrom[sn]=current
-						scores[sn]={
-							g=score,
-						 f=score+cost({x=nx,y=ny},goal)}
-						-- awesome flood debugging
-						if debugflood then
-							rectfill(nx*8+1, ny*8+1, nx*8+7, ny*8+7,5)
-							print(scores[sn].g,nx*8,ny*8,7)
-							flip()
-						end
 					end
 				end
 			end
@@ -116,13 +102,14 @@ function getpath(x0,y0,x1,y1)
 		add(path,current)
 		current=camefrom[current.x+64*current.y]
 	end
+	return path
 end
 
-function fetchp()
+function fetchp(path)
 	if #path>0 then
 		local p=path[#path]
 		path[#path]=nil
-		return {p.x,p.y}
+		return path
 	end
 end
 
@@ -141,46 +128,49 @@ function movec(x,y)
 	sfx(0)
 end
 
-local gradient={}
 local perf_update=0
-function _update60()	
+local perf_path=0
+local last_path
+local map_cost={}
+function _update60()
 	--update cursor pos on arrows
-	if (btnp(0)) movec(-1,0)
-	if (btnp(1)) movec(1,0)
-	if (btnp(2)) movec(0,-1)
-	if (btnp(3)) movec(0,1)
-	
-	--move player to cursor on z
-	if (btnp(4)) movep()
+	local moved=false
+	if (btnp(0)) movec(-1,0) moved=true
+	if (btnp(1)) movec(1,0) moved=true
+	if (btnp(2)) movec(0,-1) moved=true
+	if (btnp(3)) movec(0,1) moved=true
 	
 	--update cursor state
 	if t%30 == 0 then
 		ctick = abs(ctick-1)
 	end
 	
-	--update player position
-	if #path>0 and t%5==0 then
-		ppos=fetchp()
-		sfx(1)
-		
-		--remove the target location
-		if (tpos.x==ppos[1] and tpos.y==ppos[2]) tpos=nil
-	end
-
 	--update indicator modifier
 	if t%8 == 0 then
 		imod+=1
 		if (imod > 4) imod = 0
 	end
 	local t0=stat(1)
-	local goal={x=cpos[1],y=cpos[2]}
-	gradient={}
-	for i=0,15 do
-		for j=0,15 do
-			gradient[i+64*j]=cost({x=i,y=j},goal)
+	for i=0,32 do
+		local dx=cpos[1]-i
+		dx*=dx
+		for j=0,64 do
+			local dy=cpos[2]-j
+			local k=i+64*j
+			gradient[k]=dx+dy*dy+map_cost[k]
 		end
 	end
-	local t1=stat(1)
+	perf_update=stat(1)-t0
+
+	if moved then
+		t0=stat(1)
+		local x,y=cpos[1],cpos[2]
+		if check(x,y) then
+		last_path=getpath(ppos[1],ppos[2],x,y)
+		end
+		perf_path=stat(1)-t0
+	end
+
 	t+=1
 end
 
@@ -188,24 +178,40 @@ function _draw()
 	cls()
 	map(0,0,0,0,16,16)
 	
+	--[[
 	for i=0,15 do
 		for j=0,15 do
 			print(gradient[i+64*j],i*8,j*8,5)
 		end
 	end
+	]]
 	-- draw player
 	spr(3,ppos[1]*8,ppos[2]*8)
-	
-	-- draw target indicator
-	if (tpos) spr(6+imod,tpos.x*8,tpos.y*8)
 	
 	-- draw cursor
 	spr(4+ctick,cpos[1]*8,cpos[2]*8)
 	
+	if last_path then
+		local x,y=ppos[1]*8+4,ppos[2]*8+4
+		for i=1,#last_path do
+			local p=last_path[i]
+			local x1,y1=p.x*8+4,p.y*8+4
+			line(x,y,x1,y1,8)
+			x,y=x1,y1
+		end
+		print(perf_path,cpos[1]*8+8,cpos[2]*8,7)
+	end
 	print(perf_update,3,120,1)
 	print(perf_update,2,120,7)
 end
 
+function _init()
+	for i=0,32 do
+		for j=0,64 do
+			map_cost[i+64*j]=16*move_cost(i,j)
+		end
+	end
+end
 __gfx__
 000000004444444499999999000000000000000088000088aa0aa0aaaaa0aa0aa0aaa0aaaa0aaa0aa0aa0aaa0000000000000000000000000000000000000000
 000000004444499499999999070007000880088082000028a000000a0000000aa00000000000000aa00000000000000000000000000000000000000000000000
