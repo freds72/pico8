@@ -19,7 +19,7 @@ t=0        --ticks
 local dirs={{1,0}, {0,1}, {-1,0}, {0,-1}}
 
 function cost(a,b)
-	local dx,dy=abs(a.x-b.x),abs(a.y-b.y)
+	local dx,dy=a.x-b.x,a.y-b.y
 	return dx*dx+dy*dy
 end
 function cost2(a,b)
@@ -29,16 +29,13 @@ end
 
 function lowest(nodes,scores)
 	local score,node=32000
-	local i=1 --debug
 	for _,v in pairs(nodes) do
 		local vscore=scores[v.x+64*v.y]
 		if vscore<score then
 			score=vscore
 			node=v
 		end
-		i+=1
 	end
-	node.i=i
 	return node
 end
 
@@ -50,52 +47,46 @@ function move_cost(x,y)
 	return c
 end
 
-function closest(a,closedset,scores)
-	local score,node=32000
-	for _,d in pairs(dirs) do
-		local x,y=a.x+d[1],a.y+d[2]
-		local k=x+64*y
-		if not closedset[k] then
-			local vscore=scores[k]
-			if vscore<score then
-				score=vscore
-				node={x=x,y=y}
-			end
-		end
-	end
-	return node
-end
-
 function getpath(x0,y0,x1,y1)
 	local path={}
 	
-	local flood={{x=x0,y=y0}}
+	local ss=x0+64*y0
+	local start={x=x0,y=y0}
+	local flood,flood_len={[ss]=start},1
 	local camefrom={}
 	local closedset={}
-	local i,current=0
+	local current
 	
-	while #flood>0 do
+	while flood_len>0 and flood_len<15 do
 		current=lowest(flood,gradient)
 
 		local x,y=current.x,current.y
 		if (x==x1 and y==y1) break
-		del(flood,current)
-		local sc=x+64*y
-		closedset[sc]=true
+		local sn=x+64*y
+		flood[sn]=nil
+		flood_len-=1
+		closedset[sn]=true
 
 		for _,d in pairs(dirs) do
 			local nx,ny=x+d[1],y+d[2]
 			if check(nx,ny) then
-				local sn=nx+64*ny
+				sn=nx+64*ny
 				if not closedset[sn] then
 					if not camefrom[sn] then
-						add(flood,{x=nx,y=ny})
+						flood[sn]={x=nx,y=ny}
+						flood_len+=1
 						camefrom[sn]=current
+						--[[
+						rectfill(
+							nx*8+1,ny*8+1,
+							nx*8+7,ny*8+7,5)
+						print(flood_len,nx*8+1,ny*8+1,7)
+						flip()
+						]]
 					end
 				end
 			end
 		end
-		i+=1
 	end
 
 	while current do
@@ -193,10 +184,10 @@ function _draw()
 	
 	if last_path then
 		local x,y=ppos[1]*8+4,ppos[2]*8+4
-		for i=1,#last_path do
+		for i=#last_path,1,-1 do
 			local p=last_path[i]
-			local x1,y1=p.x*8+4,p.y*8+4
-			line(x,y,x1,y1,8)
+			local x1,y1=p.x*8+4+rnd(4)-2,p.y*8+4+rnd(4)-2
+			line(x,y,x1,y1,12)
 			x,y=x1,y1
 		end
 		print(perf_path,cpos[1]*8+8,cpos[2]*8,7)
