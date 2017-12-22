@@ -9,7 +9,7 @@ debugflood = true
 path={}
 
 ppos={1,1} --player pos
-cpos={0,0} --cursor pos
+cpos={8,8} --cursor pos
 tpos=nil   --target pos
 ctick=0    --cursor tick
 msprite=1  --sprite toggle
@@ -18,126 +18,112 @@ t=0        --ticks
 
 local dirs={{1,0}, {0,1}, {-1,0}, {0,-1}}
 
-function neighbors(x,y)
-	local res={}
-	for _,d in pairs(dirs) do
-		local x1,y1=x+d[1],y+d[2]
-		if check(x1,y1) then
-			add(res,{x=x1,y=y1})
-		end
-	end	
-	return res
-end
-
 function movep()
 	--check the current pos firts
 	local x,y=cpos[1],cpos[2]
 	if check(x,y) then
 		sfx(2)
 		tpos={x=x,y=y}
-		getpath(x,y)
+		getpath(ppos[1],ppos[2],x,y)
 	else
 		sfx(3)
 	end
 end
 
-function cost2(a,b)
+function cost(a,b)
 	local dx,dy=abs(a.x-b.x),abs(a.y-b.y)
 	return dx*dx+dy*dy
 end
-function cost(a,b)
+function cost2(a,b)
 	local dx,dy=abs(a.x-b.x),abs(a.y-b.y)
 	return min(dx,dy)
 end
 
-function lowest(nodes,fscore)
+function lowest(nodes,scores)
 	local score,node=32000
+	local i=1 --debug
 	for _,v in pairs(nodes) do
-		local vscore=fscore[s(v)]
+		local vscore=scores[v.x+64*v.y].f
 		if vscore<score then
 			score=vscore
 			node=v
 		end
+		i+=1
 	end
+	node.i=i
 	return node
 end
 
-function getpath(x,y)
+function move_cost(x,y)
+	local c=0
+	for _,d in pairs(dirs) do
+		if (fget(mget(x+d[1],y+d[2]))==1) c+=1
+	end
+	return c
+end
+
+function getpath(x0,y0,x1,y1)
 	path={}
 	
-	local start,goal={x=ppos[1],y=ppos[2]},{x=x,y=y}
+	local start,goal={x=x0,y=y0},{x=x1,y=y1}
 	local flood={start}
-	
 	local camefrom={}
 	local closedset={}
-	local gscore={[s(start)]=0}
-	local fscore={[s(start)]=cost(start,goal)}
-	local current
+	local ss=x0+64*y0
+	local scores={[ss]={
+		g=0,
+		f=cost(start,goal)}}
+	local i,current=0
 	
 	while #flood>0 do
-		current=lowest(flood,fscore)
-		--current=flood[1]
-		
-		if (current.x==x and current.y==y) break
+		current=lowest(flood,scores)
+		local x,y=current.x,current.y
+		if (x==x1 and y==y1) break
 		del(flood,current)
-		closedset[s(current)]=true
-		
-		local neighbs=neighbors(current.x,current.y)
+		local sc=x+64*y
+		closedset[sc]=true
 
-		local score=gscore[s(current)]
-		for neighb in all(neighbs) do
-		 if not closedset[s(neighb)] then		 			 	
-				if not camefrom[s(neighb)] then
-					add(flood,neighb)
-				end
-				
-				local gscore_neigh=gscore[s(neighb)] or 32000
-				if score<gscore_neigh then
-					camefrom[s(neighb)]=current
-					gscore[s(neighb)]=score				
-					fscore[s(neighb)]=score+cost(neighb,goal)
-					-- awesome flood debugging
-					if debugflood then
-						rectfill(neighb.x*8, neighb.y*8, (neighb.x*8)+7, (neighb.y*8)+7,5)
-						print(fscore[s(neighb)],neighb.x*8,neighb.y*8,7)
-						flip()
+		for _,d in pairs(dirs) do
+			local nx,ny=x+d[1],y+d[2]
+			if check(nx,ny) then
+				local sn=nx+64*ny
+				if not closedset[sn] then
+					if not camefrom[sn] then
+						add(flood,{x=nx,y=ny})
+					end
+					
+					local score=scores[sc].g + move_cost(nx,ny)
+					local g=scores[sn] and scores[sn].g or 32000
+					if score<g then
+						camefrom[sn]=current
+						scores[sn]={
+							g=score,
+						 f=score+cost({x=nx,y=ny},goal)}
+						-- awesome flood debugging
+						if debugflood then
+							rectfill(nx*8+1, ny*8+1, nx*8+7, ny*8+7,5)
+							print(scores[sn].g,nx*8,ny*8,7)
+							flip()
+						end
 					end
 				end
 			end
-		end		
+		end
+		i+=1
 	end
 
 	while current do
 		add(path,current)
-		current=camefrom[s(current)]
+		current=camefrom[current.x+64*current.y]
 	end
 end
 
 function fetchp()
 	if #path>0 then
 		local p=path[#path]
-		path[#path]=nil	
+		path[#path]=nil
 		return {p.x,p.y}
 	end
-end
-
-function contains(t,v)
-	return t[s(v)]!=nil
-end
-
-function s(n)
-	return n.x+64*n.y
-end
-
-function c(t)
-	local count = 0
-	for _ in pairs(t) do count += 1 end
-	return count
-end
-
-function d(v)
-	cls()
-	print(v)
 end
 
 function check(x,y)
@@ -150,30 +136,13 @@ function check(x,y)
 end
 
 function movec(x,y)
-	cpos[1] += x
-	cpos[2] += y
-
-	if (cpos[1] < 0)  cpos[1] = 0  return
-	if (cpos[1] > 15) cpos[1] = 15 return
-	if (cpos[2] < 0)  cpos[2] = 0  return
-	if (cpos[2] > 15) cpos[2] = 15 return
-
+	cpos[1]=mid(cpos[1]+x,0,15)
+	cpos[2]=mid(cpos[2]+y,0,15)
 	sfx(0)
 end
 
-function togglemap()
-	for y=0,15 do
-		msprite = (msprite == 1) and 17 or 1
-		for x=0,15 do
-			if mget(x,y) == 1 or mget(x,y) == 17 then
-				mset(x,y, msprite)
-			end
-		end
-	end
-
-	msprite = (msprite == 1) and 17 or 1
-end
-
+local gradient={}
+local perf_update=0
 function _update60()	
 	--update cursor pos on arrows
 	if (btnp(0)) movec(-1,0)
@@ -198,17 +167,20 @@ function _update60()
 		if (tpos.x==ppos[1] and tpos.y==ppos[2]) tpos=nil
 	end
 
-	--update map sprites
-	if t%30 == 0 then
-		togglemap()
-	end
-
 	--update indicator modifier
 	if t%8 == 0 then
 		imod+=1
 		if (imod > 4) imod = 0
 	end
-	
+	local t0=stat(1)
+	local goal={x=cpos[1],y=cpos[2]}
+	gradient={}
+	for i=0,15 do
+		for j=0,15 do
+			gradient[i+64*j]=cost({x=i,y=j},goal)
+		end
+	end
+	local t1=stat(1)
 	t+=1
 end
 
@@ -216,6 +188,11 @@ function _draw()
 	cls()
 	map(0,0,0,0,16,16)
 	
+	for i=0,15 do
+		for j=0,15 do
+			print(gradient[i+64*j],i*8,j*8,5)
+		end
+	end
 	-- draw player
 	spr(3,ppos[1]*8,ppos[2]*8)
 	
@@ -224,6 +201,9 @@ function _draw()
 	
 	-- draw cursor
 	spr(4+ctick,cpos[1]*8,cpos[2]*8)
+	
+	print(perf_update,3,120,1)
+	print(perf_update,2,120,7)
 end
 
 __gfx__
