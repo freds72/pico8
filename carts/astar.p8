@@ -7,6 +7,9 @@ __lua__
 -- turn on to see the pathfinding process
 debugflood = true
 local gradient={}
+local map_cost={}
+local actors={}
+local plyr={x=8,y=8}
 
 ppos={1,1} --player pos
 cpos={8,8} --cursor pos
@@ -39,6 +42,19 @@ function lowest(nodes,scores)
 	return node
 end
 
+function closest(nodes,x,y)
+	local score,node=32000
+	for _,v in pairs(nodes) do
+		local dx,dy=v.x-x,v.y-y
+		local vscore=dx*dx+dy*dy+move_cost(v.x,v.y)
+		if vscore<score then
+			score=vscore
+			node=v
+		end
+	end
+	return node
+end
+
 function move_cost(x,y)
 	local c=0
 	for _,d in pairs(dirs) do
@@ -51,14 +67,15 @@ function getpath(x0,y0,x1,y1)
 	local path={}
 	
 	local ss=x0+64*y0
-	local start={x=x0,y=y0}
+	local start={x=x0,y=y0,k=ss}
 	local flood,flood_len={[ss]=start},1
 	local camefrom={}
 	local closedset={}
 	local current
 	
-	while flood_len>0 and flood_len<15 do
-		current=lowest(flood,gradient)
+	while flood_len>0 do
+		--current=lowest(flood,gradient)
+		current=closest(flood,x1,y1)
 
 		local x,y=current.x,current.y
 		if (x==x1 and y==y1) break
@@ -71,19 +88,17 @@ function getpath(x0,y0,x1,y1)
 			local nx,ny=x+d[1],y+d[2]
 			if check(nx,ny) then
 				sn=nx+64*ny
-				if not closedset[sn] then
-					if not camefrom[sn] then
-						flood[sn]={x=nx,y=ny}
-						flood_len+=1
-						camefrom[sn]=current
-						--[[
-						rectfill(
-							nx*8+1,ny*8+1,
-							nx*8+7,ny*8+7,5)
-						print(flood_len,nx*8+1,ny*8+1,7)
-						flip()
-						]]
-					end
+				if not closedset[sn] and not camefrom[sn] then
+					flood[sn]={x=nx,y=ny,k=sn}
+					flood_len+=1
+					camefrom[sn]=current
+					--[[
+					rectfill(
+						nx*8+1,ny*8+1,
+						nx*8+7,ny*8+7,5)
+					print(flood_len,nx*8+1,ny*8+1,7)
+					flip()
+					]]
 				end
 			end
 		end
@@ -91,16 +106,63 @@ function getpath(x0,y0,x1,y1)
 
 	while current do
 		add(path,current)
-		current=camefrom[current.x+64*current.y]
+		current=camefrom[current.k]
 	end
 	return path
+end
+
+function update_path_async(self)
+	while true do
+		local ss,sp=self.x+64*self.y,plyr.x+64*plyr.y
+		local flood,flood_len={[ss]={x=self.x,y=self.y,k=ss}},1
+		local closedset,camefrom={},{}
+		local current	
+
+		-- a*
+		local x1,y1=plyr.x,plyr.y
+		while flood_len>0 and flood_len<15 do
+			current=closest(flood,x1,y1)
+			
+			local x,y,sn=current.x,current.y,current.k
+			if (sn==sp) break
+			flood[sn]=nil
+			flood_len-=1
+			closedset[sn]=true
+	
+			for _,d in pairs(dirs) do
+				local nx,ny=x+d[1],y+d[2]
+				if check(nx,ny) then
+					sn=nx+64*ny
+					if not closedset[sn] and not camefrom[sn] then
+						flood[sn]={x=nx,y=ny,k=sn}
+						flood_len+=1
+						camefrom[sn]=current
+					end
+				end
+			end
+			yield()
+		end
+	
+		local path,prev={},current
+		while current do
+			add(path,{dx=current.x-prev.x,dy=current.y-prev.y})
+			prev=current
+			current=camefrom[current.k]
+		end
+		self.path=path
+
+		-- wait
+		while #path>0 do
+			yield()
+		end
+	end
 end
 
 function fetchp(path)
 	if #path>0 then
 		local p=path[#path]
 		path[#path]=nil
-		return path
+		return p
 	end
 end
 
@@ -113,24 +175,28 @@ function check(x,y)
 	return false
 end
 
-function movec(x,y)
-	cpos[1]=mid(cpos[1]+x,0,15)
-	cpos[2]=mid(cpos[2]+y,0,15)
-	sfx(0)
-end
-
 local perf_update=0
 local perf_path=0
 local last_path
-local map_cost={}
 function _update60()
 	--update cursor pos on arrows
 	local moved=false
-	if (btnp(0)) movec(-1,0) moved=true
-	if (btnp(1)) movec(1,0) moved=true
-	if (btnp(2)) movec(0,-1) moved=true
-	if (btnp(3)) movec(0,1) moved=true
+	local dx,dy=0,0
+	if (btnp(0)) dx=-1 moved=true
+	if (btnp(1)) dx=1 moved=true
+	if (btnp(2)) dy=-1 moved=true
+	if (btnp(3)) dy=1 moved=true
 	
+	if not check(plyr.x+dx,plyr.y) then
+		dx=0
+	end
+	if not check(plyr.x,plyr.y+dy) then
+		dy=0
+	end
+	
+	plyr.x=mid(plyr.x+dx,1,15)
+	plyr.y=mid(plyr.y+dy,1,15)
+
 	--update cursor state
 	if t%30 == 0 then
 		ctick = abs(ctick-1)
@@ -141,26 +207,38 @@ function _update60()
 		imod+=1
 		if (imod > 4) imod = 0
 	end
+	
 	local t0=stat(1)
+	for _,a in pairs(actors) do
+		coresume(a.update_path,a)		
+		if t%8==0 then
+			a.dx,a.dy=0,0
+			if a.path then
+				local p=fetchp(a.path)
+				if p then
+					a.dx=-p.dx/8
+					a.dy=-p.dy/8
+				end
+			end
+		end
+		a.x+=a.dx
+		a.y+=a.dy
+	end
+	perf_update=stat(1)-t0
+	--[[
+	local t0=stat(1)
+	local cpx,cpy=cpos[1],cpos[2]
 	for i=0,32 do
-		local dx=cpos[1]-i
+		local dx,k=cpx-i,i
 		dx*=dx
-		for j=0,64 do
-			local dy=cpos[2]-j
-			local k=i+64*j
+		for j=0,32 do
+			local dy=cpy-j
 			gradient[k]=dx+dy*dy+map_cost[k]
+			k+=64
 		end
 	end
 	perf_update=stat(1)-t0
-
-	if moved then
-		t0=stat(1)
-		local x,y=cpos[1],cpos[2]
-		if check(x,y) then
-		last_path=getpath(ppos[1],ppos[2],x,y)
-		end
-		perf_path=stat(1)-t0
-	end
+ ]]
 
 	t+=1
 end
@@ -176,22 +254,30 @@ function _draw()
 		end
 	end
 	]]
-	-- draw player
-	spr(3,ppos[1]*8,ppos[2]*8)
 	
-	-- draw cursor
-	spr(4+ctick,cpos[1]*8,cpos[2]*8)
-	
-	if last_path then
-		local x,y=ppos[1]*8+4,ppos[2]*8+4
-		for i=#last_path,1,-1 do
-			local p=last_path[i]
-			local x1,y1=p.x*8+4+rnd(4)-2,p.y*8+4+rnd(4)-2
-			line(x,y,x1,y1,12)
-			x,y=x1,y1
+	for _,a in pairs(actors) do
+		pal(7,a.c)
+		spr(19+ctick,a.x*8,a.y*8)
+ 	pal()
+ 	--[[
+		local last_path=a.path
+		if last_path then
+			local x,y=plyr.x*8+4,plyr.y*8+4
+			for i=#last_path,1,-1 do
+				local p=last_path[i]
+				local x1,y1=p.x*8+4,p.y*8+4
+				line(x,y,x1,y1,12)
+				x,y=x1,y1
+			end
+			print(#last_path,a.x*8,a.y*8,7)
 		end
-		print(perf_path,cpos[1]*8+8,cpos[2]*8,7)
+		]]
 	end
+		
+	-- draw player
+	spr(3+ctick,plyr.x*8,plyr.y*8)
+	
+	rectfill(1,119,32,126,0)
 	print(perf_update,3,120,1)
 	print(perf_update,2,120,7)
 end
@@ -202,24 +288,40 @@ function _init()
 			map_cost[i+64*j]=16*move_cost(i,j)
 		end
 	end
+	for i=1,16 do
+		local x,y=flr(rnd(14))+1,flr(rnd(14))+1
+		while not check(x,y) do
+			x,y=flr(rnd(14))+1,flr(rnd(14))+1
+		end
+		local a={
+			x=x,
+			y=y,
+			dx=0,
+			dy=0,			
+			c=flr(rnd(13))+2,
+			wait_dly=flr(rnd(8))+1,
+			update_path=cocreate(update_path_async)
+		}
+		add(actors,a)
+	end
 end
 __gfx__
-000000004444444499999999000000000000000088000088aa0aa0aaaaa0aa0aa0aaa0aaaa0aaa0aa0aa0aaa0000000000000000000000000000000000000000
-000000004444499499999999070007000880088082000028a000000a0000000aa00000000000000aa00000000000000000000000000000000000000000000000
-00000000444444449999999901777100082002802000000200000000a000000a0000000aa0000000a000000a0000000000000000000000000000000000000000
-0000000044444444aaaaaaaa005750000200002000000000a000000aa0000000a000000aa000000a0000000a0000000000000000000000000000000000000000
-000000004499444414141414007770000000000000000000a000000a0000000aa000000aa000000aa00000000000000000000000000000000000000000000000
-00000000444444444141414100171000080000808000000800000000a000000aa00000000000000aa000000a0000000000000000000000000000000000000000
-000000004444444414141414000100000880088088000088a000000aa00000000000000aa00000000000000a0000000000000000000000000000000000000000
-000000004444444441414141000000000220022022000022aa0aa0aaa0aa0aaaaa0aaa0aa0aaa0aaaaa0aa0a0000000000000000000000000000000000000000
-0000000044444444999999990000000000000000000000000000000000000000000000000000000000000000000000000000000c000000000000000000000000
-0000000044449944999999990000000000000000000000000000000000000000000000000000000000000000000000000000000cc00000000000000000000000
-00000000444444449999999900000000000000000000000000000000000000000000000000000000000000000000000000000000c00000000000000000000000
-000000004444444499999999000000000000000000000000000000000000000000000000000000000000000000000000000ccc000c0c00000000000000000000
-00000000499444449999999900000000000000000000000000000000000000000000000000000000000000000000000000c000c00cccc0000000000000000000
-00000000444444449999999900000000000000000000000000000000000000000000000000000000000000000000000000c000cc0cc00c000000000000000000
-00000000444444449999999900000000000000000000000000000000000000000000000000000000000000000000000000c00cc000c000c00000000000000000
-000000004444444499999999000000000000000000000000000000000000000000000000000000000000000000000000000cc00000c000000000000000000000
+000000004444444499999999011111100111111088000088aa0aa0aaaaa0aa0aa0aaa0aaaa0aaa0aa0aa0aaa0000000000000000000000000000000000000000
+000000004444499499999999199999911999999182000028a000000a0000000aa00000000000000aa00000000000000000000000000000000000000000000000
+000000004444444499999999199f1f111999f1f12000000200000000a000000a0000000aa0000000a000000a0000000000000000000000000000000000000000
+0000000044444444aaaaaaaa199ffff11999fff100000000a000000aa0000000a000000aa000000a0000000a0000000000000000000000000000000000000000
+0000000044994444141414141ffffff11ffffff100000000a000000a0000000aa000000aa000000aa00000000000000000000000000000000000000000000000
+00000000444444444141414113333331133333318000000800000000a000000aa00000000000000aa000000a0000000000000000000000000000000000000000
+000000004444444414141414131111310131131088000088a000000aa00000000000000aa00000000000000a0000000000000000000000000000000000000000
+000000004444444441414141010000100010010022000022aa0aa0aaa0aa0aaaaa0aaa0aa0aaa0aaaaa0aa0a0000000000000000000000000000000000000000
+0000000044444444999999990011110000111100000000000000000000000000000000000000000000000000000000000000000c000000000000000000000000
+0000000044449944999999990177771001777710000000000000000000000000000000000000000000000000000000000000000cc00000000000000000000000
+00000000444444449999999917777771177777710000000000000000000000000000000000000000000000000000000000000000c00000000000000000000000
+000000004444444499999999177171711717177100000000000000000000000000000000000000000000000000000000000ccc000c0c00000000000000000000
+00000000499444449999999917777771177777710000000000000000000000000000000000000000000000000000000000c000c00cccc0000000000000000000
+00000000444444449999999917777771177777710000000000000000000000000000000000000000000000000000000000c000cc0cc00c000000000000000000
+00000000444444449999999917177171177177100000000000000000000000000000000000000000000000000000000000c00cc000c000c00000000000000000
+000000004444444499999999110110110110111000000000000000000000000000000000000000000000000000000000000cc00000c000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c00000
