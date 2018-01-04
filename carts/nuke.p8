@@ -1009,7 +1009,7 @@ function update_path_async(self)
 		local current
 
 		-- a* (+keep memory limits)
-		while flood_len>0 do
+		while flood_len>0 and flood_len<64 do
 			current=closest(x1,y1,flood)
 			
 			x,y,k=flr(current.x),flr(current.y),current.k
@@ -1025,13 +1025,13 @@ function update_path_async(self)
 				if solid(x,ny) then
 					ny=y
 				end
-				if not solid(nx,ny) then
+				--if not solid(nx,ny) then
 					k=nx+96*ny
 					if not closedset[k] and not camefrom[k] then
 						flood[k],camefrom[k]={x=nx,y=ny,k=k},current
 						flood_len+=1
 					end
-				end
+				--end
 			end
 			yield()
 		end
@@ -1359,6 +1359,7 @@ _g.draw_actor=function(a,sx,sy)
 		rspr(wp.sx,wp.sy,sx+4*u+f*u,sy+4*v+f*v,1-a.angle)
 	 palt()
 	end
+	--[[
 	if a.path and #a.path>0 then
 		local x0,y0=cam_project(a.path[1].x,a.path[1].y)
 		for i=2,#a.path do
@@ -1366,11 +1367,8 @@ _g.draw_actor=function(a,sx,sy)
 			line(x0,y0,x1,y1,8)
 			x0,y0=x1,y1
 		end
-		print(#a.path,sx+9,sy,0)
-		print(#a.path,sx+8,sy,7)
 	end
-	--[[if a.input then
-		--print(sqr_dist(a.x,a.y,a.input.x,a.input.y),sx+8,sy,7)
+ if a.input then
 		line(sx,sy,sx+8*a.input.dx,sy+8*a.input.dy,12)
 	end
 	]]
