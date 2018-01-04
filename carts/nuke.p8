@@ -281,7 +281,14 @@ function txt_print(str,x,y,col)
 	print(str,x,y,col)
 end
 
--- helper
+-- helpers
+function pop(a)
+	if #a>0 then
+		local p=a[#a]
+		a[#a]=nil
+		return p
+	end
+end
 function forall(a,fn)
 	for _,v in pairs(a) do
 		if not v[fn](v) then
@@ -289,7 +296,6 @@ function forall(a,fn)
 		end
 	end
 end
-
 function clone(src,dst)
 	if(src==dst) assert()
 	if(type(src)!="table") assert()
@@ -426,7 +432,7 @@ end
 
 -- collision map
 local cmap={}
-local cmap_cells={0,1,129,128,127,-1,-129,-128,-127}
+local cmap_cells=json_parse('[0,1,129,128,127,-1,-129,-128,-127]')
 function cmap_clear(objs)
 	local h,obj
 	cmap={}
@@ -514,9 +520,17 @@ function make_part(x,y,z,src,dx,dy,dz,a)
 	add(parts,p)
 	return p
 end
+-- spill bones and skull!
+function make_splat(self)
+	make_part(self.x,self.y,0, all_parts[self.splat or "blood_splat"])
+ for i=1,5 do
+		local a=rnd()
+		make_part(self.x,self.y,0,all_parts[self.bones or "bones"],cos(a)/10,sin(a)/10,0,a)
+	end
+end
 function draw_laser_part(p,x,y)
-	local dx,dy=p.d*p.u,p.d*p.v
-	line(x+0.5*dx,y+0.5*dy,x+80*dx,y+80*dy,8)
+	local dx,dy=p.u,p.v
+	line(x+2*dx,y+2*dy,x+80*dx,y+80*dy,8)
 end
 -- bullets
 function update_blt(self)
@@ -564,8 +578,8 @@ function update_blt(self)
 		 else
 			 sfx(62)
 				goto die
-			end		 
-		end			
+			end
+		end
 		self.prevx,self.prevy,self.x,self.y=x0,y0,x1,y1
 		zbuf_write(self)
 		return true
@@ -895,15 +909,6 @@ function solid_a(a, dx, dy)
 	return solid_area(a.x+dx,a.y+dy,a.w,a.h) or solid_actor(a,dx,dy) 
 end
 
--- spill bones and skull!
-function make_splat(self)
-	make_part(self.x,self.y,0, all_parts[self.splat or "blood_splat"])
- for i=1,5 do
-		local a=rnd()
-		make_part(self.x,self.y,0,all_parts[self.bones or "bones"],cos(a)/10,sin(a)/10,0,a)
-	end
-end
-
 -- custom actors
 function plyr_die(self)
 	make_splat(self)
@@ -974,18 +979,10 @@ end
 
 -- a-star
 local a_sides=json_parse('[[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]]')
-function fetchp(path)
-	if #path>0 then
-		local p=path[#path]
-		path[#path]=nil
-		return p
-	end
-end
 function closest(x,y,nodes)
 	local score,node=32000
 	for _,v in pairs(nodes) do
-		local dx,dy=v.x-x,v.y-y
-		local vscore=dx*dx+dy*dy
+		local vscore=sqr_dist(v.x,v.y,x,y)
 		if vscore<score then
 			score=vscore
 			node=v
@@ -995,29 +992,27 @@ function closest(x,y,nodes)
 end
 function update_path_async(self)
 	while self.hp>0 do
-		local x1,y1
+		local x1,y1=self.x,self.y
 		if self.flee then
 			local pr,cr=whereami(plyr),whereami(self)
 			local r=rooms[flr(16*pr+8*cr+self.id)%#rooms+1]
 			x1,y1=rndlerp(r.x,r.x+r.w),rndlerp(r.y,r.y+r.h)
 		elseif sqr_dist(self.x,self.y,plyr.x,plyr.y)<12*12 then
 			x1,y1=plyr.x,plyr.y
-		else
-			x1,y1=self.x,self.y
 		end
 	
- 	x1,y1=flr(x1),flr(y1)
+		x1,y1=flr(x1),flr(y1)
 	 local x,y=flr(self.x),flr(self.y)
-		local k,pk=x+64*y,x1+64*y1
+		local k,pk=x+96*y,x1+96*y1
 		local flood,flood_len={[k]={x=x,y=y,k=k}},1
 		local closedset,camefrom={},{}
-		local current	
+		local current
 
 		-- a* (+keep memory limits)
-		while flood_len>0 and flood_len<64 do
+		while flood_len>0 do
 			current=closest(x1,y1,flood)
 			
-			x,y,k=current.x,current.y,current.k
+			x,y,k=flr(current.x),flr(current.y),current.k
 			if (k==pk) break
 			flood[k],closedset[k]=nil,true
 			flood_len-=1
@@ -1030,28 +1025,30 @@ function update_path_async(self)
 				if solid(x,ny) then
 					ny=y
 				end
-				k=nx+64*ny
-				if not closedset[k] and not camefrom[k] then
-					flood[k],camefrom[k]={x=nx+rnd(),y=ny+rnd(),k=k},current
-					flood_len+=1
+				if not solid(nx,ny) then
+					k=nx+96*ny
+					if not closedset[k] and not camefrom[k] then
+						flood[k],camefrom[k]={x=nx,y=ny,k=k},current
+						flood_len+=1
+					end
 				end
-				yield()
 			end
+			yield()
 		end
 	
 		local path,prev={},current
 		while current do
-			current.dx,current.dy=normalize(current.x-prev.x,current.y-prev.y)			
-			add(path,current)
+			add(path,{x=current.x+rnd(),y=current.y+rnd()})
 			prev=current
 			current=camefrom[current.k]
 		end
 		self.path=path
 
-		-- wait path completion
-		while #self.path>0 do
-			yield()
-		end
+		-- wait path completion or timeout
+		wait_async(self.seek_dly,
+			function()
+				return #self.path>0
+			end)
 	end
 end
 
@@ -1123,24 +1120,17 @@ end
 
 _g.npc_update=function(self)
 	if self.move_t<time_t and #self.path>0 then
-		if not self.input and #self.path>0 then
-	  		self.input=fetchp(self.path)
-	 	end	
 		local input=self.input
-		if input and self.move_t<time_t then
-			self.dx=-self.acc*input.dx
-			self.dy=-self.acc*input.dy
-	
-			if sqr_dist(self.x,self.y,input.x,input.y)<1 then
-				self.input=fetchp(self.path)
-			end
+		if not input or sqr_dist(self.x,self.y,input.x,input.y)<1 then
+			input=pop(self.path)
+			self.input=input
 		end
-	
-		if self.seek_t<time_t then
-			self.path,self.input={}
-			self.seek_t=time_t+300 --lerp(self.seek_dly,2*self.seek_dly,rnd())
-	 	end
- 	end
+		if input then
+			local dx,dy=normalize(input.x-self.x,input.y-self.y)
+			self.dx,self.dy=self.acc*dx,self.acc*dy
+			input.dx,input.dy=dx,dy
+		end
+	end
  
 	coresume(self.update_path,self)
  
@@ -1148,7 +1138,7 @@ _g.npc_update=function(self)
 		self.fire_t=time_t+self.pause_dly
 		self.fire_dly_t=time_t+self.pause_dly+self.fire_dly
 	end
-	
+
 	if self.wp and self.los_t<time_t and self.fire_t<time_t then
 		self.can_fire=false
 		if lineofsight(self.x,self.y,plyr.x,plyr.y,self.los_dist) then
@@ -1162,7 +1152,6 @@ _g.npc_update=function(self)
 				if abs(dx)>0 and abs(dy)>0 then
 					dx,dy=normalize(dx,dy)
 					make_part(self.x,self.y,0,{
-						d=d,
 						u=dx,v=dy,
 						dly=30,
 						zorder=3,
@@ -1174,7 +1163,7 @@ _g.npc_update=function(self)
 		self.los_t=time_t+self.wp.dly
 	end
 	if self.can_fire and self.fire_t<time_t then
-		make_blt(self,self.wp)
+		--make_blt(self,self.wp)
 		self.fire_t=time_t+self.wp.dly
 	end
 end
@@ -1370,7 +1359,6 @@ _g.draw_actor=function(a,sx,sy)
 		rspr(wp.sx,wp.sy,sx+4*u+f*u,sy+4*v+f*v,1-a.angle)
 	 palt()
 	end
-	--[[
 	if a.path and #a.path>0 then
 		local x0,y0=cam_project(a.path[1].x,a.path[1].y)
 		for i=2,#a.path do
@@ -1378,7 +1366,12 @@ _g.draw_actor=function(a,sx,sy)
 			line(x0,y0,x1,y1,8)
 			x0,y0=x1,y1
 		end
+		print(#a.path,sx+9,sy,0)
 		print(#a.path,sx+8,sy,7)
+	end
+	--[[if a.input then
+		--print(sqr_dist(a.x,a.y,a.input.x,a.input.y),sx+8,sy,7)
+		line(sx,sy,sx+8*a.input.dx,sy+8*a.input.dy,12)
 	end
 	]]
 end
@@ -1388,7 +1381,7 @@ all_actors=json_parse('{"barrel_cls":{"side":"any_side","inertia":0.8,"spr":128,
 -- actor
 -- x,y in map tiles (not pixels)
 local actor_id=1
-local actor_cls=json_parse('{"dx":0,"dy":0,"acc":0.02,"frame":0,"inertia":0.6,"bounce":1,"hp":1,"contact_t":0,"path":[],"move_t":0,"seek_t":0,"seek_dly":90,"hit_t":0,"can_fire":false,"fire_t":0,"fire_dly_t":0,"w":0.4,"h":0.4,"los_t":0,"los_dist":8,"angle":0,"facing":0,"side":"bad_side","draw":"draw_actor","hit":"hit_actor","update":"npc_update","die":"die_actor"}')
+local actor_cls=json_parse('{"dx":0,"dy":0,"acc":0.02,"frame":0,"inertia":0.6,"bounce":1,"hp":1,"contact_t":0,"path":[],"move_t":0,"rnd":{"seek_dly":[120,180],"los_t":[25,50]},"hit_t":0,"can_fire":false,"fire_t":0,"fire_dly_t":0,"w":0.4,"h":0.4,"los_dist":8,"angle":0,"facing":0,"side":"bad_side","draw":"draw_actor","hit":"hit_actor","update":"npc_update","die":"die_actor"}')
 function make_actor(x,y,src)
 	actor_id+=1
 	local a=clone(actor_cls,
@@ -1562,7 +1555,7 @@ start_screen.update=function()
 			end,after_draw)
 		futures_add(function()
 			wait_async(90)
-			lvl_i,cur_loop=1,1
+			lvl_i,cur_loop=0,1
 			plyr=make_plyr()
 			next_level()
 			--make_actor(plyr.x+8,plyr.y+0.5,all_actors.bandit_cls)
