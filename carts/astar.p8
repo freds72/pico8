@@ -17,7 +17,7 @@ tpos=nil   --target pos
 ctick=0    --cursor tick
 msprite=1  --sprite toggle
 imod=0     --indicator modifier
-t=0        --ticks
+local time_t=0        --ticks
 
 local dirs={{1,0}, {0,1}, {-1,0}, {0,-1}}
 
@@ -46,7 +46,7 @@ function closest(nodes,x,y)
 	local score,node=32000
 	for _,v in pairs(nodes) do
 		local dx,dy=v.x-x,v.y-y
-		local vscore=dx*dx+dy*dy+move_cost(v.x,v.y)
+		local vscore=dx*dx+dy*dy--+move_cost(v.x,v.y)
 		if vscore<score then
 			score=vscore
 			node=v
@@ -63,64 +63,16 @@ function move_cost(x,y)
 	return c
 end
 
-function getpath(x0,y0,x1,y1)
-	local path={}
-	
-	local ss=x0+64*y0
-	local start={x=x0,y=y0,k=ss}
-	local flood,flood_len={[ss]=start},1
-	local camefrom={}
-	local closedset={}
-	local current
-	
-	while flood_len>0 do
-		--current=lowest(flood,gradient)
-		current=closest(flood,x1,y1)
-
-		local x,y=current.x,current.y
-		if (x==x1 and y==y1) break
-		local sn=x+64*y
-		flood[sn]=nil
-		flood_len-=1
-		closedset[sn]=true
-
-		for _,d in pairs(dirs) do
-			local nx,ny=x+d[1],y+d[2]
-			if check(nx,ny) then
-				sn=nx+64*ny
-				if not closedset[sn] and not camefrom[sn] then
-					flood[sn]={x=nx,y=ny,k=sn}
-					flood_len+=1
-					camefrom[sn]=current
-					--[[
-					rectfill(
-						nx*8+1,ny*8+1,
-						nx*8+7,ny*8+7,5)
-					print(flood_len,nx*8+1,ny*8+1,7)
-					flip()
-					]]
-				end
-			end
-		end
-	end
-
-	while current do
-		add(path,current)
-		current=camefrom[current.k]
-	end
-	return path
-end
-
 function update_path_async(self)
 	while true do
-		local ss,sp=self.x+64*self.y,plyr.x+64*plyr.y
-		local flood,flood_len={[ss]={x=self.x,y=self.y,k=ss}},1
+		local ss,sp=flr(self.x)+64*flr(self.y),flr(plyr.x)+64*flr(plyr.y)
+		local flood,flood_len={[ss]={x=flr(self.x),y=flr(self.y),k=ss}},1
 		local closedset,camefrom={},{}
-		local current	
+		local current
 
 		-- a*
-		local x1,y1=plyr.x,plyr.y
-		while flood_len>0 and flood_len<15 do
+		local x1,y1=flr(plyr.x),flr(plyr.y)
+		while flood_len>0 and flood_len<32 do
 			current=closest(flood,x1,y1)
 			
 			local x,y,sn=current.x,current.y,current.k
@@ -131,7 +83,7 @@ function update_path_async(self)
 	
 			for _,d in pairs(dirs) do
 				local nx,ny=x+d[1],y+d[2]
-				if check(nx,ny) then
+				if not solid(nx,ny) then
 					sn=nx+64*ny
 					if not closedset[sn] and not camefrom[sn] then
 						flood[sn]={x=nx,y=ny,k=sn}
@@ -145,16 +97,20 @@ function update_path_async(self)
 	
 		local path,prev={},current
 		while current do
-			add(path,{dx=current.x-prev.x,dy=current.y-prev.y})
+			add(path,current)
 			prev=current
 			current=camefrom[current.k]
 		end
 		self.path=path
 
 		-- wait
-		while #path>0 do
+		for i=1,120 do
+			if #path==0 then
+				break
+			end
 			yield()
 		end
+		self.input=nil
 	end
 end
 
@@ -166,13 +122,37 @@ function fetchp(path)
 	end
 end
 
-function check(x,y)
+function solid(x,y)
 	if x<=15 and x>0 and y<=15 and y>0 then
 		-- check for non colliding block
-		return fget(mget(x,y))<1
+		return fget(mget(x,y))>=1
 	end
 	
-	return false
+	return true
+end
+function normalize(u,v)
+	local d=sqrt(u*u+v*v)
+	if (d>0) u/=d v/=d
+	return u,v
+end
+function sqr_dist(x0,y0,x1,y1)
+	local dx,dy=x1-x0,y1-y0
+	if abs(dx)>128 or abs(dy)>128 then
+		return 32000
+	end
+	return dx*dx+dy*dy
+end
+
+function move_actor(a,dx,dy)
+	if solid(a.x+dx,a.y) then
+		dx=0
+	end
+	if solid(a.x,a.y+dy) then
+		dy=0
+	end
+	
+	a.x=mid(a.x+dx,1,15)
+	a.y=mid(a.y+dy,1,15)
 end
 
 local perf_update=0
@@ -182,47 +162,42 @@ function _update60()
 	--update cursor pos on arrows
 	local moved=false
 	local dx,dy=0,0
-	if (btnp(0)) dx=-1 moved=true
-	if (btnp(1)) dx=1 moved=true
-	if (btnp(2)) dy=-1 moved=true
-	if (btnp(3)) dy=1 moved=true
+	if (btn(0)) dx=-1 moved=true
+	if (btn(1)) dx=1 moved=true
+	if (btn(2)) dy=-1 moved=true
+	if (btn(3)) dy=1 moved=true
 	
-	if not check(plyr.x+dx,plyr.y) then
-		dx=0
-	end
-	if not check(plyr.x,plyr.y+dy) then
-		dy=0
-	end
+	move_actor(plyr,dx*0.1,dy*0.1)
 	
-	plyr.x=mid(plyr.x+dx,1,15)
-	plyr.y=mid(plyr.y+dy,1,15)
-
 	--update cursor state
-	if t%30 == 0 then
+	if time_t%30 == 0 then
 		ctick = abs(ctick-1)
 	end
 	
 	--update indicator modifier
-	if t%8 == 0 then
+	if time_t%8 == 0 then
 		imod+=1
 		if (imod > 4) imod = 0
 	end
 	
 	local t0=stat(1)
 	for _,a in pairs(actors) do
-		coresume(a.update_path,a)		
-		if t%8==0 then
-			a.dx,a.dy=0,0
-			if a.path then
-				local p=fetchp(a.path)
-				if p then
-					a.dx=-p.dx/8
-					a.dy=-p.dy/8
-				end
+		coresume(a.update_path,a)
+		dx,dy=0,0
+		if a.path then
+			local input=a.input
+			if not input or (abs(a.x-input.x)<1 and abs(a.y-input.y)<1) then
+				input=fetchp(a.path)
+				a.input=input
+			end
+			if input then
+				dx,dy=normalize(input.x-a.x,input.y-a.y)
+				dx*=a.acc
+				dy*=a.acc
 			end
 		end
-		a.x+=a.dx
-		a.y+=a.dy
+		move_actor(a,dx,dy)
+		a.dx,a.dy=dx,dy
 	end
 	perf_update=stat(1)-t0
 	--[[
@@ -240,7 +215,7 @@ function _update60()
 	perf_update=stat(1)-t0
  ]]
 
-	t+=1
+	time_t+=1
 end
 
 function _draw()
@@ -258,24 +233,43 @@ function _draw()
 	for _,a in pairs(actors) do
 		pal(7,a.c)
 		spr(19+ctick,a.x*8,a.y*8)
- 	pal()
- 	--[[
+		pal()
+
 		local last_path=a.path
 		if last_path then
-			local x,y=plyr.x*8+4,plyr.y*8+4
-			for i=#last_path,1,-1 do
+			local x,y=flr(plyr.x)*8,flr(plyr.y)*8
+			for i=1,#last_path do
 				local p=last_path[i]
-				local x1,y1=p.x*8+4,p.y*8+4
+				local x1,y1=p.x*8,p.y*8
 				line(x,y,x1,y1,12)
 				x,y=x1,y1
 			end
-			print(#last_path,a.x*8,a.y*8,7)
+			--print(#last_path,a.x*8,a.y*8+8,7)
+			print(a.dx,a.x*8,a.y*8+8,7)
+			print(a.dy,a.x*8,a.y*8+16,7)
 		end
-		]]
+		if a.input then
+			local x,y=8*a.x,8*a.y
+			line(x,y,x+32*a.dx,y+32*a.dy,12)
+			line(x,y,8*a.input.x,8*a.input.y,8)
+			
+			if solid(a.x+a.dx,a.y) then
+				circfill(x+8,y,1,8)
+			else
+				circfill(x+8,y,1,11)
+			end
+			if solid(a.x,a.y+a.dy) then
+				circfill(x+8,y+2,1,8)
+			else
+				circfill(x+8,y+2,1,11)
+			end
+		end
 	end
 		
 	-- draw player
 	spr(3+ctick,plyr.x*8,plyr.y*8)
+	print(flr(plyr.x),plyr.x*8,plyr.y*8+8,7)
+	print(flr(plyr.y),plyr.x*8,plyr.y*8+16,7)
 	
 	rectfill(1,119,32,126,0)
 	print(perf_update,3,120,1)
@@ -288,16 +282,17 @@ function _init()
 			map_cost[i+64*j]=16*move_cost(i,j)
 		end
 	end
-	for i=1,16 do
+	for i=1,1 do
 		local x,y=flr(rnd(14))+1,flr(rnd(14))+1
-		while not check(x,y) do
+		while solid(x,y) do
 			x,y=flr(rnd(14))+1,flr(rnd(14))+1
 		end
 		local a={
 			x=x,
 			y=y,
+			acc=0.04,
 			dx=0,
-			dy=0,			
+			dy=0,
 			c=flr(rnd(13))+2,
 			wait_dly=flr(rnd(8))+1,
 			update_path=cocreate(update_path_async)
@@ -314,8 +309,8 @@ __gfx__
 00000000444444444141414113333331133333318000000800000000a000000aa00000000000000aa000000a0000000000000000000000000000000000000000
 000000004444444414141414131111310131131088000088a000000aa00000000000000aa00000000000000a0000000000000000000000000000000000000000
 000000004444444441414141010000100010010022000022aa0aa0aaa0aa0aaaaa0aaa0aa0aaa0aaaaa0aa0a0000000000000000000000000000000000000000
-0000000044444444999999990011110000111100000000000000000000000000000000000000000000000000000000000000000c000000000000000000000000
-0000000044449944999999990177771001777710000000000000000000000000000000000000000000000000000000000000000cc00000000000000000000000
+0000000044444444999999997711110000111100000000000000000000000000000000000000000000000000000000000000000c000000000000000000000000
+0000000044449944999999997177771001777710000000000000000000000000000000000000000000000000000000000000000cc00000000000000000000000
 00000000444444449999999917777771177777710000000000000000000000000000000000000000000000000000000000000000c00000000000000000000000
 000000004444444499999999177171711717177100000000000000000000000000000000000000000000000000000000000ccc000c0c00000000000000000000
 00000000499444449999999917777771177777710000000000000000000000000000000000000000000000000000000000c000c00cccc0000000000000000000
