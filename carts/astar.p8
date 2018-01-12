@@ -110,6 +110,7 @@ function update_path_async(self)
 			end
 			yield()
 		end
+		self.path=nil
 		self.input=nil
 	end
 end
@@ -130,9 +131,18 @@ function solid(x,y)
 	
 	return true
 end
+function solid_area(x,y)
+	local w,h=0.4,0.4
+ return 
+  solid(x-w,y-h) or
+  solid(x+w,y-h) or
+  solid(x-w,y+h) or
+  solid(x+w,y+h)
+end
+
 function normalize(u,v)
 	local d=sqrt(u*u+v*v)
-	if (d>0) u/=d v/=d
+	if (d>0.001) u/=d v/=d
 	return u,v
 end
 function sqr_dist(x0,y0,x1,y1)
@@ -147,11 +157,10 @@ function move_actor(a,dx,dy)
 	if solid(a.x+dx,a.y) then
 		dx=0
 	end
+	a.x=mid(a.x+dx,1,15)
 	if solid(a.x,a.y+dy) then
 		dy=0
 	end
-	
-	a.x=mid(a.x+dx,1,15)
 	a.y=mid(a.y+dy,1,15)
 end
 
@@ -186,17 +195,19 @@ function _update60()
 		dx,dy=0,0
 		if a.path then
 			local input=a.input
-			if not input or (abs(a.x-input.x)<1 and abs(a.y-input.y)<1) then
+			if not input or sqr_dist(flr(a.x),flr(a.y),input.x,input.y)<0.5 then
 				input=fetchp(a.path)
 				a.input=input
 			end
 			if input then
-				dx,dy=normalize(input.x-a.x,input.y-a.y)
+				dx,dy=normalize(input.x-flr(a.x),input.y-flr(a.y))
 				dx*=a.acc
 				dy*=a.acc
 			end
 		end
 		move_actor(a,dx,dy)
+		--a.x+=dx
+		--a.y+=dy
 		a.dx,a.dy=dx,dy
 	end
 	perf_update=stat(1)-t0
@@ -231,6 +242,10 @@ function _draw()
 	]]
 	
 	for _,a in pairs(actors) do
+		palt(0,false)
+		spr(0,8*flr(a.x),8*flr(a.y))
+		palt()
+		
 		pal(7,a.c)
 		spr(19+ctick,a.x*8,a.y*8)
 		pal()
@@ -245,8 +260,8 @@ function _draw()
 				x,y=x1,y1
 			end
 			--print(#last_path,a.x*8,a.y*8+8,7)
-			print(a.dx,a.x*8,a.y*8+8,7)
-			print(a.dy,a.x*8,a.y*8+16,7)
+			print(a.x,a.x*8,a.y*8+8,7)
+			print(a.y,a.x*8,a.y*8+16,7)
 		end
 		if a.input then
 			local x,y=8*a.x,8*a.y
