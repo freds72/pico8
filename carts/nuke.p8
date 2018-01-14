@@ -1,5 +1,5 @@
 pico-8 cartridge // http://www.pico-8.com
-version 9
+version 16
 __lua__
 local time_t=0
 local before_update={}
@@ -25,11 +25,6 @@ local _g={
 -- json parser
 -- from: https://gist.github.com/tylerneylon/59f4bcf316be525b30ab
 local table_delims={['{']="}",['[']="]"}
-local function error(str)
-	print(str)
-	assert()
-end
-
 local function match(s,tokens)
 	for i=1,#tokens do
 		if(s==sub(tokens,i,i)) return true
@@ -38,7 +33,7 @@ local function match(s,tokens)
 end
 local function skip_delim(str, pos, delim, err_if_missing)
  if sub(str,pos,pos)!=delim then
-  if(err_if_missing) error(sub(str,pos,pos+10)..':expected '..delim..' near position:'.. pos)
+  if(err_if_missing) assert(sub(str,pos,pos+10)..':expected '..delim..' near position:'.. pos)
   return pos,false
  end
  return pos+1,true
@@ -46,7 +41,7 @@ end
 local function parse_str_val(str, pos, val)
 	val=val or ''
 	if pos>#str then
-		error('end of input found while parsing string.')
+		assert('end of input found while parsing string.')
 	end
 	local c=sub(str,pos,pos)
 	if(c=='"') return _g[val] or val,pos+1
@@ -55,17 +50,18 @@ end
 local function parse_num_val(str,pos,val)
 	val=val or ''
 	if pos>#str then
-		error('end of input found while parsing string.')
+		assert('end of input found while parsing string.')
 	end
 	local c=sub(str,pos,pos)
-	if(not match(c,"-x0123456789abcdef.")) return val+0,pos
+	-- support base 10, 16 and 2 numbers
+	if(not match(c,"-xb0123456789abcdef.")) return tonum(val),pos
 	return parse_num_val(str,pos+1,val..c)
 end
 -- public values and functions.
 
 function json_parse(str, pos, end_delim)
 	pos=pos or 1
-	if(pos>#str) error('reached unexpected end of input.')
+	if(pos>#str) assert('reached unexpected end of input.')
 	local first=sub(str,pos,pos)
 	if match(first,"{[") then
 		local obj,key,delim_found={},true,true
@@ -73,7 +69,7 @@ function json_parse(str, pos, end_delim)
 		while true do
 			key,pos=json_parse(str, pos, table_delims[first])
 			if(key==nil) return obj,pos
-			if not delim_found then error('comma missing between table items.') end
+			if not delim_found then assert('comma missing between table items.') end
 			if first=="{" then
 				pos=skip_delim(str,pos,':',true)  -- true -> error if missing.
 				obj[key],pos=json_parse(str,pos)
@@ -96,7 +92,7 @@ function json_parse(str, pos, end_delim)
 			if sub(str,pos,lit_end)==lit_str then return lit_val,lit_end+1 end
 		end
 		local pos_info_str = 'position ' .. pos .. ': ' .. sub(str, pos, pos + 10)
-		error('invalid json syntax starting at ' .. pos_info_str)
+		assert('invalid json syntax starting at ' .. pos_info_str)
 	end
 end
 -- screens
@@ -137,7 +133,7 @@ _g.draw_txt_part=function(self,x,y)
 	print(self.txt,x-l+1,y-2,0)
 	print(self.txt,x-l,y-2,7)
 end
-local all_parts=json_parse('{"flash":{"dly":4,"r":0.5,"c":7,"dr":-0.1,"update":"update_static_part"},"smoke":{"dly":18,"dr":-0.01,"rnd":{"r":[0.3,0.6],"c":[5,7]}},"blood_splat":{"zorder":1,"spr":129,"draw":"draw_spr_part","rnd":{"dly":[900,1000]}},"turret_splat":{"zorder":1,"spr":165,"sw":2,"sh":2,"draw":"draw_spr_part","rnd":{"dly":[900,1000]}},"goo_splat":{"zorder":1,"spr":130,"draw":"draw_spr_part","rnd":{"dly":[900,1000]}},"fart":{"dy":-0.05,"rnd":{"r":[0.05,0.2],"dly":[24,32],"c":[11,3,true]}},"laser_spark":{"zorder":3,"dx":0,"dy":0.04,"c":7,"rnd":{"r":[0.1,0.2],"dly":[24,32]}},"hit":{"dr":-0.02,"rnd":{"r":[0.3,0.4],"dly":[8,12],"c":[9,10,true]}},"blast_smoke":{"inertia":0.95,"dr":-0.03,"rnd":{"r":[0.5,0.8],"dly":[15,30]},"c":1},"slash":{"frames":[196,197,198],"draw":"draw_rspr_part","dly":12},"green_part":{"rnd":{"c":[11,3,3],"r":[0.3,0.4],"dr":[-0.01,-0.02],"dz":[0.01,0.03],"dly":[24,32]}},"candle":{"w":0.1,"h":0.1,"inertia":0.9,"rnd":{"c":[8,9,10],"r":[0.1,0.2],"dr":[-0.01,-0.02],"dz":[0.04,0.06],"dly":[12,24]}},"flames":{"frames":[212,213,214],"draw":"draw_spr_part","rnd":{"dly":[600,900]}},"bones":{"zorder":1,"inertia":0.9,"draw":"draw_spr_part","rnd":{"spr":[202,203,204],"dly":[600,900]}},"goo_chunks":{"zorder":1,"inertia":0.9,"draw":"draw_spr_part","rnd":{"spr":[199,200,199],"dly":[600,900]}},"horror_spwnr_chunks":{"inertia":0.9,"draw":"draw_spr_part","rnd":{"spr":[215,216,215],"dly":[600,900]}},"fireimp_chunks":{"zorder":1,"inertia":0.9,"draw":"draw_spr_part","rnd":{"spr":[218,219,219],"dly":[600,900]}}}')
+local all_parts=json_parse('{"flash":{"dly":4,"r":0.5,"c":7,"dr":-0.1,"update":"update_static_part"},"smoke":{"dly":18,"dr":-0.01,"rnd":{"r":[0.3,0.6],"c":[0,1]}},"blood_splat":{"zorder":1,"spr":129,"draw":"draw_spr_part","rnd":{"dly":[900,1000]}},"turret_splat":{"zorder":1,"spr":165,"sw":2,"sh":2,"draw":"draw_spr_part","rnd":{"dly":[900,1000]}},"goo_splat":{"zorder":1,"spr":130,"draw":"draw_spr_part","rnd":{"dly":[900,1000]}},"fart":{"dy":-0.05,"rnd":{"r":[0.05,0.2],"dly":[24,32],"c":[11,3,true]}},"laser_spark":{"zorder":3,"dx":0,"dy":0.04,"c":7,"rnd":{"r":[0.1,0.2],"dly":[24,32]}},"hit":{"dr":-0.02,"rnd":{"r":[0.3,0.4],"dly":[8,12],"c":[9,10,true]}},"blast_smoke":{"inertia":0.95,"dr":-0.03,"rnd":{"r":[0.5,0.8],"dly":[15,30]},"c":1},"slash":{"frames":[196,197,198],"draw":"draw_rspr_part","dly":12},"green_part":{"rnd":{"c":[11,3,3],"r":[0.3,0.4],"dr":[-0.01,-0.02],"dz":[0.01,0.03],"dly":[24,32]}},"candle":{"w":0.1,"h":0.1,"inertia":0.9,"rnd":{"c":[8,9,10],"r":[0.1,0.2],"dr":[-0.01,-0.02],"dz":[0.04,0.06],"dly":[12,24]}},"flames":{"frames":[212,213,214],"draw":"draw_spr_part","rnd":{"dly":[600,900]}},"bones":{"zorder":1,"inertia":0.9,"draw":"draw_spr_part","rnd":{"spr":[202,203,204],"dly":[600,900]}},"goo_chunks":{"zorder":1,"inertia":0.9,"draw":"draw_spr_part","rnd":{"spr":[199,200,199],"dly":[600,900]}},"horror_spwnr_chunks":{"inertia":0.9,"draw":"draw_spr_part","rnd":{"spr":[215,216,215],"dly":[600,900]}},"fireimp_chunks":{"zorder":1,"inertia":0.9,"draw":"draw_spr_part","rnd":{"spr":[218,219,219],"dly":[600,900]}}}')
 
 -- weapons catalog
 local all_loot={}
@@ -248,17 +244,14 @@ function futures_update(futures)
 		local r,e=coresume(f)
 		if not r then
 			del(futures,f)
-		--[[
 		else
-			printh("exception:"..e)
-		]]
+			assert(r)
 		end
 	end
 end
 function futures_add(fn,futures)
 	local cor=cocreate(fn)
-	add(futures or before_update,cor)
-	return cor
+	return add(futures or before_update,cor)
 end
 -- print text helper
 local txt_offsets=json_parse("[[-1,0],[0,-1],[0,1],[-1,-1],[1,1],[-1,1],[1,-1]]")
@@ -435,22 +428,37 @@ end
 -- collision map
 local cmap={}
 local cmap_cells=json_parse('[0,1,129,128,127,-1,-129,-128,-127]')
-function cmap_clear(objs)
-	local h,obj
-	cmap={}
-	for i=1,#objs do
-		obj=objs[i]
-		if bor(obj.w,obj.h)!=0 then
-			h=flr(obj.x)+128*flr(obj.y)
-			cmap[h]=cmap[h] or {}
-			add(cmap[h],obj)
+function cmap_add(obj)
+	if bor(obj.w,obj.h)!=0 then
+		for x=flr(obj.x-obj.w),flr(obj.x+obj.w) do
+			for y=flr(obj.y-obj.h),flr(obj.y+obj.h) do
+				h=flr(x)+128*flr(y)
+				cmap[h]=cmap[h] or {}
+				add(cmap[h],obj)
+			end
 		end
 	end
 end
-local cmap_i,cmap_cell,cmap_h
+function cmap_del(obj)
+	if bor(obj.w,obj.h)!=0 then
+		for x=flr(obj.x-obj.w),flr(obj.x+obj.w) do
+			for y=flr(obj.y-obj.h),flr(obj.y+obj.h) do
+				h=flr(x)+128*flr(y)
+				if cmap[h] then
+					del(cmap[h],obj)
+					if #cmap[h]==0 then
+						cmap[h]=nil
+					end
+				end
+			end
+		end
+	end
+end
+local cmap_session,cmap_i,cmap_cell,cmap_h=0
 function cmap_iterator(x,y)
 	cmap_i,cmap_cell=1,1
 	cmap_h=flr(x)+128*flr(y)
+	cmap_session+=1
 end
 function cmap_next()
 	while(cmap_cell<=9) do
@@ -459,7 +467,10 @@ function cmap_next()
 		if objs and cmap_i<=#objs then
 			local obj=objs[cmap_i]
 			cmap_i+=1
-			return obj
+			if obj.cmap_session!=cmap_session then
+				return obj
+			end
+			obj.cmap_session=cmap_session
 		end
 		cmap_i=1
 		cmap_cell+=1
@@ -519,15 +530,14 @@ function make_part(x,y,z,src,dx,dy,dz,a)
 			angle=a or 0}))
 	
 	p.t=time_t+p.dly
-	add(parts,p)
-	return p
+	return add(parts,p)
 end
 -- spill bones and skull!
 function make_splat(self)
 	make_part(self.x,self.y,0, all_parts[self.splat or "blood_splat"])
  for i=1,5 do
 		local a=rnd()
-		make_part(self.x,self.y,0,all_parts[self.bones or "bones"],cos(a)/10,sin(a)/10,0,a)
+		make_part(self.x,self.y,0,all_parts[self.bones or "bones"],cos(a)/10+self.dx,sin(a)/10+self.dy,0,a)
 	end
 end
 function draw_laser_part(p,x,y)
@@ -693,7 +703,7 @@ function make_level()
 			for i=1,n do			
 				local r=rooms[flr(rnd()*#rooms)+1]
 				local x,y=r.x+rndlerp(1,r.w-1),r.y+rndlerp(1,r.h-1)
-				make_actor(x,y,all_actors[sp[3]])
+				--make_actor(x,y,all_actors[sp[3]])
 			end
 		end
 	end
@@ -871,7 +881,7 @@ end
 -- true if a will hit another
 -- actor after moving dx,dy
 function solid_actor(a,dx,dy)
-	cmap_iterator(a.x+dx,a.y+dy)
+	cmap_iterator(a.x+dx,a.y+dy,a.w,a.w)
 	local a2=cmap_next()
 	while a2 do
   if a2!=a then
@@ -1372,6 +1382,7 @@ _g.draw_actor=function(a,sx,sy)
 		line(sx,sy,sx+8*a.input.dx,sy+8*a.input.dy,12)
 	end
 	]]
+	--circfill(sx,sy,4*sw,0)
 end
 
 all_actors=json_parse('{"barrel_cls":{"side":"any_side","inertia":0.9,"bounce":1,"spr":128,"die":"blast_on_die","update":"nop"},"msl_cls":{"hp":5,"side":"any_side","inertia":1.01,"sx":80,"sy":24,"part":"smoke","part_t":0,"rnd":{"part_dly":[2,4]},"draw":"draw_rspr_actor","update":"nop","die":"blast_on_die","touch":"die_on_touch"},"grenade_cls":{"hp":4,"side":"any_side","w":0.2,"h":0.2,"inertia":0.85,"bounce":0.8,"sx":96,"sy":16,"part":"smoke","draw":"draw_rspr_actor","die":"blast_on_die"},"bandit_cls":{"hp":3,"wp":"base_gun","frames":[4,5,6],"npc":true,"rnd":{"fire_dly":[90,120],"pause_dly":[90,120]}},"scorpion_cls":{"rnd":{"fire_dly":[160,180]},"pause_dly":120,"w":0.8,"h":0.8,"hp":10,"wp":"acid_gun","palt":5,"frames":[131,133],"npc":true},"worm_cls":{"palt":3,"w":0.2,"h":0.2,"inertia":0.8,"dmg":1,"frames":[7,8],"npc":true},"slime_cls":{"w":0.2,"h":0.2,"acc":0.03,"dmg":1,"inertia":0.8,"dmg":1,"frames":[31,29,30,29],"wp":"goo","npc":true,"splat":"goo_splat","bones":"goo_chunks"},"dog_cls":{"los_dist":1,"inertia":0.2,"hp":5,"acc":0.06,"wp":"bite","frames":[61,62],"npc":true},"bear_cls":{"inertia":0.2,"frames":[1,2,3],"npc":true,"wp":"snowball"},"throne_cls":{"zorder":1,"w":8,"h":4,"hp":5,"palt":15,"inertia":0,"cx":87,"cy":18,"cw":12,"ch":5,"update":"throne_update","draw":"throne_draw","init":"throne_init","die":"throne_die","npc":true},"health_cls":{"spr":48,"w":0,"h":0,"update":"health_pickup"},"ammo_cls":{"spr":32,"w":0,"h":0,"update":"ammo_pickup"},"wpdrop_cls":{"w":0,"h":0,"inertia":0.9,"btn_t":0,"near_plyr_t":0,"draw":"draw_txt_actor","update":"wpdrop_update"},"cop_cls":{"flee":true,"acc":0.05,"frames":[13,14,15,14],"rnd":{"fire_dly":[160,210],"pause_dly":[120,160]},"wp":"rifle","npc":true},"fireimp_cls":{"frames":[45,46,47,46],"acc":0.2,"die":"blast_on_die","npc":true,"bones":"fireimp_chunks"},"turret_cls":{"w":1,"h":1,"wp":"turret_minigun","hp":10,"acc":0,"bounce":0,"frames":[163],"fire_dly":180,"pause_dly":120,"splat":"turret_splat","npc":true},"horror_cls":{"part":"green_part","bones":"horror_chunks","part_dly":8,"part_t":0,"hp":25,"frames":[160,161,162],"wp":"radiation","fire_dly":180,"pause_dly":120,"splat":"goo_splat","npc":true,"bones":"goo_chunks"},"warp_cls":{"w":0,"h":0,"captured":false,"frames":[80,81,82],"draw":"nop","update":"warp_update"},"cactus":{"inertia":0.8,"acc":0,"spr":83,"die":"nop","update":"nop"},"candle_cls":{"part":"candle","part_dly":4,"part_t":0,"inertia":0.8,"acc":0,"spr":178,"die":"nop","update":"nop"},"blast_cls":{"w":1,"h":1,"acc":0,"inertia":0,"bounce":0,"side":"any_side","frames":[192,193,208,209,194,195,210,211],"hit":"nop","update":"update_blast","draw":"draw_blast"},"frog_cls":{"rnd":{"fire_dly":[160,180]},"pause_dly":120,"w":0.8,"h":0.8,"hp":15,"wp":"acid_gun","frames":[231,233,235,233],"npc":true},"horror_spwnr_cls":{"frames":[84],"acc":0,"npc":true,"hp":10,"wp":"horror_spwn","bones":"horror_spwnr_chunks"}}')
@@ -1387,9 +1398,10 @@ function make_actor(x,y,src)
 			id=actor_id,
 			x=x,
 			y=y}))
-	add(actors,a)
 	if(a.init) a:init()
 	if(a.npc) active_actors+=1 a.update_path=cocreate(update_path_async)
+	a=add(actors,a)
+	cmap_add(a)
 	return a
 end
 
@@ -1397,6 +1409,7 @@ function move_actor(a)
 	if a.update then
 		a:update()
 		if a.disable then
+			cmap_del(a)
 			return
 		end
 	end
@@ -1413,6 +1426,7 @@ function move_actor(a)
 		zbuf_write(a)
 		return
 	end
+	cmap_del(a)
 	local touch=false
  if not solid_a(a,a.dx,0) then
   a.x+=a.dx
@@ -1433,11 +1447,14 @@ function move_actor(a)
  if touch and a.touch then
  	a:touch()
  end
-  
+ cmap_add(a)
+
  -- apply inertia
  a.dx*=a.inertia
  a.dy*=a.inertia
- 
+ if(abs(a.dx)<0.001) a.dx=0
+ if(abs(a.dy)<0.001) a.dy=0
+
  a.frame+=abs(a.dx)*4
  a.frame+=abs(a.dy)*4
  
@@ -1457,7 +1474,7 @@ function make_plyr()
 		side=good_side,
 		strips=body.strips,
 		frames=body.strips[2],
-		wp=weapons["rpg"],
+		wp=weapons["uzi"],
 		ammo=weapons.uzi.ammo,
 		safe_t=time_t+30,
 		idle_t=time_t+30,
@@ -1540,6 +1557,15 @@ function next_level()
 	plyr.safe_t=time_t+30
 	plyr_playing=true
 	cam_track(plyr.x,plyr.y)
+	
+	--[[
+	for i=1,10 do
+		for j=1,10 do
+			local a=make_actor(plyr.x+i,plyr.y+j,all_actors.scorpion_cls)
+			a.update=nop
+		end
+	end
+	]]
 end
 
 -- start screen
@@ -1553,10 +1579,9 @@ start_screen.update=function()
 			end,after_draw)
 		futures_add(function()
 			wait_async(90)
-			lvl_i,cur_loop=3,1
+			lvl_i,cur_loop=5,1
 			plyr=make_plyr()
 			next_level()
-			--make_actor(plyr.x+8,plyr.y+0.5,all_actors.bandit_cls)
 			starting=false
 			cur_screen=game_screen
 			wait_async(90)
@@ -1596,8 +1621,6 @@ game_screen.update=function()
 	if(pause_t>0) return
 	pause_t=0
 	
-	-- todo: update vs clear
-	cmap_clear(actors)
 	zbuf_clear()
 	control_player(plyr)
 	
@@ -1632,6 +1655,17 @@ game_screen.draw=function()
 		spr(lvl.cursor or 35,plyr.mousex-3,plyr.mousey-3)
 	end
 
+	local h
+	for i=0,level_cw do
+		for j=0,level_ch do			
+			h=i+128*j
+			if cmap[h] then
+				local x,y=cam_project(i,j)
+				print(#cmap[h],x,y,7)
+			end
+		end
+	end
+	
 	if plyr_playing then
 		rectfill(1,1,34,9,0)
 		rect(2,2,33,8,6)
@@ -1665,7 +1699,7 @@ function _draw()
 	
 	print((100*perf_update).."%",2,112,7)
 	print((100*perf_draw).."%",2,120,7)
-	print(stat(0),110,120,7)
+	print(stat(7).."fps",107,120,7)
 end
 
 function _init()
@@ -1810,7 +1844,6 @@ eeeeeeeeeeeeeeee0bbbbb00077777700770077007767770077770ee03333131131333300bb33131
 eeeeeeeeeeeeeeee03b03bb00777777006777760077067700677770e066001311310066003333131131333300660003113133330000000000000000000000000
 eeeeeeeeeeeeeeee033003b00666666000666600066006600666660e000ee0b11b0ee00006600b3113b00660000ee0b103b00660000000000000000000000000
 eeeeeeeeeeeeeeee0000000000000000e000000e000ee0000000000eeeeee000000eeeee000ee00ee00ee000eeeee000e00ee000000000000000000000000000
-
 __gff__
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001010501010101010101050101010501010101008201010101050505010101010105050501010105050105010501010182828282828282828282828282828282
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010100000000000000000000000000000000000000000000008282000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -1915,66 +1948,4 @@ __sfx__
 __music__
 01 00010203
 02 04050607
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
-00 41424344
 
