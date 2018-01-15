@@ -180,7 +180,7 @@ _g.update_laser=function(self)
 	end
 	return false
 end
-local weapons=json_parse('{"base_gun":{"sx":64,"sy":16,"frames":[42],"dmg":1,"spread":0.05,"v":0.1,"ttl":[90,100],"dly":32},"goo":{"frames":[63],"dmg":1,"spread":1,"v":0,"ttl":[90,120],"dly":64,"zorder":1},"acid_gun":{"frames":[26,27],"blts":3,"bounce":0.9,"spread":0.2,"dmg":3,"v":0.1,"xy":[1,0],"ttl":[160,200],"dly":24},"uzi":{"n":"uzi","sfx":63,"icon":21,"sx":32,"sy":8,"frames":[10,11],"spread":0.04,"dmg":1,"v":0.4,"ttl":[30,38],"dly":5,"ammo":75,"shk_pow":2,"cost":1},"minigun":{"n":"minigun","sfx":55,"icon":25,"sx":64,"sy":8,"frames":[10,11],"spread":0.04,"dmg":2,"v":0.45,"ttl":[25,35],"dly":3,"ammo":250,"shk_pow":2,"cost":4},"shotgun":{"n":"pump","side":"good_side","icon":37,"sx":32,"sy":16,"frames":[10],"spread":0.05,"blts":3,"dmg":2,"inertia":0.96,"v":0.3,"bounce":1,"ttl":[28,32],"dly":56,"ammo":25,"shk_pow":2,"cost":3},"glock":{"n":"g.lock","icon":53,"sx":32,"sy":24,"frames":[10,11],"spread":0.01,"dmg":4,"v":0.5,"ttl":[30,30],"dly":32,"ammo":17,"shk_pow":2,"cost":2},"rpg":{"n":"rpg","icon":23,"sx":48,"sy":8,"actor_cls":"msl_cls","spread":0.02,"v":0.2,"dly":72,"ammo":8,"shk_pow":3,"cost":5},"grenade":{"n":"mortar","icon":55,"sx":48,"sy":24,"actor_cls":"grenade_cls","spread":0.02,"v":0.5,"dly":72,"ammo":12,"shk_pow":2.1,"cost":4},"mega_gun":{"sx":48,"sy":8,"frames":[43,28],"dmg":5,"spread":0.05,"v":0.1,"ttl":[50,55],"dly":32,"sub_cls":"mega_sub","emitters":5},"mega_sub":{"sx":48,"sy":8,"frames":[26,27],"dmg":5,"spread":0,"v":0.1,"ttl":[900,900],"dly":12,"burst":4},"rifle":{"sfx":50,"sx":64,"sy":16,"frames":[10,11],"dmg":5,"spread":0,"v":0.5,"ttl":[90,90],"dly":80,"sight":true},"laser":{"dmg":0.5,"dly":60,"v":1,"dx":0,"dy":1,"spread":0,"ttl":[90,90],"draw":"draw_laser","update":"update_laser"},"bite":{"dmg":1,"dly":30,"spread":0.02,"v":0,"draw":"nop","ttl":[4,4],"hit_part":"slash"},"snowball":{"frames":[60],"dmg":1,"spread":0.01,"v":0.5,"inertia":0.9,"ttl":[70,90],"dly":80},"horror_spwn":{"actor_cls":"horror_cls","spread":1,"v":0.2,"dly":145,"ammo":8},"zapper":{"n":"laser","cost":5,"side":"any_side","bounce":1,"ammo":30,"sfx":53,"sx":48,"sy":16,"icon":39,"dmg":5,"spread":0.01,"v":0.6,"ttl":[90,100],"dly":12,"draw":"draw_zap"},"turret_minigun":{"sfx":55,"frames":[10,11],"spread":0.25,"dmg":1,"v":0.1,"ttl":[60,80],"dly":8,"blts":5},"radiation":{"frames":[217],"spread":0.1,"dmg":3,"v":0.1,"inertia":0.99,"sfx":52,"blts":3,"ttl":[260,280],"dly":90}}')
+local weapons=json_parse('{"base_gun":{"sfx":55,"sx":64,"sy":16,"frames":[42],"dmg":1,"spread":0.05,"v":0.1,"ttl":[90,100],"dly":32},"goo":{"frames":[63],"dmg":1,"spread":1,"v":0,"ttl":[90,120],"dly":64,"zorder":1},"acid_gun":{"sfx":49,"frames":[26,27],"blts":3,"bounce":0.9,"spread":0.2,"dmg":3,"v":0.1,"xy":[1,0],"ttl":[160,200],"dly":24},"uzi":{"n":"uzi","sfx":63,"icon":21,"sx":32,"sy":8,"frames":[10,11],"spread":0.04,"dmg":1,"v":0.4,"ttl":[30,38],"dly":5,"ammo":75,"shk_pow":2,"cost":1},"minigun":{"n":"minigun","sfx":55,"icon":25,"sx":64,"sy":8,"frames":[10,11],"spread":0.04,"dmg":2,"v":0.45,"ttl":[25,35],"dly":3,"ammo":250,"shk_pow":2,"cost":4},"shotgun":{"n":"pump","side":"good_side","icon":37,"sx":32,"sy":16,"frames":[10],"spread":0.05,"blts":3,"dmg":2,"inertia":0.96,"v":0.3,"bounce":1,"ttl":[28,32],"dly":56,"ammo":25,"shk_pow":2,"cost":3},"glock":{"n":"g.lock","icon":53,"sx":32,"sy":24,"frames":[10,11],"spread":0.01,"dmg":4,"v":0.5,"ttl":[30,30],"dly":32,"ammo":17,"shk_pow":2,"cost":2},"rpg":{"n":"rpg","icon":23,"sx":48,"sy":8,"actor_cls":"msl_cls","spread":0.02,"v":0.2,"dly":72,"ammo":8,"shk_pow":3,"cost":5},"grenade":{"n":"mortar","icon":55,"sx":48,"sy":24,"actor_cls":"grenade_cls","spread":0.02,"v":0.5,"dly":72,"ammo":12,"shk_pow":2.1,"cost":4},"mega_gun":{"sx":48,"sy":8,"frames":[43,28],"dmg":5,"spread":0.05,"v":0.1,"ttl":[50,55],"dly":32,"sub_cls":"mega_sub","emitters":5},"mega_sub":{"sx":48,"sy":8,"frames":[26,27],"dmg":5,"spread":0,"v":0.1,"ttl":[900,900],"dly":12,"burst":4},"rifle":{"sfx":50,"sx":64,"sy":16,"frames":[10,11],"dmg":5,"spread":0,"v":0.5,"ttl":[90,90],"dly":80,"sight":true},"laser":{"dmg":0.5,"dly":60,"v":1,"dx":0,"dy":1,"spread":0,"ttl":[90,90],"draw":"draw_laser","update":"update_laser"},"bite":{"dmg":1,"dly":30,"spread":0.02,"v":0,"draw":"nop","ttl":[4,4],"hit_part":"slash"},"snowball":{"frames":[60],"dmg":1,"spread":0.01,"v":0.5,"inertia":0.9,"ttl":[70,90],"dly":80},"horror_spwn":{"actor_cls":"horror_cls","spread":1,"v":0.2,"dly":145,"ammo":8},"zapper":{"n":"laser","cost":5,"side":"any_side","bounce":1,"ammo":30,"sfx":53,"sx":48,"sy":16,"icon":39,"dmg":5,"spread":0.01,"v":0.6,"ttl":[90,100],"dly":12,"draw":"draw_zap"},"turret_minigun":{"sfx":55,"frames":[10,11],"spread":0.25,"dmg":1,"v":0.1,"ttl":[60,80],"dly":8,"blts":5},"radiation":{"frames":[217],"spread":0.1,"dmg":3,"v":0.1,"inertia":0.99,"sfx":52,"blts":3,"ttl":[260,280],"dly":90}}')
 local max_cost=-1
 for k,v in pairs(weapons) do
 	_g[k]=v
@@ -228,7 +228,7 @@ end
 local active_actors
 local lvl_i,cur_loop,lvl=0,1
 local level_cw,level_ch=64,32
-local levels=json_parse('[{"n":"desert","blast_tile":69,"floors":[68,64,65,67,111],"walls":[66],"shadow":110,"bkg_col":1,"d":12,"w":[8,12],"h":[6,8],"paths":[2,2],"path":{"w":[3,4],"len":[8,12]},"spawn":[[15,15,"bandit_cls"],[1,3,"worm_cls"],[0,1,"scorpion_cls"],[2,3,"cactus"]]},{"n":"sewers","shader":"darken","floors":[86,87,87,88],"walls":[90,89,91],"shadow":94,"borders":[10,11,3],"bkg_col":3,"blast_tile":92,"d":10,"w":[2,3],"h":[2,3],"paths":[2,4],"path":{"w":[1,2],"len":[10,12]},"spawn":[[10,15,"slime_cls"],[5,10,"barrel_cls"],[0,0,"frog_cls"]]},{"n":"snow plains","cursor":93,"floors":[70,71,72],"walls":[74],"shadow":95,"blast_tile":75,"borders":[1,12,6],"bkg_col":6,"d":3,"w":[4,6],"h":[4,6],"paths":[2,4],"path":{"w":[3,6],"len":[8,12]},"spawn":[[0,0,"dog_cls"],[1,2,"bear_cls"],[1,1,"turret_cls"]]},{"n":"palace","floors":[96,100],"walls":[97,98,99,108],"shadow":101,"borders":[7,0,5],"bkg_col":5,"d":13,"w":[8,10],"h":[8,10],"paths":[1,3],"path":{"w":[2,3],"len":[10,12]},"spawn":[[4,8,"horror_cls"],[4,4,"horror_spwnr_cls"],[2,3,"candle_cls"]]},{"n":"lab","floors":[102,105],"walls":[103,104,106],"shadow":107,"borders":[6,7,5],"bkg_col":5,"blast_tile":76,"shader":"darken","d":13,"w":[4,6],"h":[3,5],"paths":[1,4],"path":{"w":[1,2],"len":[8,12]},"spawn":[[3,4,"cop_cls"],[5,8,"fireimp_cls"]]},{"n":"throne","builtin":true,"bkg_col":0,"borders":[7,0,5],"cx":103,"cy":0,"cw":13,"ch":31,"plyr_pos":[110,28],"spawn":[{"a":"throne_cls","x":112,"y":6},{"a":"ammo_cls","x":106,"y":27},{"a":"ammo_cls","x":107,"y":27},{"a":"ammo_cls","x":106,"y":28},{"a":"ammo_cls","x":107,"y":28},{"a":"health_cls","x":112,"y":27},{"a":"health_cls","x":113,"y":27},{"a":"health_cls","x":112,"y":28},{"a":"health_cls","x":113,"y":28}]}]')
+local levels=json_parse('[{"n":"desert","blast_tile":69,"floors":[68,64,65,67,111],"walls":[66],"shadow":110,"bkg_col":1,"d":12,"w":[8,12],"h":[6,8],"paths":[2,2],"path":{"w":[3,4],"len":[8,12]},"spawn":[[25,25,"bandit_cls"],[10,10,"worm_cls"],[2,2,"scorpion_cls"],[2,3,"cactus"]]},{"n":"sewers","shader":"darken","floors":[86,87,87,88],"walls":[90,89,91],"shadow":94,"borders":[10,11,3],"bkg_col":3,"blast_tile":92,"d":10,"w":[2,3],"h":[2,3],"paths":[2,4],"path":{"w":[1,2],"len":[10,12]},"spawn":[[10,15,"slime_cls"],[5,10,"barrel_cls"],[0,0,"frog_cls"]]},{"n":"snow plains","cursor":93,"floors":[70,71,72],"walls":[74],"shadow":95,"blast_tile":75,"borders":[1,12,6],"bkg_col":6,"d":3,"w":[4,6],"h":[4,6],"paths":[2,4],"path":{"w":[3,6],"len":[8,12]},"spawn":[[0,0,"dog_cls"],[1,2,"bear_cls"],[1,1,"turret_cls"]]},{"n":"palace","floors":[96,100],"walls":[97,98,99,108],"shadow":101,"borders":[7,0,5],"bkg_col":5,"d":13,"w":[8,10],"h":[8,10],"paths":[1,3],"path":{"w":[2,3],"len":[10,12]},"spawn":[[4,8,"horror_cls"],[4,4,"horror_spwnr_cls"],[2,3,"candle_cls"]]},{"n":"lab","floors":[102,105],"walls":[103,104,106],"shadow":107,"borders":[6,7,5],"bkg_col":5,"blast_tile":76,"shader":"darken","d":13,"w":[4,6],"h":[3,5],"paths":[1,4],"path":{"w":[1,2],"len":[8,12]},"spawn":[[3,4,"cop_cls"],[5,8,"fireimp_cls"]]},{"n":"throne","builtin":true,"bkg_col":0,"borders":[7,0,5],"cx":103,"cy":0,"cw":13,"ch":31,"plyr_pos":[110,28],"spawn":[{"a":"throne_cls","x":112,"y":6},{"a":"ammo_cls","x":106,"y":27},{"a":"ammo_cls","x":107,"y":27},{"a":"ammo_cls","x":106,"y":28},{"a":"ammo_cls","x":107,"y":28},{"a":"health_cls","x":112,"y":27},{"a":"health_cls","x":113,"y":27},{"a":"health_cls","x":112,"y":28},{"a":"health_cls","x":113,"y":28}]}]')
 
 local blts,parts={},{}
 local zbuf={{},{},{}}
@@ -371,6 +371,7 @@ function wait_async(t,fn)
 	end
 end
 -- collision
+--[[
 function circline_coll(x,y,r,x0,y0,x1,y1,w)
 	local dx,dy=x1-x0,y1-y0
 	local ax,ay=x-x0,y-y0
@@ -385,6 +386,7 @@ function circline_coll(x,y,r,x0,y0,x1,y1,w)
 	r+=(w or 0.2)
 	return ix*ix+iy*iy<r*r
 end
+]]
 -- zbuffer
 function zbuf_clear()
 	zbuf[1]={}
@@ -428,31 +430,30 @@ end
 -- collision map
 local cmap={}
 local cmap_cells=json_parse('[0,1,129,128,127,-1,-129,-128,-127]')
-function cmap_add(obj)
+function cmap_fn(obj,fn)
 	if bor(obj.w,obj.h)!=0 then
 		for x=flr(obj.x-obj.w),flr(obj.x+obj.w) do
 			for y=flr(obj.y-obj.h),flr(obj.y+obj.h) do
-				h=flr(x)+128*flr(y)
-				cmap[h]=cmap[h] or {}
-				add(cmap[h],obj)
+				fn(cmap,x+128*y)
 			end
 		end
 	end
 end
+function cmap_add(obj)
+	cmap_fn(obj,function(cmap,h)
+		cmap[h]=cmap[h] or {}
+		add(cmap[h],obj)
+	end)
+end
 function cmap_del(obj)
-	if bor(obj.w,obj.h)!=0 then
-		for x=flr(obj.x-obj.w),flr(obj.x+obj.w) do
-			for y=flr(obj.y-obj.h),flr(obj.y+obj.h) do
-				h=flr(x)+128*flr(y)
-				if cmap[h] then
-					del(cmap[h],obj)
-					if #cmap[h]==0 then
-						cmap[h]=nil
-					end
-				end
+	cmap_fn(obj,function(cmap,h)
+		if cmap[h] then
+			del(cmap[h],obj)
+			if #cmap[h]==0 then
+				cmap[h]=nil
 			end
 		end
-	end
+	end)
 end
 local cmap_session,cmap_i,cmap_cell,cmap_h=0
 function cmap_iterator(x,y)
@@ -556,8 +557,14 @@ function update_blt(self)
 
 		-- actors hit?
 		-- todo:get all hitable actors in range
-		for _,a in pairs(actors) do 
-			if bor(a.w,a.h)!=0 and (self.side!=a.side or a.side==any_side) and circline_coll(a.x,a.y,a.w,x0,y0,x1,y1) then
+		cmap_iterator(x1,y1)
+		local a=cmap_next()
+		while a do
+   local x,y=x1-a.x,y1-a.y
+   if (self.side!=a.side or a.side==any_side)
+   	and abs(x)<(0.2+a.w)/2
+    and abs(y)<(0.2+a.h)/2
+   then 
 				a:hit(self.wp.dmg)
 				-- law of conservation!
 				if a.acc!=0 then
@@ -569,6 +576,7 @@ function update_blt(self)
 				sfx(61)
 				return false
 			end
+			a=cmap_next()
 		end
 
 		local touch,bounce=false,self.bounce or 0
@@ -703,7 +711,7 @@ function make_level()
 			for i=1,n do			
 				local r=rooms[flr(rnd()*#rooms)+1]
 				local x,y=r.x+rndlerp(1,r.w-1),r.y+rndlerp(1,r.h-1)
-				--make_actor(x,y,all_actors[sp[3]])
+				make_actor(x,y,all_actors[sp[3]])
 			end
 		end
 	end
@@ -893,7 +901,6 @@ function solid_actor(a,dx,dy)
     if a2.contact_t<time_t and a.dmg and (a.side==any_side or a.side!=a2.side) and a2.hit then
     	a2.contact_t=time_t+60
     	a2:hit(a.dmg)
-    	printh("contact dmg:"..a.dmg)
     end
     
     if dx!=0 and abs(x) <
@@ -1006,12 +1013,12 @@ function closest(x,y,nodes)
 end
 function update_path_async(self)
 	while self.hp>0 do
-		local x1,y1=self.x,self.y
+		local x1,y1
 		if self.flee then
 			local pr,cr=whereami(plyr),whereami(self)
 			local r=rooms[flr(16*pr+8*cr+self.id)%#rooms+1]
 			x1,y1=rndlerp(r.x,r.x+r.w),rndlerp(r.y,r.y+r.h)
-		elseif sqr_dist(self.x,self.y,plyr.x,plyr.y)<12*12 then
+		else
 			x1,y1=plyr.x,plyr.y
 		end
 	
@@ -1146,8 +1153,10 @@ _g.npc_update=function(self)
 			input.dx,input.dy=dx,dy
 		end
 	end
- 
-	coresume(self.update_path,self)
+	
+ if self.id==(time_t%64) then
+		coresume(self.update_path,self)
+ end
  
 	if self.pause_dly and self.fire_dly_t<time_t then
 		self.fire_t=time_t+self.pause_dly
@@ -1361,7 +1370,7 @@ _g.draw_actor=function(a,sx,sy)
 	palt(tcol,false)
 	pal()
 	local wp=a.wp
-	if wp and wp.sx then
+	if a==plyr and wp and wp.sx then
 		palt(14,true)
 		local u,v=cos(a.angle),sin(a.angle)
 		-- recoil animation
@@ -1369,6 +1378,7 @@ _g.draw_actor=function(a,sx,sy)
 		rspr(wp.sx,wp.sy,sx+4*u+f*u,sy+4*v+f*v,1-a.angle)
 	 palt()
 	end
+	
 	--[[
 	if a.path and #a.path>0 then
 		local x0,y0=cam_project(a.path[1].x,a.path[1].y)
@@ -1579,7 +1589,7 @@ start_screen.update=function()
 			end,after_draw)
 		futures_add(function()
 			wait_async(90)
-			lvl_i,cur_loop=5,1
+			lvl_i,cur_loop=4,1
 			plyr=make_plyr()
 			next_level()
 			starting=false
@@ -1655,6 +1665,7 @@ game_screen.draw=function()
 		spr(lvl.cursor or 35,plyr.mousex-3,plyr.mousey-3)
 	end
 
+	--[[
 	local h
 	for i=0,level_cw do
 		for j=0,level_ch do			
@@ -1665,6 +1676,7 @@ game_screen.draw=function()
 			end
 		end
 	end
+	]]
 	
 	if plyr_playing then
 		rectfill(1,1,34,9,0)
@@ -1930,7 +1942,7 @@ __sfx__
 001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00010000203502436024370213701a370173601e3501c34017340153501b3501b33017340123401734018330133300e3301032011320093200a320073200a3100001000000000000000000000000000000000000
 000200002f66032660306702a63026610216501d6501965014650116500d6400a6500863007630066200561004600076000760006600056000560004600036000360003600026000160002600016000160001600
 0002000029670216700e6702c670246600b6502763013660256301c640126300c6200864005620016200162001600076000760006600056000560004600046000460004600046000360002600026000160001600
 000100000936012370203702f37024370133700b3700a370093700836008350073300734006350063500534005330043200432004320043100432004330043300434004340033400534004340043300433004330
