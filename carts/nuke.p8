@@ -138,6 +138,16 @@ local all_parts=json_parse('{"flash":{"dly":4,"r":0.5,"c":7,"dr":-0.1,"update":"
 -- weapons catalog
 local all_loot={}
 
+_g.draw_zap=function(self,x,y)
+	local x0,y0,x1,y1=x,y,cam_project(self.prevx,self.prevy)
+	local dx,dy=shr(x1-x,2),shr(y1-y,2)
+	for i=1,8 do
+		circfill(x,y,1,12)
+		x+=dx
+		y+=dy
+	end
+	line(x0,y0,x,y,7)
+end
 _g.draw_laser=function(self,x,y)
 	local x1,y1=cam_project(0,self.y1)
 	local w=self.w-2*rnd()
@@ -360,6 +370,7 @@ function wait_async(t,fn)
 	end
 end
 -- collision
+--[[
 function circline_coll(x,y,r,x0,y0,x1,y1,w)
 	local dx,dy=x1-x0,y1-y0
 	local ax,ay=x-x0,y-y0
@@ -374,7 +385,7 @@ function circline_coll(x,y,r,x0,y0,x1,y1,w)
 	r+=(w or 0.2)
 	return ix*ix+iy*iy<r*r
 end
-
+]]
 -- zbuffer
 local zdraw,zbuf_zmin,zbuf_zmax
 function zbuf_clear()
@@ -416,30 +427,26 @@ end
 -- collision map
 local cmap={}
 local cmap_cells=json_parse('[0,1,129,128,127,-1,-129,-128,-127]')
-function cmap_fn(obj,fn)
+function cmap_op(obj,fn)
 	if bor(obj.w,obj.h)!=0 then
 		for x=flr(obj.x-obj.w),flr(obj.x+obj.w) do
 			for y=flr(obj.y-obj.h),flr(obj.y+obj.h) do
-				fn(cmap,x+128*y)
+				fn(obj,cmap,x+128*y)
 			end
 		end
 	end
 end
-function cmap_add(obj)
-	cmap_fn(obj,function(cmap,h)
-		cmap[h]=cmap[h] or {}
-		add(cmap[h],obj)
-	end)
+function cmap_add(obj,cmap,h)
+	cmap[h]=cmap[h] or {}
+	add(cmap[h],obj)
 end
-function cmap_del(obj)
-	cmap_fn(obj,function(cmap,h)
-		if cmap[h] then
-			del(cmap[h],obj)
-			if #cmap[h]==0 then
-				cmap[h]=nil
-			end
+function cmap_del(obj,cmap,h)
+	if cmap[h] then
+		del(cmap[h],obj)
+		if #cmap[h]==0 then
+			cmap[h]=nil
 		end
-	end)
+	end
 end
 local cmap_session,cmap_i,cmap_cell,cmap_h=0
 function cmap_iterator(x,y)
@@ -522,7 +529,7 @@ end
 -- spill bones and skull!
 function make_splat(self)
 	make_part(self.x,self.y,0, all_parts[self.splat or "blood_splat"])
- for i=1,5 do
+ 	for i=1,5 do
 		local a=rnd()
 		make_part(self.x,self.y,0,all_parts[self.bones or "bones"],cos(a)/10+self.dx,sin(a)/10+self.dy,0,a)
 	end
@@ -583,7 +590,7 @@ function update_blt(self)
 				goto die
 			end
 		end
-		self.x,self.y=x1,y1
+		self.prevx,self.prevy,self.x,self.y=x0,y0,x1,y1
 		zbuf_write(self)
 		return true
 	end
@@ -659,6 +666,7 @@ function make_blt(a,wp)
 				-- weapon ttl is a range
 				t=time_t+lerp(wp.ttl[1],wp.ttl[2],rnd()),
 				-- for fast collision
+				prevx=b.x,prevy=b.y,
 				spr=wp.spr,
 				update=wp.update or update_blt,
 				draw=wp.draw or draw_blt},b)
@@ -674,7 +682,7 @@ function draw_blt(b,x,y)
 	palt(14,true)
 	local frames=b.wp.frames
 	if #frames==2 then
-		local px,py=x-2*b.u,y-2*b.v
+		local px,py=cam_project(b.prevx,b.prevy)
 		spr(frames[2],px-4,py-4)
 	end
 	spr(frames[1],x-4,y-4)
@@ -1390,7 +1398,7 @@ function make_actor(x,y,src)
 			y=y}))
 	if(a.init) a:init()
 	if(a.npc) active_actors+=1 actor_id+=1 a.update_path=cocreate(update_path_async)
-	if(bor(a.w,a.h)!=0) cmap_add(a)
+	if(bor(a.w,a.h)!=0) cmap_op(a, cmap_add)
 	return add(actors,a)
 end
 
@@ -1398,7 +1406,7 @@ function move_actor(a)
 	if a.update then
 		a:update()
 		if a.disable then
-			cmap_del(a)
+			cmap_op(a,cmap_del)
 			return
 		end
 	end
@@ -1415,7 +1423,7 @@ function move_actor(a)
 		zbuf_write(a)
 		return
 	end
-	cmap_del(a)
+	cmap_op(a,cmap_del)
 	local touch=false
  if not solid_a(a,a.dx,0) then
   a.x+=a.dx
@@ -1436,7 +1444,7 @@ function move_actor(a)
  if touch and a.touch then
  	a:touch()
  end
- cmap_add(a)
+ cmap_op(a, cmap_add)
 
  -- apply inertia
  a.dx*=a.inertia
@@ -1707,14 +1715,14 @@ function _init()
 end
 
 __gfx__
-00000000e000000ee0000000e000000ee000000ee000000ee000000e3333333333333333eeeeeeeeeeeeeeeeeeeeeeeeee0000eee000000ee000000ee000000e
-070000700676767006676760056676700f66ff600f66ff600f66ff603333333333333333eeeeeeeeeeeeeeeeeeeeeeeee066660e01111a10011111a001111110
-007777000798986005798980065798900558585005585850055858503333333333333333eeeeeeeeeee99eeeeee99eee0655556001c00000011c00000111c000
-007777000694047006694040056694000ff66ff00ff66ff00ff66ff03330003333333333ec7c7c7eee9aa9eeee9999ee055555500ccc0c000cccc0c00ccccc00
-0077770007676760057676700657676006ff66f006ff66f006ff66f0330fef0333000033e7c7c7ceee9aa9eeee9999ee075757700cccccc00cccccc00cccccc0
-007777000444444004444440044444400f66f6600f66f6600f66f660330e0e0330efef03eeeeeeeeeee99eeeeee99eee07575750055556500555556005555550
-0700007005000050e050010ee005100ee06f0ff0e006f0f00f006f0e30ef0fe00ef00fe0eeeeeeeeeeeeeeeeeeeeeeee0555555007000070e070070ee006700e
-00000000000ee000e000000eeee00eeeee00e00eeee00e0ee0ee00ee3300300330033003eeeeeeeeeeeeeeeeeeeeeeee00000000e0eeee0eee0ee0eeeee00eee
+00000000e000000ee0000000e000000ee000000ee000000ee000000e333333333333333300000000eeeeeeeeeeeeeeeeee0000eee000000ee000000ee000000e
+070000700676767006676760056676700f66ff600f66ff600f66ff60333333333333333300000000eeeeeeeeeeeeeeeee066660e01111a10011111a001111110
+00777700079898600579898006579890055858500558585005585850333333333333333300000000eee99eeeeee99eee0655556001c00000011c00000111c000
+007777000694047006694040056694000ff66ff00ff66ff00ff66ff0333000333333333300000000ee9aa9eeee9999ee055555500ccc0c000cccc0c00ccccc00
+0077770007676760057676700657676006ff66f006ff66f006ff66f0330fef033300003300000000ee9aa9eeee9999ee075757700cccccc00cccccc00cccccc0
+007777000444444004444440044444400f66f6600f66f6600f66f660330e0e0330efef0300000000eee99eeeeee99eee07575750055556500555556005555550
+0700007005000050e050010ee005100ee06f0ff0e006f0f00f006f0e30ef0fe00ef00fe000000000eeeeeeeeeeeeeeee0555555007000070e070070ee006700e
+00000000000ee000e000000eeee00eeeee00e00eeee00e0ee0ee00ee330030033003300300000000eeeeeeeeeeeeeeee00000000e0eeee0eee0ee0eeeee00eee
 e111111eee00000eee00000eee00000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00eeeeeeeeeeeeee00eee
 11111111e0999aa0e09999a0e0999990eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000eeeee777eeeeeeee33eeeeeeeeeeeee7777eeee0370eeee0000eeee0370ee
 e111111e099414100999414009999410eeeeeeeeeeeeeeeee0000000e77777770bb0000070077777ee3bb3eeeee33eeee777777ee03bb70ee03bb70eee0370ee
