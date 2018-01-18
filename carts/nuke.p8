@@ -9,14 +9,13 @@ local actors={} --all actors in world
 local use_mouse=0
 
 -- side
-local no_side,good_side,bad_side,any_side=0x0,0x1,0x2,0x3
+local good_side,bad_side,any_side=0x1,0x2,0x0
 -- register json context here
 local _tok={
  ['true']=true,
  ['false']=false}
 function nop() end
 local _g={
-	no_side=no_side,
 	good_side=good_side,
 	bad_side=bad_side,
 	any_side=any_side,
@@ -173,7 +172,7 @@ _g.update_blast_part=function(self)
 	zbuf_write(self)
 	return true
 end
-all_parts=json_parse('{"flash":{"dly":4,"r":0.5,"c":7,"dr":-0.1,"update":"update_static_part"},"smoke":{"dly":18,"dr":-0.01,"rnd":{"r":[0.3,0.6],"c":[0,1]}},"blood_splat":{"zorder":1,"spr":129,"draw":"draw_spr_part","rnd":{"dly":[900,1000]}},"turret_splat":{"zorder":1,"spr":165,"sw":2,"sh":2,"draw":"draw_spr_part","rnd":{"dly":[900,1000]}},"goo_splat":{"zorder":1,"spr":130,"draw":"draw_spr_part","rnd":{"dly":[900,1000]}},"fart":{"dy":-0.05,"rnd":{"r":[0.05,0.2],"dly":[24,32],"c":[11,3,true]}},"laser_spark":{"zorder":3,"dx":0,"dy":0.04,"c":7,"rnd":{"r":[0.1,0.2],"dly":[24,32]}},"hit":{"dr":-0.02,"rnd":{"r":[0.3,0.4],"dly":[8,12],"c":[9,10,true]}},"blast_smoke":{"inertia":0.95,"dr":-0.03,"rnd":{"r":[0.5,0.8],"dly":[15,30]},"c":1},"slash":{"frames":[196,197,198],"draw":"draw_rspr_part","dly":12},"green_part":{"rnd":{"c":[11,3,3],"r":[0.3,0.4],"dr":[-0.01,-0.02],"dz":[0.01,0.03],"dly":[24,32]}},"candle":{"w":0.1,"h":0.1,"inertia":0.9,"rnd":{"c":[8,9,10],"r":[0.1,0.2],"dr":[-0.01,-0.02],"dz":[0.04,0.06],"dly":[12,24]}},"flames":{"frames":[212,213,214],"draw":"draw_spr_part","rnd":{"dly":[600,900]}},"bones":{"zorder":1,"inertia":0.9,"draw":"draw_spr_part","rnd":{"spr":[202,203,204],"dly":[600,900]}},"goo_chunks":{"zorder":1,"inertia":0.9,"draw":"draw_spr_part","rnd":{"spr":[199,200,199],"dly":[600,900]}},"green_chunks":{"inertia":0.9,"draw":"draw_spr_part","rnd":{"spr":[215,216,215],"dly":[600,900]}},"fireimp_chunks":{"zorder":1,"inertia":0.9,"draw":"draw_spr_part","rnd":{"spr":[218,219,219],"dly":[600,900]}},"notice":{"zorder":3,"dz":0.1,"inertia":0.91,"dly":72,"draw":"draw_txt_part"},"blast_splat":{"frames":[212,213,214],"df":0.25,"draw":"draw_spr_part","rnd":{"dly":[600,900]}},"blast_chunks":{"zorder":1,"inertia":0.9,"draw":"draw_spr_part","rnd":{"spr":[205,206,205],"dly":[600,900]}},"blast":{"w":1,"h":1,"dly":30,"acc":0,"inertia":0,"frames":[192,193,208,209,194,195,210,211],"update":"update_blast_part","draw":"draw_blast_part","splat":"blast_splat","bones":"blast_chunks"}}')
+all_parts=json_parse('{"flash":{"dly":4,"r":0.5,"c":7,"dr":-0.1,"update":"update_static_part"},"smoke":{"dly":18,"dr":-0.01,"rnd":{"r":[0.3,0.6],"c":[0,1]}},"blood_splat":{"zorder":1,"spr":129,"draw":"draw_spr_part","rnd":{"dly":[900,1000]}},"turret_splat":{"zorder":1,"spr":165,"sw":2,"sh":2,"draw":"draw_spr_part","rnd":{"dly":[900,1000]}},"goo_splat":{"zorder":1,"spr":130,"draw":"draw_spr_part","rnd":{"dly":[900,1000]}},"fart":{"dy":-0.05,"rnd":{"r":[0.05,0.2],"dly":[24,32],"c":[11,3,true]}},"laser_spark":{"zorder":3,"dx":0,"dy":0.04,"c":7,"rnd":{"r":[0.1,0.2],"dly":[24,32]}},"hit":{"sfx":61,"dr":-0.02,"rnd":{"r":[0.3,0.4],"dly":[8,12],"c":[9,10,true]}},"blast_smoke":{"inertia":0.95,"dr":-0.03,"rnd":{"r":[0.5,0.8],"dly":[15,30]},"c":1},"slash":{"frames":[196,197,198],"draw":"draw_rspr_part","dly":12},"green_part":{"rnd":{"c":[11,3,3],"r":[0.3,0.4],"dr":[-0.01,-0.02],"dz":[0.01,0.03],"dly":[24,32]}},"candle":{"w":0.1,"h":0.1,"inertia":0.9,"rnd":{"c":[8,9,10],"r":[0.1,0.2],"dr":[-0.01,-0.02],"dz":[0.04,0.06],"dly":[12,24]}},"flames":{"frames":[212,213,214],"draw":"draw_spr_part","rnd":{"dly":[600,900]}},"bones":{"zorder":1,"inertia":0.9,"draw":"draw_spr_part","rnd":{"spr":[202,203,204],"dly":[600,900]}},"goo_chunks":{"zorder":1,"inertia":0.9,"draw":"draw_spr_part","rnd":{"spr":[199,200,199],"dly":[600,900]}},"green_chunks":{"inertia":0.9,"draw":"draw_spr_part","rnd":{"spr":[215,216,215],"dly":[600,900]}},"fireimp_chunks":{"zorder":1,"inertia":0.9,"draw":"draw_spr_part","rnd":{"spr":[218,219,219],"dly":[600,900]}},"notice":{"zorder":3,"dz":0.1,"inertia":0.91,"dly":72,"draw":"draw_txt_part"},"blast_splat":{"frames":[212,213,214],"df":0.25,"draw":"draw_spr_part","rnd":{"dly":[600,900]}},"blast_chunks":{"zorder":1,"inertia":0.9,"draw":"draw_spr_part","rnd":{"spr":[205,206,205],"dly":[600,900]}},"blast":{"pause_t":8,"sfx":51,"w":1,"h":1,"dly":30,"acc":0,"inertia":0,"frames":[192,193,208,209,194,195,210,211],"rnd":{"bones_c":[2,4]},"update":"update_blast_part","draw":"draw_blast_part","splat":"blast_splat","bones":"blast_chunks"}}')
 
 -- weapons catalog
 local all_loot={}
@@ -458,6 +457,7 @@ function zbuf_draw()
 end
 
 -- collision map
+-- provide o(1) lookup for proximity checks
 local cmap={}
 local cmap_cells=json_parse('[0,1,129,128,127,-1,-129,-128,-127]')
 function cmap_op(obj,fn)
@@ -476,14 +476,15 @@ end
 function cmap_del(obj,cmap,h)
 	if cmap[h] then
 		del(cmap[h],obj)
+		-- remove empty sets
 		if #cmap[h]==0 then
 			cmap[h]=nil
 		end
 	end
 end
-local cmap_session,cmap_i,cmap_cell,cmap_h=0
-function cmap_iterator(x,y)
-	cmap_i,cmap_cell=1,1
+local cmap_session,cmap_i,cmap_cell,cmap_h,cmap_side=0
+function cmap_iterator(x,y,side)
+	cmap_i,cmap_cell,cmap_side=1,1,side or any_side
 	cmap_h=flr(x)+128*flr(y)
 	cmap_session+=1
 end
@@ -494,7 +495,7 @@ function cmap_next()
 		if objs and cmap_i<=#objs then
 			local obj=objs[cmap_i]
 			cmap_i+=1
-			if obj.cmap_session!=cmap_session then
+			if obj.cmap_session!=cmap_session and band(obj.side,cmap_side)==0 then
 				return obj
 			end
 			obj.cmap_session=cmap_session
@@ -555,14 +556,15 @@ function make_part(x,y,z,src,dx,dy,dz,a)
 			dy=dy or 0,
 			dz=dz or 0,
 			angle=a or 0}))
-	
+	if(p.sfx) sfx(p.sfx)
+	if(p.pause_t) pause_t=p.pause_t
 	p.t=time_t+p.dly
 	return add(parts,p)
 end
 -- spill bones and skull!
 function make_splat(self)
 	make_part(self.x,self.y,0, all_parts[self.splat or "blood_splat"])
- 	for i=1,3+rnd(3) do
+ for i=1,self.bones_c do
 		local a=rnd()
 		make_part(self.x+rndlerp(-self.w,self.w),self.y+rndlerp(-self.h,self.h),0,all_parts[self.bones or "bones"],cos(a)/10,sin(a)/10,0,a)
 	end
@@ -573,9 +575,10 @@ function draw_lasersight_part(p,x,y)
 end
 -- bullets
 function update_blt(self)
+	local x1,y1=self.x,self.y
 	if self.t>time_t then
 		local x0,y0=self.x,self.y
-		local x1,y1=x0+self.dx,y0+self.dy
+		x1,y1=x0+self.dx,y0+self.dy
 		if self.wp.inertia then
 			self.dx*=self.wp.inertia
 			self.dy*=self.wp.inertia
@@ -583,17 +586,16 @@ function update_blt(self)
 
 		-- actors hit?
 		-- note: will be wrong for very fast bullets
-		cmap_iterator(x1,y1)
+		cmap_iterator(x1,y1,self.side)
 		local a=cmap_next()
 		while a do
-			if bor(a.w,a.h)!=0 and (self.side!=a.side or a.side==any_side) and circline_coll(a.x,a.y,a.w,x0,y0,x1,y1) then	
+			if circline_coll(a.x,a.y,a.w,x0,y0,x1,y1) then
 				a:hit(self.wp.dmg)
 				-- law of conservation!
 				if a.acc!=0 then
 					a.dx+=self.dx
 					a.dy+=self.dy
 				end
-					
 				goto die
 			end
 			a=cmap_next()
@@ -601,13 +603,13 @@ function update_blt(self)
 
 		local touch,bounce=false,self.bounce or 0
 		if solid(x1,y0) then
-			x1=self.x
+			x1=x0
 			self.dx*=-bounce
 			self.u=-self.u
 			touch=true
 		end
 		if solid(x0,y1) then
-			y1=self.y
+			y1=y0
 			self.dy*=-bounce
 			self.v=-self.v
 			touch=true
@@ -628,25 +630,24 @@ function update_blt(self)
 		return true
 	end
 	
-	-- sub bullet?
 	::die::
 	if self.wp.blast_on_die then
-		make_blast(self.x,self.y)
+		make_part(x1,y1,0,all_parts["blast"])
 	else
-		make_part(self.x,self.y,0.25,all_parts[self.wp.hit_part or "hit"],self.dx/4,self.dy/4,0,self.angle)
-		sfx(61)
+		make_part(x1,y1,0.25,all_parts[self.wp.hit_part or "hit"],self.dx/4,self.dy/4,0,self.angle)
 	end
+	-- sub bullet?
 	local wp=self.wp.sub_cls
 	if wp then
 		wp=weapons[wp]
-		local x,y,side,n=self.x,self.y,self.side,self.wp.emitters
+		local side,n=self.side,self.wp.emitters
 		futures_add(function()
 			local ang,dang=0,1/n
 			for k=1,wp.burst do
 				ang=0
 				for i=1,n do
 					make_blt({
-						x=x,y=y,
+						x=x1,y=y1,
 						side=side,
 						angle=ang},wp)
 					ang+=dang
@@ -927,7 +928,8 @@ function solid_actor(a,dx,dy)
       abs(y)<(a.h+a2.h)/2
    then 
     -- collision damage?
-    if a.contact_t<time_t and a.dmg and (a2.side==any_side or a.side!=a2.side) and a2.hit then
+    if a2.dmg and a.contact_t<time_t and band(a.side,a2.side)==0 then
+    	-- avoid repeated collision
     	a.contact_t=time_t+30
     	a:hit(a2.dmg)
     end
@@ -1020,15 +1022,6 @@ _g.hit_actor=function(self,dmg)
 		cmap_op(self,cmap_del)
 		del(actors,self)
 	end
-end
-function make_blast(x,y)
-	-- pause action during blast!
-	pause_t=8
-	for i=1,3 do
-		make_part(x+(rnd(2)-1),y+(rnd(2)-1),0,all_parts.blast)
-	end
-	cam_shake(rnd(),rnd(),3)
-	sfx(51)
 end
 
 -- a-star
@@ -1362,11 +1355,11 @@ _g.draw_actor=function(a,sx,sy)
 	]]
 end
 
-all_actors=json_parse('{"barrel_cls":{"side":"any_side","inertia":0.9,"bounce":1,"spr":128,"splat":"blast","bones":"green_chunks","update":"nop"},"bandit_cls":{"hp":3,"wp":"base_gun","frames":[4,5,6],"npc":true,"rnd":{"fire_dly":[90,120],"pause_dly":[90,120]}},"scorpion_cls":{"rnd":{"fire_dly":[160,180]},"pause_dly":120,"w":0.8,"h":0.8,"hp":10,"wp":"acid_gun","palt":5,"frames":[131,133],"npc":true},"worm_cls":{"flee":true,"palt":3,"w":0.2,"h":0.2,"inertia":0.8,"dmg":1,"frames":[7,8],"npc":true},"slime_cls":{"w":0.2,"h":0.2,"acc":0.03,"dmg":1,"inertia":0.8,"dmg":1,"frames":[31,29,30,29],"wp":"goo","npc":true,"splat":"goo_splat","bones":"goo_chunks"},"dog_cls":{"los_dist":1,"inertia":0.2,"hp":5,"acc":0.06,"wp":"bite","frames":[61,62],"npc":true},"bear_cls":{"inertia":0.2,"frames":[1,2,3],"npc":true,"wp":"snowball"},"throne_cls":{"zorder":1,"w":8,"h":4,"hp":5,"palt":15,"inertia":0,"cx":87,"cy":18,"cw":12,"ch":5,"update":"throne_update","draw":"throne_draw","init":"throne_init","splat":"blast","bones":"blast","npc":true},"health_cls":{"spr":48,"w":0,"h":0,"update":"health_pickup"},"ammo_cls":{"spr":32,"w":0,"h":0,"update":"ammo_pickup"},"wpdrop_cls":{"w":0,"h":0,"inertia":0.9,"btn_t":0,"near_plyr_t":0,"draw":"draw_txt_actor","update":"wpdrop_update"},"cop_cls":{"flee":true,"acc":0.05,"frames":[13,14,15,14],"rnd":{"fire_dly":[160,210],"pause_dly":[120,160]},"wp":"rifle","npc":true},"fireimp_cls":{"frames":[45,46,47,46],"acc":0.2,"die":"blast_on_die","npc":true,"bones":"fireimp_chunks"},"turret_cls":{"w":1,"h":1,"wp":"turret_minigun","hp":10,"acc":0,"bounce":0,"frames":[163],"fire_dly":180,"pause_dly":120,"splat":"turret_splat","npc":true},"horror_cls":{"part":"green_part","bones":"horror_chunks","part_dly":8,"part_t":0,"hp":25,"frames":[160,161,162],"wp":"radiation","fire_dly":180,"pause_dly":120,"splat":"goo_splat","npc":true,"bones":"goo_chunks"},"warp_cls":{"w":0,"h":0,"captured":false,"frames":[80,81,82],"draw":"nop","update":"warp_update","die":"nop"},"cactus":{"inertia":0.8,"acc":0,"spr":83,"die":"nop","update":"nop"},"candle_cls":{"part":"candle","part_dly":4,"part_t":0,"inertia":0.8,"acc":0,"spr":178,"die":"nop","update":"nop"},"frog_cls":{"rnd":{"fire_dly":[160,180]},"pause_dly":120,"w":0.8,"h":0.8,"hp":15,"wp":"acid_gun","frames":[231,233,235,233],"npc":true},"horror_spwnr_cls":{"frames":[84],"acc":0,"npc":true,"hp":10,"wp":"horror_spwn","bones":"green_chunks"}}')
+all_actors=json_parse('{"barrel_cls":{"side":"any_side","inertia":0.9,"bounce":1,"spr":128,"splat":"blast","bones":"green_chunks","update":"nop"},"bandit_cls":{"hp":3,"wp":"base_gun","frames":[4,5,6],"npc":true,"rnd":{"fire_dly":[90,120],"pause_dly":[90,120]}},"scorpion_cls":{"rnd":{"fire_dly":[160,180]},"pause_dly":120,"w":0.8,"h":0.8,"hp":10,"wp":"acid_gun","palt":5,"frames":[131,133],"npc":true},"worm_cls":{"flee":true,"palt":3,"w":0.2,"h":0.2,"inertia":0.8,"dmg":1,"frames":[7,8],"npc":true},"slime_cls":{"w":0.2,"h":0.2,"acc":0.03,"dmg":1,"inertia":0.8,"dmg":1,"frames":[31,29,30,29],"wp":"goo","npc":true,"splat":"goo_splat","bones":"goo_chunks"},"dog_cls":{"los_dist":1,"inertia":0.2,"hp":5,"acc":0.06,"wp":"bite","frames":[61,62],"npc":true},"bear_cls":{"inertia":0.2,"frames":[1,2,3],"npc":true,"wp":"snowball"},"throne_cls":{"zorder":1,"w":8,"h":4,"hp":5,"palt":15,"inertia":0,"cx":87,"cy":18,"cw":12,"ch":5,"update":"throne_update","draw":"throne_draw","init":"throne_init","splat":"blast","bones":"blast","bones_c":10,"npc":true},"health_cls":{"spr":48,"w":0,"h":0,"update":"health_pickup"},"ammo_cls":{"spr":32,"w":0,"h":0,"update":"ammo_pickup"},"wpdrop_cls":{"w":0,"h":0,"inertia":0.9,"btn_t":0,"near_plyr_t":0,"draw":"draw_txt_actor","update":"wpdrop_update"},"cop_cls":{"flee":true,"acc":0.05,"frames":[13,14,15,14],"rnd":{"fire_dly":[160,210],"pause_dly":[120,160]},"wp":"rifle","npc":true},"fireimp_cls":{"frames":[45,46,47,46],"acc":0.2,"die":"blast_on_die","npc":true,"bones":"fireimp_chunks"},"turret_cls":{"w":1,"h":1,"wp":"turret_minigun","hp":10,"acc":0,"bounce":0,"frames":[163],"fire_dly":180,"pause_dly":120,"splat":"turret_splat","bones":"blast","npc":true},"horror_cls":{"part":"green_part","bones":"horror_chunks","part_dly":8,"part_t":0,"hp":25,"frames":[160,161,162],"wp":"radiation","fire_dly":180,"pause_dly":120,"splat":"goo_splat","npc":true,"bones":"goo_chunks"},"warp_cls":{"w":0,"h":0,"captured":false,"frames":[80,81,82],"draw":"nop","update":"warp_update","die":"nop"},"cactus":{"inertia":0.8,"acc":0,"spr":83,"die":"nop","update":"nop"},"candle_cls":{"part":"candle","part_dly":4,"part_t":0,"inertia":0.8,"acc":0,"spr":178,"die":"nop","update":"nop"},"frog_cls":{"rnd":{"fire_dly":[160,180]},"pause_dly":120,"w":0.8,"h":0.8,"hp":15,"wp":"acid_gun","frames":[231,233,235,233],"npc":true},"horror_spwnr_cls":{"frames":[84],"acc":0,"npc":true,"hp":10,"wp":"horror_spwn","bones":"green_chunks"}}')
 
 -- actor
 -- x,y in map tiles (not pixels)
-local actor_cls=json_parse('{"dx":0,"dy":0,"acc":0.02,"frame":0,"inertia":0.6,"bounce":1,"hp":1,"contact_t":0,"path":[],"move_t":0,"rnd":{"seek_dly":[120,180],"los_t":[25,50]},"hit_t":0,"can_fire":false,"fire_t":0,"fire_dly_t":0,"w":0.4,"h":0.4,"los_dist":8,"angle":0,"facing":0,"side":"bad_side","draw":"draw_actor","hit":"hit_actor","update":"npc_update","die":"die_actor"}')
+local actor_cls=json_parse('{"dx":0,"dy":0,"acc":0.02,"frame":0,"inertia":0.6,"bounce":1,"hp":1,"contact_t":0,"path":[],"move_t":0,"rnd":{"seek_dly":[120,180],"los_t":[50,80],"bones_c":[2,4]},"hit_t":0,"can_fire":false,"fire_t":0,"fire_dly_t":0,"w":0.4,"h":0.4,"los_dist":8,"angle":0,"facing":0,"side":"bad_side","draw":"draw_actor","hit":"hit_actor","update":"npc_update","die":"die_actor"}')
 function make_actor(x,y,src)
 	local a=clone(actor_cls,
 		clone(src,{
@@ -1375,7 +1368,7 @@ function make_actor(x,y,src)
 			y=y}))
 	if(a.init) a:init()
 	if(a.npc) active_actors+=1 actor_id+=1 a.update_path=cocreate(update_path_async)
-	if(bor(a.w,a.h)!=0) cmap_op(a, cmap_add)
+	cmap_op(a, cmap_add)
 	return add(actors,a)
 end
 
@@ -1553,7 +1546,7 @@ start_screen.update=function()
 			end,after_draw)
 		futures_add(function()
 			wait_async(90)
-			lvl_i,cur_loop=2,1
+			lvl_i,cur_loop=5,1
 			plyr=make_plyr()
 			next_level()
 			starting=false
