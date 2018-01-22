@@ -546,17 +546,8 @@ function cam_update()
 	camera(shkx,shky)
 end
 local cam_t=0
-local cam_x0,cam_y0,cam_x1,cam_y1
 function cam_track(x,y)
-	x,y=8*x-4,8*y-4
-	if sqr_dist(x,y,cam_x1,cam_y1)>64 then
-		cam_t=0
-		cam_x0,cam_y0=cam_x or x,cam_y or y
-		cam_x1,cam_y1=x,y
-	end
-	local t=smoothstep(cam_t/24)
-	cam_x,cam_y=lerp(cam_x0,cam_x1,t),lerp(cam_y0,cam_y1,t)
-	cam_t+=1
+	cam_x,cam_y=8*x-4,8*y-4
 end
 function cam_project(x,y)
 	return 64+8*x-cam_x,64+8*y-cam_y
@@ -1225,7 +1216,7 @@ _g.npc_update=function(self)
 		self.los_t=time_t+self.wp.dly
 	end
 	if self.can_fire and self.fire_t<time_t then
-		--make_blt(self,self.wp)
+		make_blt(self,self.wp)
 		self.fire_t=time_t+self.wp.dly
 	end
 end
@@ -1569,7 +1560,7 @@ start_screen.update=function()
 			end,after_draw)
 		futures_add(function()
 			wait_async(90)
-			lvl_i,cur_loop=0,2
+			lvl_i,cur_loop=0,3
 			plyr=make_plyr()
 			next_level()
 			starting=false
