@@ -148,18 +148,24 @@ _g.draw_blast_part=function(self,x,y)
 	palt()
 end
 _g.update_blast_part=function(self)
-	if self.frame>#self.frames then
+	if self.frame==#self.frames then
 		return false
 	end
-	self.frame+=0.25
+	if self.frame==0 then
+		pause_t=8
+		cam_shake(rnd(),rnd(),5)
+	end
+	self.frame=min(self.frame+0.25,#self.frames)
 	if self.frame>2 then
 		for _,a in pairs(actors) do
 			local dx,dy=a.x-self.x,a.y-self.y
 			local r=dx*dx+dy*dy
 			if r<4 then
-				r=1-smoothstep(r/4)
-				a:hit(r)
-				a.dx,a.dy=normalize(dx,dy)
+				r=smoothstep(r/4)
+				local u,v=normalize(dx,dy,r)
+				a.dx+=u
+				a.dy+=v
+				a:hit(8*r)
 			end
 		end
 	end
@@ -191,7 +197,7 @@ _g.draw_part=function(self,x,y)
  circfill(x,y,8*self.r,self.c)
 end
 
-all_parts=json_parse('{"part_cls":{"inertia":1,"r":1,"dr":0,"frame":0,"df":0.01,"draw":"draw_part","update":"update_part"},"flash":{"dly":8,"r":0.5,"c":7,"dr":-0.1,"update":"update_static_part"},"blood_splat":{"base_cls":"chunk_base","spr":129},"head":{"base_cls":"chunk_base","spr":201},"turret_splat":{"base_cls":"chunk_base","spr":165,"sw":2,"sh":2},"goo_splat":{"base_cls":"chunk_base","spr":130},"fart":{"dy":-0.05,"rnd":{"r":[0.05,0.2],"dly":[24,32],"c":[11,3,true]}},"laser_spark":{"zorder":3,"dx":0,"dy":0.04,"c":7,"rnd":{"r":[0.1,0.2],"dly":[24,32]}},"hit":{"sfx":61,"dr":-0.02,"rnd":{"r":[0.3,0.4],"dly":[8,12],"c":[9,10,true]}},"blast_smoke":{"inertia":0.95,"dr":-0.03,"rnd":{"r":[0.5,0.8],"dly":[15,30]},"c":1},"slash":{"frames":[196,197,198],"draw":"draw_rspr_part","dly":12},"green_part":{"rnd":{"c":[11,3,3],"r":[0.3,0.4],"dr":[-0.01,-0.02],"dz":[0.01,0.03],"dly":[24,32]}},"candle":{"w":0.1,"h":0.1,"inertia":0.9,"rnd":{"c":[8,9,10],"r":[0.1,0.2],"dr":[-0.01,-0.02],"dz":[0.04,0.06],"dly":[12,24]}},"bones":{"base_cls":"chunk_base","rnd":{"spr":[202,203,204]}},"goo_chunks":{"base_cls":"chunk_base","rnd":{"spr":[199,200,199]}},"green_chunks":{"base_cls":"chunk_base","rnd":{"spr":[215,216,215]}},"fireimp_chunks":{"base_cls":"chunk_base","rnd":{"spr":[219,220,220]}},"notice":{"zorder":3,"dz":0.1,"inertia":0.91,"dly":72,"draw":"draw_txt_part"},"blast_splat":{"base_cls":"chunk_base","frames":[212,213,214],"df":0.20},"blast_chunks":{"base_cls":"chunk_base","rnd":{"spr":[217,218,217]}},"blast":{"pause_t":8,"sfx":51,"w":1,"h":1,"dly":30,"acc":0,"inertia":0,"frames":[192,193,208,209,194,195,210,211],"rnd":{"bones_c":[2,4]},"update":"update_blast_part","draw":"draw_blast_part","splat":"blast_splat","bones":"blast_chunks"},"chunk_base":{"zorder":1,"inertia":0.9,"r":1,"dr":0,"frame":0,"df":0.01,"rnd":{"dly":[600,900]},"draw":"draw_spr_part","update":"update_part"}}')
+all_parts=json_parse('{"part_cls":{"inertia":1,"r":1,"dr":0,"frame":0,"df":0.01,"draw":"draw_part","update":"update_part"},"flash":{"dly":8,"r":0.5,"c":7,"dr":-0.1,"update":"update_static_part"},"blood_splat":{"base_cls":"chunk_base","spr":129},"head":{"base_cls":"chunk_base","spr":201},"turret_splat":{"base_cls":"chunk_base","spr":165,"sw":2,"sh":2},"goo_splat":{"base_cls":"chunk_base","spr":130},"fart":{"dy":-0.05,"rnd":{"r":[0.05,0.2],"dly":[24,32],"c":[11,3,true]}},"laser_spark":{"zorder":3,"dx":0,"dy":0.04,"c":7,"rnd":{"r":[0.1,0.2],"dly":[24,32]}},"hit":{"sfx":61,"dr":-0.02,"rnd":{"r":[0.3,0.4],"dly":[8,12],"c":[9,10,true]}},"blast_smoke":{"inertia":0.95,"dr":-0.03,"rnd":{"r":[0.5,0.8],"dly":[15,30]},"c":1},"slash":{"frames":[196,197,198],"draw":"draw_rspr_part","dly":12},"green_part":{"rnd":{"c":[11,3,3],"r":[0.3,0.4],"dr":[-0.01,-0.02],"dz":[0.01,0.03],"dly":[24,32]}},"candle":{"w":0.1,"h":0.1,"inertia":0.9,"rnd":{"c":[8,9,10],"r":[0.1,0.2],"dr":[-0.01,-0.02],"dz":[0.04,0.06],"dly":[12,24]}},"bones":{"base_cls":"chunk_base","rnd":{"spr":[202,203,204]}},"goo_chunks":{"base_cls":"chunk_base","rnd":{"spr":[199,200,199]}},"green_chunks":{"base_cls":"chunk_base","rnd":{"spr":[215,216,215]}},"fireimp_chunks":{"base_cls":"chunk_base","rnd":{"spr":[219,220,220]}},"notice":{"zorder":3,"dz":0.1,"inertia":0.91,"dly":72,"draw":"draw_txt_part"},"blast_splat":{"base_cls":"chunk_base","frames":[212,213,214],"df":0.20},"blast_chunks":{"base_cls":"chunk_base","rnd":{"spr":[217,218,217]}},"blast":{"sfx":51,"w":1,"h":1,"dly":30,"acc":0,"inertia":0,"frames":[192,193,208,209,194,195,210,211],"rnd":{"bones_c":[2,4]},"update":"update_blast_part","draw":"draw_blast_part","splat":"blast_splat","bones":"blast_chunks"},"chunk_base":{"zorder":1,"inertia":0.9,"r":1,"dr":0,"frame":0,"df":0.01,"rnd":{"dly":[600,900]},"draw":"draw_spr_part","update":"update_part"}}')
 
 -- weapons catalog
 local all_loot={}
@@ -538,8 +544,18 @@ function cam_update()
 	end
 	camera(shkx,shky)
 end
+local cam_t=0
+local cam_x0,cam_y0,cam_x1,cam_y1
 function cam_track(x,y)
-	cam_x,cam_y=(x*8)-4,(y*8)-4
+	x,y=8*x-4,8*y-4
+	if abs(cam_x-x)>8 or abs(cam_y-y)>8 then
+		cam_t=0
+		cam_x0,cam_y0=cam_x,cam_y
+		cam_x1,cam_y1=x,y
+	end	
+	local t=min(1,cam_t/12)
+	cam_x,cam_y=lerp(cam_x0,cam_x1,t),lerp(cam_y0,cam_y1,t)
+	cam_t+=1
 end
 function cam_project(x,y)
 	return 64+8*x-cam_x,64+8*y-cam_y
@@ -557,7 +573,6 @@ function make_part(x,y,z,src,dx,dy,dz,a)
 			dz=dz or 0,
 			angle=a or 0}))
 	if(p.sfx) sfx(p.sfx)
-	if(p.pause_t) pause_t=p.pause_t
 	p.t=time_t+p.dly
 	return add(parts,p)
 end
@@ -1016,6 +1031,7 @@ end
 _g.hit_actor=function(self,dmg)
 	self.hit_t=time_t+8
 	self.hp-=dmg
+	self.last_hit=dmg
 	if not self.disable and flr(self.hp)<=0 then
 		self.hp=0
 		self.disable=true
@@ -1166,7 +1182,9 @@ _g.npc_update=function(self)
 			self.input=input
 		end
 		if input then
-			 self.dx,self.dy=normalize(input.x-flr(self.x),input.y-flr(self.y),self.acc)
+			local u,v=normalize(input.x-flr(self.x),input.y-flr(self.y),self.acc)
+			self.dx+=u
+			self.dy+=v
 		end
 	end
 	
@@ -1354,9 +1372,12 @@ _g.draw_actor=function(a,sx,sy)
 		line(sx,sy,sx+8*a.input.dx,sy+8*a.input.dy,12)
 	end
 	]]
+	if a.last_hit then
+		print(a.last_hit,sx,sy-8,8)
+	end
 end
 
-all_actors=json_parse('{"barrel_cls":{"side":"any_side","inertia":0.9,"bounce":1,"spr":128,"splat":"blast","bones":"green_chunks","update":"nop"},"bandit_cls":{"hp":3,"wp":"base_gun","frames":[4,5,6],"npc":true,"rnd":{"fire_dly":[90,120],"pause_dly":[90,120]}},"scorpion_cls":{"rnd":{"fire_dly":[160,180]},"pause_dly":120,"w":0.8,"h":0.8,"hp":10,"wp":"acid_gun","palt":5,"frames":[131,133],"npc":true},"worm_cls":{"flee":true,"palt":3,"w":0.2,"h":0.2,"inertia":0.8,"dmg":1,"frames":[7,8],"npc":true},"slime_cls":{"w":0.2,"h":0.2,"acc":0.03,"dmg":1,"inertia":0.8,"dmg":1,"frames":[31,29,30,29],"wp":"goo","npc":true,"splat":"goo_splat","bones":"goo_chunks"},"dog_cls":{"los_dist":1,"inertia":0.2,"hp":5,"acc":0.06,"wp":"bite","frames":[61,62],"npc":true},"bear_cls":{"inertia":0.2,"frames":[1,2,3],"npc":true,"wp":"snowball"},"throne_cls":{"zorder":1,"w":8,"h":4,"hp":5,"palt":15,"inertia":0,"cx":87,"cy":18,"cw":12,"ch":5,"update":"throne_update","draw":"throne_draw","init":"throne_init","splat":"blast","bones":"blast","bones_c":10,"npc":true},"health_cls":{"spr":48,"w":0,"h":0,"update":"health_pickup"},"ammo_cls":{"spr":32,"w":0,"h":0,"update":"ammo_pickup"},"wpdrop_cls":{"w":0,"h":0,"inertia":0.9,"btn_t":0,"near_plyr_t":0,"draw":"draw_txt_actor","update":"wpdrop_update"},"cop_cls":{"flee":true,"acc":0.05,"frames":[13,14,15,14],"rnd":{"fire_dly":[160,210],"pause_dly":[120,160]},"wp":"rifle","npc":true},"fireimp_cls":{"frames":[45,46,47,46],"acc":0.2,"die":"blast_on_die","npc":true,"bones":"fireimp_chunks"},"turret_cls":{"w":1,"h":1,"wp":"turret_minigun","hp":10,"acc":0,"bounce":0,"frames":[163],"fire_dly":180,"pause_dly":120,"splat":"turret_splat","bones":"blast","npc":true},"horror_cls":{"part":"green_part","bones":"horror_chunks","part_dly":8,"part_t":0,"hp":25,"frames":[160,161,162],"wp":"radiation","fire_dly":180,"pause_dly":120,"splat":"goo_splat","npc":true,"bones":"goo_chunks"},"warp_cls":{"w":0,"h":0,"captured":false,"frames":[80,81,82],"draw":"nop","update":"warp_update","die":"nop"},"cactus":{"inertia":0.8,"acc":0,"spr":83,"die":"nop","update":"nop"},"candle_cls":{"part":"candle","part_dly":4,"part_t":0,"inertia":0.8,"acc":0,"spr":178,"die":"nop","update":"nop"},"frog_cls":{"rnd":{"fire_dly":[160,180]},"pause_dly":120,"w":0.8,"h":0.8,"hp":15,"wp":"acid_gun","frames":[231,233,235,233],"npc":true},"horror_spwnr_cls":{"frames":[84],"acc":0,"npc":true,"hp":10,"wp":"horror_spwn","bones":"green_chunks"},"cop_box_cls":{"w":0.8,"h":0.8,"frames":[84],"acc":0,"npc":true,"hp":10,"wp":"cop_spwn","splat":"turret_splat","bones":"green_chunks"}}')
+all_actors=json_parse('{"barrel_cls":{"side":"any_side","inertia":0.9,"bounce":1,"spr":128,"splat":"blast","bones":"green_chunks","update":"nop"},"bandit_cls":{"hp":3,"wp":"base_gun","frames":[4,5,6],"npc":true,"rnd":{"fire_dly":[90,120],"pause_dly":[90,120]}},"scorpion_cls":{"rnd":{"fire_dly":[160,180]},"pause_dly":120,"w":0.8,"h":0.8,"hp":10,"wp":"acid_gun","palt":5,"frames":[131,133],"npc":true},"worm_cls":{"flee":true,"palt":3,"w":0.2,"h":0.2,"inertia":0.8,"dmg":1,"frames":[7,8],"npc":true},"slime_cls":{"w":0.2,"h":0.2,"acc":0.03,"dmg":1,"inertia":0.8,"dmg":1,"frames":[31,29,30,29],"wp":"goo","npc":true,"splat":"goo_splat","bones":"goo_chunks"},"dog_cls":{"los_dist":1,"inertia":0.2,"hp":5,"acc":0.06,"wp":"bite","frames":[61,62],"npc":true},"bear_cls":{"inertia":0.2,"frames":[1,2,3],"npc":true,"wp":"snowball"},"throne_cls":{"zorder":1,"w":8,"h":4,"hp":5,"palt":15,"inertia":0,"cx":87,"cy":18,"cw":12,"ch":5,"update":"throne_update","draw":"throne_draw","init":"throne_init","splat":"blast","bones":"blast","bones_c":10,"npc":true},"health_cls":{"spr":48,"w":0,"h":0,"update":"health_pickup"},"ammo_cls":{"spr":32,"w":0,"h":0,"update":"ammo_pickup"},"wpdrop_cls":{"w":0,"h":0,"inertia":0.9,"btn_t":0,"near_plyr_t":0,"draw":"draw_txt_actor","update":"wpdrop_update"},"cop_cls":{"flee":true,"acc":0.05,"frames":[13,14,15,14],"rnd":{"fire_dly":[160,210],"pause_dly":[120,160]},"wp":"rifle","npc":true},"fireimp_cls":{"frames":[45,46,47,46],"acc":0.2,"die":"blast_on_die","npc":true,"bones":"fireimp_chunks"},"turret_cls":{"w":1,"h":1,"wp":"turret_minigun","hp":10,"acc":0,"bounce":0,"frames":[163],"fire_dly":180,"pause_dly":120,"splat":"turret_splat","bones":"blast","npc":true},"horror_cls":{"part":"green_part","bones":"horror_chunks","part_dly":8,"part_t":0,"hp":25,"frames":[160,161,162],"wp":"radiation","fire_dly":180,"pause_dly":120,"splat":"goo_splat","npc":true,"bones":"goo_chunks"},"warp_cls":{"w":0,"h":0,"captured":false,"frames":[80,81,82],"draw":"nop","update":"warp_update","die":"nop"},"cactus":{"inertia":0.8,"acc":0,"spr":83,"die":"nop","update":"nop"},"candle_cls":{"part":"candle","part_dly":4,"part_t":0,"inertia":0.8,"acc":0,"spr":178,"die":"nop","update":"nop"},"frog_cls":{"rnd":{"fire_dly":[160,180]},"pause_dly":120,"w":0.8,"h":0.8,"hp":15,"wp":"acid_gun","frames":[231,233,235,233],"npc":true},"horror_spwnr_cls":{"frames":[84],"acc":0,"npc":true,"hp":10,"wp":"horror_spwn","bones":"green_chunks"},"cop_box_cls":{"w":0.8,"h":0.8,"frames":[237],"acc":0,"npc":true,"hp":10,"wp":"cop_spwn","splat":"turret_splat","bones":"blast"}}')
 
 -- actor
 -- x,y in map tiles (not pixels)
@@ -1622,6 +1643,7 @@ game_screen.draw=function()
 		spr(lvl.cursor or 35,plyr.mousex-3,plyr.mousey-3)
 	end
 
+	--[[
 	local h
 	for i=0,level_cw do
 		for j=0,level_ch do
@@ -1632,6 +1654,7 @@ game_screen.draw=function()
 			end
 		end
 	end
+	]]
 	
 	if plyr_playing then
 		rectfill(1,1,34,9,0)
@@ -1795,22 +1818,22 @@ eeee8999ee89aaaaeeeeeeeeeeeeeeeee09a990ee09a790ee09aa90ee033370eee0330eee00eeeee
 eee899aaee89a777e1eeeeeee1eeeeee90a7aa0990a77a0990a77a09e003300eee10011ee00eeeeee1100011020e0880eee00eee000000000000000000000000
 eee89aa7e89aa7771eeeeeee1eeeeeee990000999900009999000099e110011eeee111eeeeeeee0eee11111ee0eee00eeeeeeeee000000000000000000000000
 eee89a77e89aa777eeeeeeeeeeeeeeeee999999ee999999ee999999eee1111eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000000000000000000000
-000ee000000ee0000000000000000eee0000000ee000000e0000000eeeee00000000eeeeeeee00000000eeeeeeee00000000eeee000000000000000000000000
-07700770077007700b700bb007770eee0777770e0077770007777700ee00bbbbbbbb00eeee00bbbbbbbb00eeee00bbbbbbbb00ee000000000000000000000000
-07770770077007700bb0bb3007770eee0776660e0770077007700770e0773bbbbbb3770ee0773bbbbbb3770ee0333bbbbbb3330e000000000000000000000000
-07777770077007700bbbb30007770000077000ee0770077007700760078873bbbb378870078873bbbb378870033333bbbb333330000000000000000000000000
-07767770077007700bbbbb0007777770077770ee077667700777770e068073bbbb378060068073bbbb370860013331bbbb133310000000000000000000000000
-067067700677776003b03bb0067777700677770e0777777007777770e0663bbbbbb3660ee0663bbbbbb3660ee0111bbbbbb1110e000000000000000000000000
-0660066000666600033003b0066666600666660e0660066006606660ee056666666650eeee056666666650eeee056666666650ee000000000000000000000000
-000ee000e000000e00000000000000000000000e00000000000e0000e03333333333330ee03333333333330ee03333333333330e000000000000000000000000
-eeeeeeeeeeeeeeee0000000000000eeee000000e000ee0000000000ee03000000022030ee03000000220030ee03000002200030e000000000000000000000000
-eeeeeeeeeeeeeeee0b700bb007770eee00777700077007700777770ee03333333312330ee03333331223330ee03333332133330e000000000000000000000000
-eeeeeeeeeeeeeeee0bb0bb3007770eee07766770077707700776660ee00111111111100eee011111111110ee00011111111110ee000000000000000000000000
-eeeeeeeeeeeeeeee0bbbb300077700000770077007777770077000ee0bb3301001033bb000011333333110000bb3313133311000000000000000000000000000
-eeeeeeeeeeeeeeee0bbbbb00077777700770077007767770077770ee03333131131333300bb3313113133bb00333313113133bb0000000000000000000000000
-eeeeeeeeeeeeeeee03b03bb00777777006777760077067700677770e066001311310066003333131131333300660003113133330000000000000000000000000
-eeeeeeeeeeeeeeee033003b00666666000666600066006600666660e000ee0b11b0ee00006600b3113b00660000ee0b103b00660000000000000000000000000
-eeeeeeeeeeeeeeee0000000000000000e000000e000ee0000000000eeeeee000000eeeee000ee00ee00ee000eeeee000e00ee000000000000000000000000000
+000ee000000ee0000000000000000eee0000000ee000000e0000000eeeee00000000eeeeeeee00000000eeeeeeee00000000eeeeeeeeeeeeeeeeeeee00000000
+07700770077007700b700bb007770eee0777770e0077770007777700ee00bbbbbbbb00eeee00bbbbbbbb00eeee00bbbbbbbb00eeeeee000000000eee00000000
+07770770077007700bb0bb3007770eee0776660e0770077007700770e0773bbbbbb3770ee0773bbbbbb3770ee0333bbbbbb3330eeee0ccc161ccc0ee00000000
+07777770077007700bbbb30007770000077000ee0770077007700760078873bbbb378870078873bbbb378870033333bbbb333330eee0cc15751cc0ee00000000
+07767770077007700bbbbb0007777770077770ee077667700777770e068073bbbb378060068073bbbb370860013331bbbb133310eee0ccc111ccc0ee00000000
+067067700677776003b03bb0067777700677770e0777777007777770e0663bbbbbb3660ee0663bbbbbb3660ee0111bbbbbb1110eeee0ccccccccc0ee00000000
+0660066000666600033003b0066666600666660e0660066006606660ee056666666650eeee056666666650eeee056666666650eeeee07777777770ee00000000
+000ee000e000000e00000000000000000000000e00000000000e0000e03333333333330ee03333333333330ee03333333333330eeee01111011110ee00000000
+eeeeeeeeeeeeeeee0000000000000eeee000000e000ee0000000000ee03000000022030ee03000000220030ee03000002200030eeee01661016610ee00000000
+eeeeeeeeeeeeeeee0b700bb007770eee00777700077007700777770ee03333333312330ee03333331223330ee03333332133330eeee01771017710ee00000000
+eeeeeeeeeeeeeeee0bb0bb3007770eee07766770077707700776660ee00111111111100eee011111111110ee00011111111110eeeee01111011110ee00000000
+eeeeeeeeeeeeeeee0bbbb300077700000770077007777770077000ee0bb3301001033bb000011333333110000bb3313133311000eee00101010100ee00000000
+eeeeeeeeeeeeeeee0bbbbb00077777700770077007767770077770ee03333131131333300bb3313113133bb00333313113133bb0eee01010001010ee00000000
+eeeeeeeeeeeeeeee03b03bb00777777006777760077067700677770e066001311310066003333131131333300660003113133330eee00101010100ee00000000
+eeeeeeeeeeeeeeee033003b00666666000666600066006600666660e000ee0b11b0ee00006600b3113b00660000ee0b103b00660eee01010001010ee00000000
+eeeeeeeeeeeeeeee0000000000000000e000000e000ee0000000000eeeeee000000eeeee000ee00ee00ee000eeeee000e00ee000eee00000000000ee00000000
 __gff__
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001010501010101010101050101010501010101008201010101050505010101010105050501010105050105010501010182828282828282828282828282828282
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010100000000000000000000000000000000000000000000008282000000000000000000000000000000000000000000000000000000000000000000000000000000
