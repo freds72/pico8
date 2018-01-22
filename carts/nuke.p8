@@ -161,10 +161,11 @@ _g.update_blast_part=function(self)
 			local dx,dy=a.x-self.x,a.y-self.y
 			local r=dx*dx+dy*dy
 			if r<4 then
-				r=smoothstep(r/4)
+				r=1-smoothstep(r/4)
 				local u,v=normalize(dx,dy,r)
 				a.dx+=u
 				a.dy+=v
+				a.move_t=time_t+30
 				a:hit(8*r)
 			end
 		end
@@ -548,12 +549,12 @@ local cam_t=0
 local cam_x0,cam_y0,cam_x1,cam_y1
 function cam_track(x,y)
 	x,y=8*x-4,8*y-4
-	if abs(cam_x-x)>8 or abs(cam_y-y)>8 then
+	if sqr_dist(x,y,cam_x1,cam_y1)>64 then
 		cam_t=0
-		cam_x0,cam_y0=cam_x,cam_y
+		cam_x0,cam_y0=cam_x or x,cam_y or y
 		cam_x1,cam_y1=x,y
-	end	
-	local t=min(1,cam_t/12)
+	end
+	local t=smoothstep(cam_t/24)
 	cam_x,cam_y=lerp(cam_x0,cam_x1,t),lerp(cam_y0,cam_y1,t)
 	cam_t+=1
 end
@@ -979,13 +980,16 @@ end
 
 -- custom actors
 local actor_id=0
+function press_start()
+	return btnp(4) or btnp(5) or stat(34)!=0
+end
 function plyr_die(self)
 	make_splat(self)
 
 	futures_add(function()
 		plyr_playing=false
 		local t=0
-		while not btnp(4) do
+		while not press_start() do
 			t=min(t+1,90)
 			local j=48*smoothstep(t/90)
 			rectfill(0,0,127,j,0)
@@ -1033,7 +1037,6 @@ _g.hit_actor=function(self,dmg)
 	self.hp-=dmg
 	self.last_hit=dmg
 	if not self.disable and flr(self.hp)<=0 then
-		self.hp=0
 		self.disable=true
 		self:die()
 		cmap_op(self,cmap_del)
@@ -1222,7 +1225,7 @@ _g.npc_update=function(self)
 		self.los_t=time_t+self.wp.dly
 	end
 	if self.can_fire and self.fire_t<time_t then
-		make_blt(self,self.wp)
+		--make_blt(self,self.wp)
 		self.fire_t=time_t+self.wp.dly
 	end
 end
@@ -1372,9 +1375,6 @@ _g.draw_actor=function(a,sx,sy)
 		line(sx,sy,sx+8*a.input.dx,sy+8*a.input.dy,12)
 	end
 	]]
-	if a.last_hit then
-		print(a.last_hit,sx,sy-8,8)
-	end
 end
 
 all_actors=json_parse('{"barrel_cls":{"side":"any_side","inertia":0.9,"bounce":1,"spr":128,"splat":"blast","bones":"green_chunks","update":"nop"},"bandit_cls":{"hp":3,"wp":"base_gun","frames":[4,5,6],"npc":true,"rnd":{"fire_dly":[90,120],"pause_dly":[90,120]}},"scorpion_cls":{"rnd":{"fire_dly":[160,180]},"pause_dly":120,"w":0.8,"h":0.8,"hp":10,"wp":"acid_gun","palt":5,"frames":[131,133],"npc":true},"worm_cls":{"flee":true,"palt":3,"w":0.2,"h":0.2,"inertia":0.8,"dmg":1,"frames":[7,8],"npc":true},"slime_cls":{"w":0.2,"h":0.2,"acc":0.03,"dmg":1,"inertia":0.8,"dmg":1,"frames":[31,29,30,29],"wp":"goo","npc":true,"splat":"goo_splat","bones":"goo_chunks"},"dog_cls":{"los_dist":1,"inertia":0.2,"hp":5,"acc":0.06,"wp":"bite","frames":[61,62],"npc":true},"bear_cls":{"inertia":0.2,"frames":[1,2,3],"npc":true,"wp":"snowball"},"throne_cls":{"zorder":1,"w":8,"h":4,"hp":5,"palt":15,"inertia":0,"cx":87,"cy":18,"cw":12,"ch":5,"update":"throne_update","draw":"throne_draw","init":"throne_init","splat":"blast","bones":"blast","bones_c":10,"npc":true},"health_cls":{"spr":48,"w":0,"h":0,"update":"health_pickup"},"ammo_cls":{"spr":32,"w":0,"h":0,"update":"ammo_pickup"},"wpdrop_cls":{"w":0,"h":0,"inertia":0.9,"btn_t":0,"near_plyr_t":0,"draw":"draw_txt_actor","update":"wpdrop_update"},"cop_cls":{"flee":true,"acc":0.05,"frames":[13,14,15,14],"rnd":{"fire_dly":[160,210],"pause_dly":[120,160]},"wp":"rifle","npc":true},"fireimp_cls":{"frames":[45,46,47,46],"acc":0.2,"die":"blast_on_die","npc":true,"bones":"fireimp_chunks"},"turret_cls":{"w":1,"h":1,"wp":"turret_minigun","hp":10,"acc":0,"bounce":0,"frames":[163],"fire_dly":180,"pause_dly":120,"splat":"turret_splat","bones":"blast","npc":true},"horror_cls":{"part":"green_part","bones":"horror_chunks","part_dly":8,"part_t":0,"hp":25,"frames":[160,161,162],"wp":"radiation","fire_dly":180,"pause_dly":120,"splat":"goo_splat","npc":true,"bones":"goo_chunks"},"warp_cls":{"w":0,"h":0,"captured":false,"frames":[80,81,82],"draw":"nop","update":"warp_update","die":"nop"},"cactus":{"inertia":0.8,"acc":0,"spr":83,"die":"nop","update":"nop"},"candle_cls":{"part":"candle","part_dly":4,"part_t":0,"inertia":0.8,"acc":0,"spr":178,"die":"nop","update":"nop"},"frog_cls":{"rnd":{"fire_dly":[160,180]},"pause_dly":120,"w":0.8,"h":0.8,"hp":15,"wp":"acid_gun","frames":[231,233,235,233],"npc":true},"horror_spwnr_cls":{"frames":[84],"acc":0,"npc":true,"hp":10,"wp":"horror_spwn","bones":"green_chunks"},"cop_box_cls":{"w":0.8,"h":0.8,"frames":[237],"acc":0,"npc":true,"hp":10,"wp":"cop_spwn","splat":"turret_splat","bones":"blast"}}')
@@ -1545,7 +1545,7 @@ function next_level()
 	plyr.dx,plyr.dy,plyr.hit_t,plyr.fire_t,plyr.lock_t=0,0,0,0,0
 	plyr.safe_t=time_t+30
 	plyr_playing=true
-	cam_track(plyr.x,plyr.y)
+	cam_x1,cam_y1,cam_x,cam_y=0,0
 	
 	--[[
 	-- benchmark
@@ -1561,7 +1561,7 @@ end
 -- start screen
 local starting=false
 start_screen.update=function()
-	if not starting and (btnp(4) or btnp(5) or stat(34)!=0) then
+	if not starting and press_start() then
 		starting=true
 		futures_add(function()
 			warp_draw_async(16,96)
