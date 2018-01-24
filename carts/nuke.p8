@@ -1579,7 +1579,7 @@ start_screen.update=function()
 			end,after_draw)
 		futures_add(function()
 			wait_async(90)
-			lvl_i,cur_loop=5,1
+			lvl_i,cur_loop=0,1
 			plyr=make_plyr()
 			next_level()
 			starting=false
