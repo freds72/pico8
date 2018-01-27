@@ -1457,7 +1457,7 @@ function make_plyr()
 		side=good_side,
 		strips=body.strips,
 		frames=body.strips[2],
-		wp=weapons["rpg"],
+		wp=weapons["uzi"],
 		ammo=weapons.uzi.ammo,
 		safe_t=time_t+30,
 		idle_t=time_t+30,
