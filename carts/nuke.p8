@@ -1549,8 +1549,6 @@ function next_level()
 		make_part(plyr.x,plyr.y,0.5,all_parts["notice"]).txt="i feel stronger!"
 	end
 	
-	make_actor(plyr.x+4,plyr.y,all_actors.warp_cls)
-	
 	music(-1,250)
 	music(lvl.music or 14)
 	--[[
