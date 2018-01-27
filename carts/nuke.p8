@@ -244,7 +244,7 @@ local weapons=json_parse('{"base_gun":{"sfx":55,"frames":[42],"dmg":1,"spread":0
 local max_cost=-1
 for k,v in pairs(weapons) do
 	_g[k]=v
-	if v.ost then
+	if v.cost then
 		all_loot[v.cost]=all_loot[v.cost] or {}
 		max_cost=max(max_cost,add(all_loot[v.cost],v).cost)
 	end
