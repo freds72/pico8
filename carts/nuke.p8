@@ -243,7 +243,7 @@ _g.update_laser=function(self)
 	end
 	return false
 end
-local weapons=json_parse('{"base_gun":{"sfx":55,"frames":[42],"dmg":1,"spread":0.05,"v":0.1,"ttl":[90,100],"dly":32},"goo":{"frames":[63],"dmg":1,"spread":1,"v":0,"ttl":[120,300],"dly":64,"zorder":1},"acid_gun":{"sfx":49,"frames":[26,27],"blts":3,"bounce":0.9,"spread":0.2,"dmg":3,"v":0.1,"xy":[1,0],"ttl":[160,200],"dly":24},"uzi":{"n":"uzi","sfx":63,"icon":21,"sx":32,"sy":8,"frames":[10,11],"spread":0.04,"dmg":1,"v":0.4,"ttl":[15,24],"dly":5,"ammo":75,"shk_pow":2,"cost":1},"minigun":{"n":"minigun","sfx":55,"icon":25,"sx":64,"sy":8,"frames":[10,11],"spread":0.04,"dmg":2,"v":0.45,"ttl":[25,35],"dly":3,"ammo":250,"shk_pow":2,"cost":4},"shotgun":{"n":"pump","side":"good_side","icon":37,"sx":32,"sy":16,"frames":[10],"spread":0.05,"blts":3,"dmg":3,"inertia":0.97,"v":0.35,"bounce":1,"ttl":[32,48],"dly":56,"ammo":33,"shk_pow":2,"cost":3},"glock":{"n":"g.lock","icon":53,"sfx":50,"sx":32,"sy":24,"frames":[10,11],"spread":0.01,"dmg":4,"v":0.5,"ttl":[30,30],"dly":32,"ammo":17,"shk_pow":2,"cost":2},"rpg":{"n":"rpg","dmg":0,"icon":23,"sx":48,"sy":8,"spr":58,"spread":0.02,"v":0.2,"inertia":1.01,"blast_on_die":true,"ttl":[32,48],"dly":72,"ammo":8,"shk_pow":3,"cost":5,"draw":"draw_rspr_part"},"grenade":{"n":"grenade","icon":55,"sx":48,"sy":24,"dmg":0,"frames":[44],"spread":0.02,"v":0.2,"inertia":0.98,"bounce":1,"blast_on_die":true,"ttl":[60,70],"dly":72,"ammo":12,"shk_pow":2.1,"cost":4},"mega_gun":{"sx":48,"sy":8,"frames":[43,28],"sfx":52,"dmg":5,"spread":0.05,"v":0.1,"ttl":[50,55],"dly":32,"sub_cls":"mega_sub","emitters":5},"mega_sub":{"sx":48,"sy":8,"frames":[26,27],"dmg":5,"spread":0,"v":0.1,"ttl":[900,900],"dly":12,"burst":4},"rifle":{"sfx":50,"sx":64,"sy":16,"frames":[10,11],"dmg":5,"spread":0,"v":0.5,"ttl":[90,90],"dly":80,"sight":true},"laser":{"zorder":3,"sfx":36,"dmg":0.5,"dly":60,"v":1,"dx":0,"dy":1,"spread":0,"ttl":[90,90],"draw":"draw_laser","update":"update_laser"},"bite":{"sfx":37,"dmg":1,"dly":30,"spread":0.02,"v":0.1,"draw":"nop","ttl":[4,4],"hit_part":"slash"},"snowball":{"frames":[60],"dmg":1,"spread":0.01,"v":0.5,"inertia":0.9,"ttl":[70,90],"dly":80},"horror_spwn":{"actor_cls":"horror_cls","spread":1,"v":0.2,"dly":145,"ammo":8},"zapper":{"n":"laser","cost":5,"side":"any_side","bounce":1,"ammo":30,"sfx":53,"sx":48,"sy":16,"icon":39,"dmg":5,"spread":0.01,"v":0.6,"ttl":[90,100],"dly":12,"draw":"draw_zap"},"turret_minigun":{"sfx":55,"frames":[10,11],"spread":0.25,"dmg":1,"v":0.1,"ttl":[60,80],"dly":8,"blts":5},"radiation":{"frames":[12],"spread":0.1,"dmg":3,"v":0.1,"inertia":0.99,"sfx":52,"blts":3,"ttl":[260,280],"dly":90},"cop_spwn":{"actor_cls":"cop_cls","spread":1,"v":0.2,"dly":145,"ammo":5}}')
+local weapons=json_parse('{"base_gun":{"sfx":55,"frames":[42],"dmg":1,"spread":0.05,"v":0.1,"ttl":[90,100],"dly":32},"goo":{"frames":[63],"dmg":1,"spread":1,"v":0,"ttl":[120,300],"dly":64,"zorder":1},"acid_gun":{"sfx":49,"frames":[26,27],"blts":3,"bounce":0.9,"spread":0.2,"dmg":3,"v":0.1,"xy":[1,0],"ttl":[160,200],"dly":24},"uzi":{"n":"uzi","sfx":63,"icon":21,"sx":32,"sy":8,"frames":[10,11],"spread":0.04,"dmg":1,"v":0.4,"ttl":[15,24],"dly":5,"ammo":75,"shk_pow":2,"cost":1},"minigun":{"n":"minigun","sfx":55,"icon":25,"sx":64,"sy":8,"frames":[10,11],"spread":0.04,"dmg":2,"v":0.45,"ttl":[25,35],"dly":3,"ammo":250,"shk_pow":2,"cost":4},"shotgun":{"n":"pump","side":"good_side","icon":37,"sx":32,"sy":16,"frames":[10],"spread":0.05,"blts":3,"dmg":3,"inertia":0.97,"v":0.35,"bounce":1,"ttl":[32,48],"dly":56,"ammo":33,"shk_pow":2,"cost":3},"glock":{"n":"g.lock","icon":53,"sfx":50,"sx":32,"sy":24,"frames":[10,11],"spread":0.01,"dmg":4,"v":0.5,"ttl":[30,30],"dly":32,"ammo":17,"shk_pow":2,"cost":2},"rpg":{"n":"rpg","dmg":0,"icon":23,"sx":48,"sy":8,"spr":58,"spread":0.02,"v":0.2,"inertia":1.01,"blast_on_die":true,"ttl":[32,48],"dly":72,"ammo":8,"shk_pow":3,"cost":5,"draw":"draw_rspr_part"},"grenade":{"n":"grenade","icon":55,"sx":48,"sy":24,"dmg":0,"frames":[44],"spread":0.02,"v":0.2,"inertia":0.98,"bounce":1,"blast_on_die":true,"ttl":[60,70],"dly":72,"ammo":12,"shk_pow":2.1,"cost":4},"mega_gun":{"sx":48,"sy":8,"frames":[43,28],"sfx":52,"dmg":5,"spread":0.05,"v":0.1,"ttl":[50,55],"dly":32,"sub_cls":"mega_sub","emitters":5},"mega_sub":{"sx":48,"sy":8,"frames":[26,27],"dmg":5,"spread":0,"v":0.1,"ttl":[900,900],"dly":12,"burst":4},"rifle":{"sfx":50,"sx":64,"sy":16,"frames":[10,11],"dmg":5,"spread":0,"v":0.5,"ttl":[90,90],"dly":80,"sight":true},"laser":{"zorder":3,"sfx":36,"dmg":0.5,"dly":60,"v":1,"dx":0,"dy":1,"spread":0,"ttl":[90,90],"draw":"draw_laser","update":"update_laser"},"bite":{"sfx":37,"dmg":1,"dly":30,"spread":0.02,"v":0.1,"draw":"nop","ttl":[4,4],"hit_part":"slash"},"snowball":{"frames":[60],"dmg":1,"spread":0.01,"v":0.5,"inertia":0.9,"ttl":[70,90],"dly":80},"horror_spwn":{"actor_cls":"horror_cls","spread":1,"v":0.2,"dly":145,"ammo":5},"zapper":{"n":"laser","cost":5,"side":"any_side","bounce":1,"ammo":30,"sfx":53,"sx":48,"sy":16,"icon":39,"dmg":5,"spread":0.01,"v":0.6,"ttl":[90,100],"dly":12,"draw":"draw_zap"},"turret_minigun":{"sfx":55,"frames":[10,11],"spread":0.25,"dmg":1,"v":0.1,"ttl":[60,80],"dly":8,"blts":5},"radiation":{"frames":[12],"spread":0.1,"dmg":3,"v":0.1,"inertia":0.985,"sfx":52,"blts":3,"ttl":[200,240],"dly":120},"cop_spwn":{"actor_cls":"cop_cls","spread":1,"v":0.1,"dly":145,"ammo":4}}')
 local max_cost=-1
 for k,v in pairs(weapons) do
 	_g[k]=v
@@ -286,7 +286,7 @@ _g.darken=function()
 end
 -- levels
 local active_actors
-local levels=json_parse('[{"n":"desert","floors":[68,64,65,67,111],"walls":[66],"shadow":110,"bkg_col":1,"w":[8,12],"h":[6,8],"paths":[1,3],"path":{"w":[3,4],"len":[8,12]},"spawn":[[8,12,"bandit_cls"],[5,8,"worm_cls"],[-4,-2,"scorpion_cls"],[2,3,"cactus"],[-4,-3,"cop_box_cls"]]},{"n":"sewers","shader":"darken","floors":[86,87,87,88],"walls":[90,89,91],"shadow":94,"borders":[10,11,3],"bkg_col":3,"w":[2,3],"h":[2,3],"paths":[2,4],"path":{"w":[1,2],"len":[10,12]},"spawn":[[10,15,"slime_cls"],[5,10,"barrel_cls"],[-1,-1,"frog_cls"]]},{"n":"snow plains","cursor":93,"txt_col":6,"floors":[70,71,72],"walls":[74],"shadow":95,"borders":[1,12,6],"bkg_col":6,"w":[6,8],"h":[5,6],"paths":[2,3],"path":{"w":[3,5],"len":[10,12]},"spawn":[[8,10,"dog_cls"],[5,8,"bear_cls"],[-2,-1,"turret_cls"]]},{"n":"lab","floors":[102,105],"walls":[103,104,106],"shadow":107,"borders":[6,7,5],"bkg_col":5,"shader":"darken","w":[4,6],"h":[3,5],"paths":[1,4],"path":{"w":[1,2],"len":[8,12]},"spawn":[[3,4,"cop_cls"],[5,8,"fireimp_cls"],[5,8,"barrel_cls"]]},{"n":"palace","floors":[96,100],"walls":[97,98,99,108],"shadow":101,"borders":[7,0,5],"bkg_col":5,"w":[8,10],"h":[8,10],"paths":[1,3],"path":{"w":[2,3],"len":[10,12]},"spawn":[[4,8,"horror_cls"],[4,4,"horror_spwnr_cls"],[-4,-2,"slime_cls"],[2,3,"candle_cls"]]},{"n":"throne","music":0,"builtin":true,"bkg_col":0,"borders":[7,0,5],"cx":103,"cy":0,"cw":13,"ch":31,"plyr_pos":[110,28],"spawn":[{"a":"throne_cls","x":112,"y":6},{"a":"ammo_cls","x":106,"y":27},{"a":"ammo_cls","x":107,"y":27},{"a":"ammo_cls","x":106,"y":28},{"a":"ammo_cls","x":107,"y":28},{"a":"health_cls","x":114,"y":27},{"a":"health_cls","x":115,"y":27},{"a":"health_cls","x":114,"y":28},{"a":"health_cls","x":115,"y":28}]}]')
+local levels=json_parse('[{"n":"desert","floors":[68,64,65,67,111],"walls":[66],"shadow":110,"bkg_col":1,"w":[8,12],"h":[6,8],"paths":[1,3],"path":{"w":[3,4],"len":[8,12]},"spawn":[[8,12,"bandit_cls"],[5,8,"worm_cls"],[-4,-2,"scorpion_cls"],[2,3,"cactus"],[-8,-4,"cop_box_cls"]]},{"n":"sewers","shader":"darken","floors":[86,87,87,88],"walls":[90,89,91],"shadow":94,"borders":[10,11,3],"bkg_col":3,"w":[2,3],"h":[2,3],"paths":[2,4],"path":{"w":[1,2],"len":[10,12]},"spawn":[[10,15,"slime_cls"],[5,10,"barrel_cls"],[-4,-2,"frog_cls"]]},{"n":"snow plains","cursor":93,"txt_col":6,"floors":[70,71,72],"walls":[74],"shadow":95,"borders":[1,12,6],"bkg_col":6,"w":[6,8],"h":[5,6],"paths":[2,3],"path":{"w":[3,5],"len":[10,12]},"spawn":[[8,10,"dog_cls"],[5,8,"bear_cls"],[-2,-1,"turret_cls"]]},{"n":"lab","floors":[102,105],"walls":[103,104,106],"shadow":107,"borders":[6,7,5],"bkg_col":5,"shader":"darken","w":[4,6],"h":[3,5],"paths":[1,4],"path":{"w":[1,2],"len":[8,12]},"spawn":[[3,4,"cop_cls"],[5,8,"fireimp_cls"],[5,8,"barrel_cls"]]},{"n":"palace","floors":[96,100],"walls":[97,98,99,108],"shadow":101,"borders":[7,0,5],"bkg_col":5,"w":[8,10],"h":[8,10],"paths":[1,3],"path":{"w":[2,3],"len":[10,12]},"spawn":[[4,8,"horror_cls"],[4,4,"horror_spwnr_cls"],[-4,-2,"slime_cls"],[2,3,"candle_cls"]]},{"n":"throne","music":0,"builtin":true,"bkg_col":0,"borders":[7,0,5],"cx":103,"cy":0,"cw":13,"ch":31,"plyr_pos":[110,28],"spawn":[{"a":"throne_cls","x":112,"y":6},{"a":"ammo_cls","x":106,"y":27},{"a":"ammo_cls","x":107,"y":27},{"a":"ammo_cls","x":106,"y":28},{"a":"ammo_cls","x":107,"y":28},{"a":"health_cls","x":114,"y":27},{"a":"health_cls","x":115,"y":27},{"a":"health_cls","x":114,"y":28},{"a":"health_cls","x":115,"y":28}]}]')
 
 local face1strip=json_parse('[false,false,false,true,true,true,false,false]')
 
@@ -982,7 +982,7 @@ end
 -- custom actors
 local actor_id=0
 function press_start()
-	return btnp(4) or btnp(5) or stat(34)!=0
+	return btnp(4) or btnp(5)
 end
 function plyr_die(self)
 	make_splat(self)
@@ -1381,7 +1381,7 @@ _g.draw_actor=function(a,sx,sy)
 	]]
 end
 
-all_actors=json_parse('{"barrel_cls":{"side":"any_side","spr":128,"splat":"blast","bones":"green_chunks","update":"nop"},"bandit_cls":{"hp":3,"wp":"base_gun","frames":[4,5,6],"dmg":1,"npc":true,"rnd":{"fire_dly":[90,120],"pause_dly":[90,120]}},"scorpion_cls":{"rnd":{"fire_dly":[160,180]},"dmg":2,"pause_dly":120,"w":0.8,"h":0.8,"hp":10,"wp":"acid_gun","palt":5,"frames":[131,133],"npc":true},"worm_cls":{"bones_c":0,"flee":true,"palt":3,"w":0.2,"h":0.2,"inertia":0.8,"dmg":1,"frames":[7,8],"npc":true},"slime_cls":{"w":0.2,"h":0.2,"acc":0.03,"inertia":0.75,"dmg":2,"frames":[31,29,30,29],"wp":"goo","npc":true,"splat":"goo_splat","bones":"goo_chunks"},"dog_cls":{"los_dist":1,"inertia":0.2,"hp":5,"acc":0.06,"wp":"bite","frames":[61,62],"npc":true},"bear_cls":{"hp":8,"flee":true,"inertia":0.2,"frames":[1,2,3],"dmg":1,"npc":true,"wp":"snowball"},"throne_cls":{"zorder":1,"w":6,"h":2,"hp":75,"palt":15,"inertia":0,"acc":0,"cx":87,"cy":18,"cw":12,"ch":5,"update":"throne_update","draw":"throne_draw","init":"throne_init","splat":"blast","bones":"blast","rnd":{"bones_c":[10,20]},"npc":true},"health_cls":{"spr":48,"w":0,"h":0,"update":"health_pickup","hit":"nop"},"ammo_cls":{"spr":32,"w":0,"h":0,"update":"ammo_pickup","hit":"nop"},"wpdrop_cls":{"w":0,"h":0,"btn_t":0,"near_plyr_t":0,"draw":"draw_txt_actor","update":"wpdrop_update","hit":"nop"},"cop_cls":{"hp":8,"flee":true,"acc":0.05,"frames":[13,14,15,14],"rnd":{"fire_dly":[160,210],"pause_dly":[120,160]},"wp":"rifle","npc":true},"fireimp_cls":{"hp":5,"dmg":1,"frames":[45,46,47,46],"acc":0.06,"npc":true,"splat":"blast","bones":"fireimp_chunks"},"turret_cls":{"w":1,"h":1,"wp":"turret_minigun","hp":10,"acc":0,"bounce":0,"frames":[163],"fire_dly":180,"pause_dly":120,"splat":"turret_splat","bones":"blast","npc":true},"horror_cls":{"hp":12,"dmg":2,"frames":[160,161,162],"wp":"radiation","fire_dly":180,"pause_dly":120,"splat":"goo_splat","npc":true,"bones":"goo_chunks"},"warp_cls":{"zorder":1,"w":0,"h":0,"acc":0,"captured":false,"frames":[69,82,81,80],"draw":"draw_spr_part","update":"warp_update","hit":"nop"},"cactus":{"hp":5,"acc":0,"spr":83,"update":"nop","splat":"goo_splat","bones":"green_chunks"},"candle_cls":{"part":"candle","part_dly":4,"part_t":0,"acc":0,"spr":178,"die":"nop","update":"nop"},"frog_cls":{"hp":18,"rnd":{"fire_dly":[160,180]},"pause_dly":120,"w":0.8,"h":0.8,"wp":"acid_gun","frames":[231,233,235,233],"npc":true},"horror_spwnr_cls":{"frames":[84],"acc":0,"npc":true,"hp":10,"wp":"horror_spwn","bones":"green_chunks"},"cop_box_cls":{"w":0.8,"h":0.8,"frames":[237],"acc":0,"npc":true,"hp":20,"wp":"cop_spwn","splat":"turret_splat","bones":"blast"}}')
+all_actors=json_parse('{"barrel_cls":{"side":"any_side","spr":128,"inertia":0.7,"splat":"blast","bones":"green_chunks","update":"nop"},"bandit_cls":{"hp":3,"wp":"base_gun","frames":[4,5,6],"dmg":1,"npc":true,"rnd":{"fire_dly":[90,120],"pause_dly":[90,120]}},"scorpion_cls":{"rnd":{"fire_dly":[180,220]},"acc":0.01,"dmg":2,"pause_dly":120,"w":0.8,"h":0.8,"hp":10,"wp":"acid_gun","palt":5,"frames":[131,133],"npc":true},"worm_cls":{"bones_c":0,"flee":true,"palt":3,"w":0.2,"h":0.2,"inertia":0.8,"dmg":1,"frames":[7,8],"npc":true},"slime_cls":{"w":0.2,"h":0.2,"acc":0.02,"inertia":0.75,"dmg":2,"frames":[31,29,30,29],"wp":"goo","npc":true,"splat":"goo_splat","bones":"goo_chunks"},"dog_cls":{"los_dist":1,"inertia":0.2,"hp":5,"acc":0.06,"wp":"bite","frames":[61,62],"npc":true},"bear_cls":{"hp":8,"flee":true,"inertia":0.2,"frames":[1,2,3],"dmg":1,"npc":true,"wp":"snowball"},"throne_cls":{"zorder":1,"w":6,"h":2,"hp":75,"palt":15,"inertia":0,"acc":0,"cx":87,"cy":18,"cw":12,"ch":5,"update":"throne_update","draw":"throne_draw","init":"throne_init","splat":"blast","bones":"blast","rnd":{"bones_c":[10,20]},"npc":true},"health_cls":{"spr":48,"w":0,"h":0,"update":"health_pickup","hit":"nop"},"ammo_cls":{"spr":32,"w":0,"h":0,"update":"ammo_pickup","hit":"nop"},"wpdrop_cls":{"w":0,"h":0,"btn_t":0,"near_plyr_t":0,"draw":"draw_txt_actor","update":"wpdrop_update","hit":"nop"},"cop_cls":{"hp":8,"flee":true,"acc":0.05,"frames":[13,14,15,14],"rnd":{"fire_dly":[160,210],"pause_dly":[120,160]},"wp":"rifle","npc":true},"fireimp_cls":{"hp":5,"dmg":1,"frames":[45,46,47,46],"acc":0.06,"npc":true,"splat":"blast","bones":"fireimp_chunks"},"turret_cls":{"w":1,"h":1,"wp":"turret_minigun","hp":10,"acc":0,"bounce":0,"frames":[163],"fire_dly":180,"pause_dly":120,"splat":"turret_splat","bones":"blast","npc":true},"horror_cls":{"hp":12,"dmg":2,"frames":[160,161,162],"wp":"radiation","fire_dly":180,"pause_dly":120,"splat":"goo_splat","npc":true,"bones":"goo_chunks"},"warp_cls":{"zorder":1,"w":0,"h":0,"acc":0,"captured":false,"frames":[69,82,81,80],"draw":"draw_spr_part","update":"warp_update","hit":"nop"},"cactus":{"hp":5,"acc":0,"spr":83,"update":"nop","splat":"goo_splat","bones":"green_chunks"},"candle_cls":{"part":"candle","part_dly":4,"part_t":0,"acc":0,"spr":178,"die":"nop","update":"nop"},"frog_cls":{"hp":18,"rnd":{"fire_dly":[160,180]},"pause_dly":120,"w":0.8,"h":0.8,"wp":"acid_gun","frames":[231,233,235,233],"npc":true},"horror_spwnr_cls":{"frames":[84],"acc":0,"npc":true,"hp":10,"wp":"horror_spwn","bones":"green_chunks"},"cop_box_cls":{"w":0.8,"h":0.8,"frames":[237],"acc":0,"npc":true,"hp":20,"wp":"cop_spwn","splat":"turret_splat","bones":"blast"}}')
 
 -- actor
 -- x,y in map tiles (not pixels)
@@ -1394,6 +1394,7 @@ function make_actor(x,y,src)
 			y=y}))
 	if(a.init) a:init()
 	if(a.npc) active_actors+=1 actor_id+=1 a.update_path=cocreate(update_path_async)
+	if(a.fire_dly) a.fire_dly+=33*cur_loop
 	cmap_op(a, cmap_add)
 	return add(actors,a)
 end
@@ -1521,13 +1522,15 @@ function next_level()
 	actor_id=0
 	lvl_i+=1
 	-- loop?
-	local loop=false
+	local loop
 	if lvl_i>#levels then
 		cur_loop+=1
 		lvl_i=1
-		plyr_hpmax+=1
 		loop=true
 	end
+	-- stronger
+	plyr_hpmax=8*cur_loop
+	
 	-- clear entities
 	cmap,actors={},{}
 	blts,parts={},{}
@@ -1541,7 +1544,7 @@ function next_level()
 		plyr.x,plyr.y=r.x+r.w/2,r.y+r.h/2
 	end
 	plyr.dx,plyr.dy,plyr.hit_t,plyr.fire_t,plyr.lock_t=0,0,0,0,0
-	plyr.safe_t=time_t+30
+	plyr.safe_t=time_t+30*cur_loop
 	plyr_playing=true
 	
 	if loop then
@@ -1583,11 +1586,11 @@ start_screen.update=function()
 	end
 end
 start_screen.draw=function()
-	cls(2)
+ cls(2)
 	local a,r,x,y=time_t/32,0
 	for i=1,196 do
 		x,y=r*cos(a),r*sin(a)
-		circfill(64+x,64-y,max(2,r/8),14)
+		circfill(64+x,64-y,r/8,14)
 		a+=0.02
 		r+=0.5
 	end
@@ -1600,10 +1603,12 @@ start_screen.draw=function()
 	sspr(0,112,56,16,10,12,112,32)
 	palt()
 	
+	txt_options(true,3)
 	if time_t%32>16 then
-		txt_options(true,3)
 		txt_print("press start",64,108,11)
 	end
+	txt_print(use_mouse==1 and "[keyb.+mouse]" or "[keyboard]",64,116,7)
+	
 	txt_options(true,0,true)
 	txt_print("freds72 presents",64,2,6)
 end
@@ -1713,8 +1718,8 @@ end
 __gfx__
 00000000e000000ee0000000e000000ee000000ee000000ee000000e333333333333333300000000eeeeeeeeeeeeeeeeee3333eee000000ee000000ee000000e
 070000700676767006676760056676700f66ff600f66ff600f66ff60333333333333333300000000eeeeeeeeeeeeeeeee3bbbb3e01111a10011111a001111110
-00777700079898600579898006579890055858500558585005585850333333333333333300000000eee99eeeeee99eee3b7777b301c00000011c00000111c000
-007777000694047006694040056694000ff66ff00ff66ff00ff66ff0333000333333333300000000ee9aa9eeee9999ee3b7777b30ccc0c000cccc0c00ccccc00
+00777700079898600579898006579890055858500558585005585850333333333333333300073000eee99eeeeee99eee3b7777b301c00000011c00000111c000
+007777000694047006694040056694000ff66ff00ff66ff00ff66ff0333000333333333300073000ee9aa9eeee9999ee3b7777b30ccc0c000cccc0c00ccccc00
 0077770007676760057676700657676006ff66f006ff66f006ff66f0330fef033300003300000000ee9aa9eeee9999ee3b7777b30cccccc00cccccc00cccccc0
 007777000444444004444440044444400f66f6600f66f6600f66f660330e0e0330efef0300000000eee99eeeeee99eee3b7777b3055556500555556005555550
 0700007005000050e050010ee005100ee06f0ff0e006f0f00f006f0e30ef0fe00ef00fe000000000eeeeeeeeeeeeeeeee3bbbb3e07000070e070070ee006700e
