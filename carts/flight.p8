@@ -1,6 +1,19 @@
 pico-8 cartridge // http://www.pico-8.com
 version 16
 __lua__
+local src_colors={0x.006d,0x.00d6}
+local dst_colors={0x.00d6,0x.006d}
+local inv_shade={}
+for i=0,15 do
+	local s0,s1=0,0
+	for b=1,4 do
+		local src=band(0x1,shr(i,b-1))
+		local shift=(b-1)*8
+		s0=bor(s0,shl(src_colors[src+1],shift))
+		s1=bor(s1,shl(dst_colors[src+1],shift))
+	end
+	inv_shade[s0]=s1
+end
 
 function normalize(u,v,scale)
 	scale=scale or 1
@@ -64,15 +77,8 @@ function rspr(sx,sy,x,y,a,w)
 end
 
 local time_t=0
-local plyr={
-	x=0,y=0,
-	dx=0,dy=0,
-	acc=1,
-	angle=0,
-	da=0,
-	sx=48,
-	sy=0
-}
+local plyr
+local actors={}
 
 local cam_x,cam_y
 function cam_track(x,y)
@@ -81,6 +87,49 @@ end
 
 function cam_project(x,y)
 	return 64-cam_x+x,64+cam_y-y
+end
+
+local orders={}
+function make_order(btn,dly,ttl,msg)
+	add(orders,{
+		btn=btn,
+		dly=dly,
+		ttl=ttl,
+		check=false,
+		msg=msg
+	})
+end
+
+function pop_order()
+	if #orders>1 then
+		local o=orders[#orders]
+		orders[#orders]=nil
+		o.dly_t=time_t+o.dly
+		o.ttl_t=o.dly_t+o.ttl
+		return o
+	end
+end
+local current_order
+function update_orders(btn)
+	if not current_order or current_order.ttl_t<time_t then
+	 -- need new orders!
+		current_order=pop_order()
+	end
+	if current_order and current_order.dly<time_t and current_order.btn==btn then
+		current_order.check=true
+	end
+end
+
+function draw_orders()
+ if current_order and current_order.dly_t<time_t then
+		local t=current_order.ttl_t-time_t
+		rectfill(0,8,128*t/current_order.ttl,16,7)
+ 	if current_order.check then
+ 		print("yeah!",2,10,0)
+ 	else
+ 		print(current_order.msg,2,10,0)
+		end
+ end
 end
 
 local clouds={}
@@ -122,34 +171,66 @@ function draw_parts()
 	end
 end
 
-function _update60()
-	time_t+=1
+function make_actor(x,y,npc)
+ return add(actors,{
+ 	x=x,y=y,
+ 	dx=0,dy=0,
+ 	acc=1,
+ 	angle=0,
+ 	da=0,
+ 	sx=48,
+ 	sy=0,
+ 	input=npc and control_npc or control_plyr
+ })
+end
 
-	if(btn(2)) plyr.da=0.01
-	if(btn(3)) plyr.da=-0.01
+function control_plyr(self)
+	if(btn(2)) self.da=0.01
+	if(btn(3)) self.da=-0.01
+end
+
+function control_npc(self)
+	if current_order and current_order.dly_t<time_t then
+		if(current_order.btn==2) self.da=0.01
+		if(current_order.btn==3) self.da=-0.01
+	end
+end
+
+
+function update_actor(a)
+	a:input()
 	
-	plyr.angle+=plyr.da
-	plyr.da*=0.96
+	a.angle+=a.da
+	a.da*=0.96
 	
 	-- simulate air friction
-	plyr.dx*=0.95
-	plyr.dy*=0.95
+	a.dx*=0.95
+	a.dy*=0.95
 	-- apply thrust force
-	local dx,dy=cos(plyr.angle),sin(plyr.angle)
-	plyr.dx+=dx
-	plyr.dy+=dy
-	local u,v=normalize(plyr.dx,plyr.dy)
+	local dx,dy=cos(a.angle),sin(a.angle)
+	a.dx+=dx
+	a.dy+=dy
+	local u,v=normalize(a.dx,a.dy)
 	dx,dy=normalize(dx,dy)
-	plyr.x+=u*plyr.acc
-	plyr.y+=v*plyr.acc
+	a.x+=u*a.acc
+	a.y+=v*a.acc
 
 	-- calculate drift force
 	if abs(dx*u+dy*v)<0.90 then
-		make_part(plyr.x+rnd(2)-1-8*u,plyr.y+rnd(2)-1-8*v)
+		make_part(a.x+rnd(2)-1-8*u,a.y+rnd(2)-1-8*v)
+	end
+end
+
+function _update60()
+	time_t+=1
+
+	for _,a in pairs(actors) do
+		update_actor(a)
 	end
 	
 	update_parts()
-	
+	update_orders()
+		
 	cam_track(plyr.x,plyr.y)
 end
 
@@ -169,25 +250,31 @@ function _draw()
 	palt(0,false)
 	palt(14,true)
 	
-	rspr(plyr.sx,plyr.sy,32,16,plyr.angle,2)	
+	for _,a in pairs(actors) do
+		rspr(a.sx,a.sy,32,16,a.angle,2)	
 	
-	x,y=cam_project(plyr.x,plyr.y)
-	x-=8
-	y-=8
+		x,y=cam_project(a.x,a.y)
+		x-=8
+		y-=8
 	
-	--[[
-	pal(6,0)
-	spr(36,x+1,y,2,2)
-	spr(36,x-1,y,2,2)
-	spr(36,x,y+1,2,2)
-	spr(36,x,y-1,2,2)
-	]]
+		pal(6,13)
+		spr(36,x,y,2,2)
+	end
 	
-	pal(6,13)
-	spr(36,x,y,2,2)
-
+	fillp()
 	rectfill(0,0,127,8,1)
 	print((flr(1000*stat(1))/10).."%",2,2,7)
+
+	--[[
+	local mem=0x6000
+	for j=0,63 do
+		for i=0,31 do
+			poke4(mem,inv_shade[peek4(mem)])
+			mem+=4
+		end
+	end
+	]]
+	draw_orders()
 end
 
 function _init()
@@ -199,6 +286,15 @@ function _init()
 			x+=r
 		end	
 	end
+
+	make_actor(24,4,true)
+	plyr=make_actor(0,4)
+		
+	make_order(3,30,30,"up")
+	make_order(3,30,30,"up")
+	make_order(2,30,90,"down")
+	make_order(3,30,90,"up")
+	make_order(3,90,30,"up")
 end
 __gfx__
 00000000eeeeeeeeee0000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
