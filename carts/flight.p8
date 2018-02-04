@@ -15,6 +15,11 @@ for i=0,15 do
 	inv_shade[s0]=s1
 end
 
+function smoothstep(t)
+	t=mid(t,0,1)
+	return t*t*(3-2*t)
+end
+
 function sqr_dist(x0,y0,x1,y1)
 	local dx,dy=x1-x0,y1-y0
 	if abs(dx)>128 or abs(dy)>128 then
@@ -156,6 +161,7 @@ end
 
 local parts={}
 function make_part(x,y,dx,dy,grav)
+	local ttl=flr(rnd(30))+8
 	return add(parts,{
 		x=x,y=y,
 		dx=dx or 0,
@@ -163,7 +169,8 @@ function make_part(x,y,dx,dy,grav)
 		r=1,dr=0,
 		inertia=0.98,
 		grav=grav or false,
-		t=time_t+rnd(30),
+		t=time_t+ttl,
+		ttl=ttl,
 		cb=nil
 	})
 end
@@ -172,9 +179,9 @@ function make_blast(x,y,dx,dy)
 	p=make_part(x,y)
 	p.dr=-0.5
 	p.r=10
-	p.t=time_t+8
+	p.t=time_t+16
 	p.c=7
-	for i=1,rnd(10)+20 do
+	for i=1,rnd(5)+20 do
 		local angle=rnd()
 		local c,s=cos(angle),sin(angle)
 		local px,py=x+rnd(8)*c,y+rnd(8)*s
@@ -216,6 +223,24 @@ function update_parts()
 	end
 end
 
+local pat={
+  0b1111111111111111.1,
+  0b0111111111111111.1,
+  0b0111111111011111.1,
+  0b0101111111011111.1,
+  0b0101111101011111.1,
+  0b0101101101011111.1,
+  0b0101101101011110.1,
+  0b0101101001011110.1,
+  0b0101101001011010.1,
+  0b0001101001011010.1,
+  0b0001101001001010.1,
+  0b0000101001001010.1,
+  0b0000101000001010.1,
+  0b0000001000001010.1,
+  0b0000001000001000.1
+}
+
 function draw_parts()
 	for i=1,#parts do
 		local p=parts[i]
@@ -224,6 +249,8 @@ function draw_parts()
 		if p.r==1 then
 			pset(x,y,c)
 		else
+			local f=smoothstep((p.t-time_t)/p.ttl)
+			fillp(pat[flr(#pat*f)+1])
 			circfill(x,y,p.r,c)
 		end
 	end
