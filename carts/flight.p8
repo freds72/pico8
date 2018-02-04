@@ -1,20 +1,6 @@
 pico-8 cartridge // http://www.pico-8.com
 version 16
 __lua__
-local src_colors={0x.006d,0x.00d6}
-local dst_colors={0x.00d6,0x.006d}
-local inv_shade={}
-for i=0,15 do
-	local s0,s1=0,0
-	for b=1,4 do
-		local src=band(0x1,shr(i,b-1))
-		local shift=(b-1)*8
-		s0=bor(s0,shl(src_colors[src+1],shift))
-		s1=bor(s1,shl(dst_colors[src+1],shift))
-	end
-	inv_shade[s0]=s1
-end
-
 function smoothstep(t)
 	t=mid(t,0,1)
 	return t*t*(3-2*t)
@@ -175,13 +161,24 @@ function make_part(x,y,dx,dy,grav)
 	})
 end
 
+function smoke_emitter(self)
+ if time_t%2==0 then
+ 	local p=make_part(self.x,self.y)
+ 	p.c=0xd7
+ 	p.dr=0.05*rnd()
+ 	p.dy=0.2
+ 	p.ttl=30+rnd(30)
+ 	p.t=time_t+p.ttl
+ end
+end
 function make_blast(x,y,dx,dy)
-	p=make_part(x,y)
+	local p=make_part(x,y)
 	p.dr=-0.5
 	p.r=10
 	p.t=time_t+16
-	p.c=7
-	for i=1,rnd(5)+20 do
+	p.ttl=16
+	p.c=0x77
+	for i=1,rnd(5)+12 do
 		local angle=rnd()
 		local c,s=cos(angle),sin(angle)
 		local px,py=x+rnd(8)*c,y+rnd(8)*s
@@ -192,14 +189,7 @@ function make_blast(x,y,dx,dy)
 		end
 		p=make_part(px,py,pdx,pdy,true)		
 		p.t=time_t+90
-		p.cb=function(self)
-			if time_t%2==0 then
-				p=make_part(self.x,self.y)
-				p.dr=0.1*rnd()
-				p.dy=0.2
-				p.t=time_t+rnd(30)
-			end
-		end
+		p.cb=smoke_emitter
 	end
 end
 
@@ -210,6 +200,10 @@ function update_parts()
 		else
 			p.x+=p.dx
 			p.y+=p.dy
+			if p.y<0 then
+				p.y=0
+				p.dy=-0.9*p.dy
+			end
 			p.r+=p.dr
 			p.dx*=p.inertia
 			p.dy*=p.inertia
@@ -224,21 +218,21 @@ function update_parts()
 end
 
 local pat={
-  0b1111111111111111.1,
-  0b0111111111111111.1,
-  0b0111111111011111.1,
-  0b0101111111011111.1,
-  0b0101111101011111.1,
-  0b0101101101011111.1,
-  0b0101101101011110.1,
-  0b0101101001011110.1,
-  0b0101101001011010.1,
-  0b0001101001011010.1,
-  0b0001101001001010.1,
-  0b0000101001001010.1,
-  0b0000101000001010.1,
-  0b0000001000001010.1,
-  0b0000001000001000.1
+  0b1111111111111111,
+  0b0111111111111111,
+  0b0111111111011111,
+  0b0101111111011111,
+  0b0101111101011111,
+  0b0101101101011111,
+  0b0101101101011110,
+  0b0101101001011110,
+  0b0101101001011010,
+  0b0001101001011010,
+  0b0001101001001010,
+  0b0000101001001010,
+  0b0000101000001010,
+  0b0000001000001010,
+  0b0000001000001000
 }
 
 function draw_parts()
@@ -422,15 +416,6 @@ function _draw()
 	rectfill(0,0,127,8,1)
 	print((flr(1000*stat(1))/10).."%",2,2,7)
  print(plyr.score,112,2,7)
-	--[[
-	local mem=0x6000
-	for j=0,63 do
-		for i=0,31 do
-			poke4(mem,inv_shade[peek4(mem)])
-			mem+=4
-		end
-	end
-	]]
 end
 
 function _init()
@@ -454,22 +439,22 @@ function _init()
 	make_order(3,90,30,"up")
 end
 __gfx__
-00000000eeeeeeeeee0000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
-00000000ee88eeeee0999a0eee0000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeddddeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
-00700700e000000e091414a0ee0650eeeeee00eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeddddddddeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
-00077000e088777009444490ee0650eeeeee060eeeeeeeeeeeeeeeeeeeeeeeeeeeeddddddddddeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
-00077000e055667004555440ee0990eeeeee0660eeeeeeeeeee666eeeeeeeeeeeedddddddddddeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
-00700700e000000e0339bbb0ee0440eeeee0066000000eeeeee6666eeeeeeeeeeddddddddddddeddddddddeeeeeeeeee00000000000000000000000000000000
-00000000ee88eeee003000b0eee00eeeee066666666cc0eeeeee66666666eeeeeddddddddddddddddddddddeeeeeeeee00000000000000000000000000000000
-00000000eeeeeeeeee0eee0eeeeeeeeeee070000007cc70eeee66666666666eeeddddddddddddddddddddddeeddddeee00000000000000000000000000000000
-00000000eeeeeeeeeeeeeeee00000000ee0655555666650eeee6666666666eeeedddddddddddddddddddddddddddddee00000000000000000000000000000000
-00000000eeeeeeeeeeeeeeee00000000eee00000555550eeeeeeee6666eeeeeeeeddddddddddddddddddddddddddddee00000000000000000000000000000000
-00000000ee00000eeeeddeee00000000eeeeeeee00000eeeeeeeeeeeeeeeeeeeeedddddddddddddddddddddddddddddd00000000000000000000000000000000
-00000000e049550eeeedddee00000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeddddddddddddddddddddddddddddd00000000000000000000000000000000
-00000000e049660eeeedddee00000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeddddddddddedddddddddddddddd00000000000000000000000000000000
-00000000ee00000eeeeddeee00000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
-00000000eeeeeeeeeeeeeeee00000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
-00000000eeeeeeeeeeeeeeee00000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
+000000000000000000000000000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+000000000000000000000000000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+007007000000000000000000000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+000770000000000000000000000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+000770000000000000000000000000000000000000000000eee666eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee66eeeeeeeee
+007007000000000000000000000000000000000000000000eee6666eeeeeeeeeeee666eeeeeeeeeeeeeeeeeeeeeeeeeeeeeee66eeeeeeeeeeee6e6666eeeeeee
+000000000000000000000000000000000000000000000000eeee66666666eeeeeee6666eeeeeeeeeeee6666eeeeeeeeeeee6ee66666eeeeeeee66e66666eeeee
+000000000000000000000000000000000000000000000000eee66666666666eeeeee66666666eeeeeeee66666666eeeeeee6666666666eeeeeee666666666eee
+0000000000000000eeeeeeee000000000000000000000000eee6666666666eeeeee66666666666eeeee66666666666eeeee66666666666eeeee66666666666ee
+0000000000000000eeeeeeee000000000000000000000000eeeeee6666eeeeeeeee6666666666eeeeee6666666666eeeeeee666666666eeeeeee666666666eee
+0000000000000000eeeddeee000000000000000000000000eeeeeeeeeeeeeeeeeeeee66eeeeeeeeeeeeee66eeeeeeeeeeee66e66666eeeeeeee66e66666eeeee
+0000000000000000eeedddee000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee6e66eeeeeeeeeeee6e6666eeeeeee
+0000000000000000eeedddee000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee66eeeeeeeee
+0000000000000000eeeddeee000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+0000000000000000eeeeeeee000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+0000000000000000eeeeeeee000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 00000000000000000000000000000000eeeeeeeeeeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000eeeeeeeeeeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000eeeeeeeeeeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
