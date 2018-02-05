@@ -1,6 +1,130 @@
 pico-8 cartridge // http://www.pico-8.com
 version 16
 __lua__
+-- airshow
+-- by freds72
+-- futures
+local time_t,time_dt=0,0
+local dither_pat={
+  0b1111111111111111,
+  0b0111111111111111,
+  0b0111111111011111,
+  0b0101111111011111,
+  0b0101111101011111,
+  0b0101101101011111,
+  0b0101101101011110,
+  0b0101101001011110,
+  0b0101101001011010,
+  0b0001101001011010,
+  0b0001101001001010,
+  0b0000101001001010,
+  0b0000101000001010,
+  0b0000001000001010,
+  0b0000001000001000
+}
+function futures_update(futures)
+	futures=futures or before_update
+	for _,f in pairs(futures) do
+		if not coresume(f) then
+			del(futures,f)
+		end
+	end
+end
+function futures_add(fn,futures)
+	return add(futures or before_update,cocreate(fn))
+end
+function wait_async(t,fn)
+	local i=1
+	while i<=t do
+		if fn then
+			if not fn(i) then
+				return
+			end
+		end
+		i+=time_dt
+		yield()
+	end
+end
+-- print text helper
+local txt_offsets={{-1,0},{0,-1},{0,1},{-1,-1},{1,1},{-1,1},{1,-1}}
+local txt_center,txt_shade,txt_border=false,-1,false
+function txt_options(c,s,b)
+	txt_center=c or false
+	txt_shade=s or -1
+	txt_border=b or false
+end
+function txt_print(str,x,y,col)
+	if txt_center then
+		x-=flr((4*#str)/2+0.5)
+	end
+	if txt_shade!=-1 then	
+		print(str,x+1,y,txt_shade)
+		if txt_border then
+			for _,v in pairs(txt_offsets) do
+				print(str,x+v[1],y+v[2],txt_shade)
+			end
+		end
+	end
+	print(str,x,y,col)
+end
+
+-- helpers
+function pop(a)
+	if #a>0 then
+		local p=a[#a]
+		a[#a]=nil
+		return p
+	end
+end
+-- calls 'fn' method on all elements of a[]
+-- pairs allows add/remove while iterating
+function forall(a,fn)
+	fn=fn or "update"
+	for _,v in pairs(a) do
+		if not v[fn](v) then
+			del(a,v)
+		end
+	end
+end
+function clone(src,dst)
+	-- safety checks
+	if(src==dst) assert()
+	if(type(src)!="table") assert()
+	dst=dst or {}
+	for k,v in pairs(src) do
+		if(not dst[k]) dst[k]=v
+	end
+	-- randomize selected values
+	if src.rnd then
+		for k,v in pairs(src.rnd) do
+			-- don't overwrite values
+			if not dst[k] then
+				dst[k]=v[3] and rndarray(v) or rndlerp(v[1],v[2])
+			end
+		end
+	end
+	return dst
+end
+function amortize(x,dx)
+	x*=dx
+	return abs(x)<0.001 and 0 or x
+end
+function lerp(a,b,t)
+	return a*(1-t)+b*t
+end
+function rndlerp(a,b)
+	return lerp(b,a,1-rnd())
+end
+function smoothstep(t)
+	t=mid(t,0,1)
+	return t*t*(3-2*t)
+end
+function rndrng(ab)
+	return flr(rndlerp(ab[1],ab[2]))
+end
+function rndarray(a)
+	return a[flr(rnd(#a))+1]
+end
 function smoothstep(t)
 	t=mid(t,0,1)
 	return t*t*(3-2*t)
@@ -21,30 +145,44 @@ function normalize(u,v,scale)
 	return u*scale,v*scale
 end
 
-function fast_sprr(sx,sy,x,y,a)
- local x0,y0=4,4
-	
-	local ducol,dvcol=sin(-a),cos(-a)
-	local durow=ducol
-	local dvrow=-dvcol
-	
-	local su=sx+4-(4*dvcol+4*ducol)
-	local sv=sy+4-(4*dvrow+4*durow)
+-- camera
+local cam_x,cam_y=0,0
+local shkx,shky=0,0
+function cam_shake(u,v,pow)
+	shkx=min(4,shkx+pow*u)
+	shky=min(4,shky+pow*v)
+end
+function cam_update()
+	shkx*=-0.7-rnd(0.2)
+	shky*=-0.7-rnd(0.2)
+	if abs(shkx)<0.5 and abs(shky)<0.5 then
+		shkx,shky=0,0
+	end
+	camera(shkx,shky)
+end
+function cam_track(x,y)
+	cam_x,cam_y=x,y
+end
+function cam_project(x,y)
+	return 64-cam_x+x,64+cam_y-y
+end
 
-	local rowu=su
-	local rowv=sv
-	
-	local u,v
-	for j=y,y+7 do
-		u,v=rowu,rowv
-		for i=x,x+7 do
-			local c=sget(sx+band(u,7),sy+band(v,7))
-			pset(i,j,c)
-			u+=durow
-			v+=dvrow
-		end
-		rowu+=ducol
-		rowv+=dvcol
+-- zbuffer
+local zbuf={}
+function zbuf_clear()
+	zbuf[1]={}
+	zbuf[2]={}
+	zbuf[3]={}
+end
+function zbuf_write(obj)
+	local zi=obj.zorder or 2
+	add(zbuf[zi],{obj=obj})
+end
+function zbuf_draw()
+	local xe,ye
+	for _,v in pairs(zbuf[2]) do
+		xe,ye=cam_project(v.obj.x,v.obj.y)
+		v.obj:draw(xe,ye)
 	end
 end
 
@@ -73,18 +211,25 @@ function rspr(sx,sy,x,y,a,w)
  end
 end
 
-local time_t=0
+-- particles
+local parts,all_parts={}
+function make_part(x,y,src,dx,dy)
+	src=all_parts[src]
+	local p=clone(all_parts[src.base_cls or "part_cls"],
+		clone(src,{
+			x=x,
+			y=y,
+			dx=dx or 0,
+			dy=dy or 0}))
+ if(not p.update) assert()
+	if(p.sfx) sfx(p.sfx)
+	p.t=time_t+p.ttl
+	return add(parts,p)
+end
+
+
 local plyr,lead
 local actors={}
-
-local cam_x,cam_y
-function cam_track(x,y)
-	cam_x,cam_y=x,y
-end
-
-function cam_project(x,y)
-	return 64-cam_x+x,64+cam_y-y
-end
 
 local orders={}
 function make_order(btn,dly,ttl,msg)
@@ -145,173 +290,124 @@ function draw_clouds()
 	end
 end
 
-local parts={}
-function make_part(x,y,dx,dy,grav)
-	local ttl=flr(rnd(30))+8
-	return add(parts,{
-		x=x,y=y,
-		dx=dx or 0,
-		dy=dy or 0,
-		r=1,dr=0,
-		inertia=0.98,
-		grav=grav or false,
-		t=time_t+ttl,
-		ttl=ttl,
-		cb=nil
-	})
-end
-
-function smoke_emitter(self)
- if time_t%2==0 then
- 	local p=make_part(self.x,self.y)
- 	p.c=0xd7
- 	p.dr=0.05*rnd()
- 	p.dy=0.2
- 	p.ttl=30+rnd(30)
- 	p.t=time_t+p.ttl
- end
+function update_emitter(self)
+	if update_part(self) then
+		if self.emit_t<time_t then
+			make_part(self.x,self.y,self.emit_cls)
+			self.emit_t=time_t+self.emit_dly
+		end
+		return true
+	end
+	return false
 end
 function make_blast(x,y,dx,dy)
-	local p=make_part(x,y)
-	p.dr=-0.5
-	p.r=10
-	p.t=time_t+16
-	p.ttl=16
-	p.c=0x77
-	for i=1,rnd(5)+12 do
+	local p=make_part(x,y,"blast")
+	for i=1,p.debris do
 		local angle=rnd()
 		local c,s=cos(angle),sin(angle)
 		local px,py=x+rnd(8)*c,y+rnd(8)*s
 		local pdx,pdy=dx+c,dy+s
 		if py<0 then
-			pdy=-0.5*pdy
+			pdy=abs(0.8*pdy)
 			py=0
 		end
-		p=make_part(px,py,pdx,pdy,true)		
-		p.t=time_t+90
-		p.cb=smoke_emitter
+		make_part(px,py,"debris",pdx,pdy)
 	end
+	cam_shake(rnd(),rnd(),5)
 end
 
-function update_parts()
-	for _,p in pairs(parts) do
-		if p.t<time_t then
-			del(parts,p)
-		else
-			p.x+=p.dx
-			p.y+=p.dy
-			if p.y<0 then
-				p.y=0
-				p.dy=-0.9*p.dy
-			end
-			p.r+=p.dr
-			p.dx*=p.inertia
-			p.dy*=p.inertia
-			if p.grav then
-				p.dy-=0.01
-			end
-			if p.cb then
-				p.cb(p)
-			end
-		end
+function update_part(p)
+	if(p.t<time_t) return false
+	p.x+=p.dx
+	p.y+=p.dy
+	if p.y<0 then
+		p.y=0
+		p.dy=-0.9*p.dy
 	end
-end
-
-local pat={
-  0b1111111111111111,
-  0b0111111111111111,
-  0b0111111111011111,
-  0b0101111111011111,
-  0b0101111101011111,
-  0b0101101101011111,
-  0b0101101101011110,
-  0b0101101001011110,
-  0b0101101001011010,
-  0b0001101001011010,
-  0b0001101001001010,
-  0b0000101001001010,
-  0b0000101000001010,
-  0b0000001000001010,
-  0b0000001000001000
-}
-
-function draw_parts()
-	for i=1,#parts do
-		local p=parts[i]
-		local x,y=cam_project(p.x,p.y)
-		local c=p.c or 13
-		if p.r==1 then
-			pset(x,y,c)
-		else
-			local f=smoothstep((p.t-time_t)/p.ttl)
-			fillp(pat[flr(#pat*f)+1])
-			circfill(x,y,p.r,c)
-		end
+	p.r+=p.dr
+	p.dx*=p.inertia
+	p.dy*=p.inertia
+	if p.g then
+		p.dy-=0.01
 	end
+	zbuf_write(p)
+	return true
 end
 
-local coins={}
-function make_coin(x,y)
-	add(coins,{
-		x=x,y=y,
-		ttl=time_t+90
-	})
+function draw_pixel_part(self,x,y)
+	pset(x,y,self.c or 13)
+end
+function draw_circ_part(self,x,y)
+	local f=smoothstep((self.t-time_t)/self.ttl)
+	fillp(dither_pat[flr(#dither_pat*f)+1])
+	circfill(x,y,self.r,self.c or 13)
 end
 
-function update_coins()
-	for _,c in pairs(coins) do
-		if c.ttl<time_t then
-			del(coins,c)
-		else
-			if sqr_dist(c.x,c.y,plyr.x,plyr.y)<4 then
-				plyr.score+=1
-				del(coins,c)
-			end
-		end
+function update_coin(c)
+	if(c.t<time_t) return false
+	
+	if sqr_dist(c.x,c.y,plyr.x,plyr.y)<4 then
+		plyr.score+=1
+		-- todo: sound + feedback
+		return false
 	end
+	zbuf_write(c)
+	return true
 end
 
-function draw_coins()
-	for _,c in pairs(coins) do
-		local x,y=cam_project(c.x,c.y)
-		circfill(x,y,2,7)
-	end	
+function draw_coin_part(self,x,y)
+	circfill(x,y,2,7)
 end
 
 function make_actor(x,y,npc)
- return add(actors,{
- 	x=x,y=y,
- 	dx=0,dy=0,
- 	acc=1,
- 	angle=0,
- 	da=0,
- 	sx=48,
- 	sy=0,
- 	input=npc and control_npc or control_plyr,
- 	hit=hit
- })
+	return add(actors,{
+	x=x,y=y,
+	dx=0,dy=0,
+	acc=0.8,
+	angle=0,
+	da=0,
+	sx=48,
+	sy=0,
+	update=update_actor,
+	draw=draw_plane,
+	input=npc and control_npc or control_plyr,
+	hit=hit
+	})
+end
+
+function draw_plane(self,x,y)
+	palt(0,false)
+	palt(14,true)
+	pal(6,13)
+	rspr(self.sx,self.sy,32,16,self.angle,2)
+	
+	spr(36,x-8,y-8,2,2)
+end
+
+function get_turn_rate(b)
+	if(b==2) return 0.005
+	if(b==3) return -0.01
 end
 
 function control_plyr(self)
-	if(btn(2)) self.da=0.01
-	if(btn(3)) self.da=-0.01
+	if(btn(2)) self.da=get_turn_rate(2)
+	if(btn(3)) self.da=get_turn_rate(3)
 end
 
 function control_npc(self)
 	if current_order and current_order.dly_t<time_t then
 		if not current_order.done then	
-			make_coin(self.x,self.y)
+			make_part(self.x,self.y,"coin")
 			current_order.done=true
 		end
-		if(current_order.btn==2) self.da=0.01
-		if(current_order.btn==3) self.da=-0.01
+		if(current_order.btn==2) self.da=get_turn_rate(2)
+		if(current_order.btn==3) self.da=get_turn_rate(3)
 	end
 end
 
 function hit(self)
 	local dx,dy=normalize(self.dx,self.dy)
 	make_blast(self.x,self.y,dx*self.acc,dy*self.acc)
-	del(actors,self)
 end
 
 function update_actor(a)
@@ -345,33 +441,34 @@ function update_actor(a)
 	end
 	if hit then
 		a:hit()
-		return
+		return false
 	end
 	
 	-- calculate drift force
 	if abs(dx*u+dy*v)<0.90 then
-		make_part(a.x+rnd(2)-1-8*u,a.y+rnd(2)-1-8*v)
+		make_part(a.x+rnd(2)-1-8*u,a.y+rnd(2)-1-8*v,"trail")
 	end
+	
+	zbuf_write(a)
+	return true
 end
 
 function _update60()
 	time_t+=1
-
-	for _,a in pairs(actors) do
-		update_actor(a)
-	end
 	
-	update_coins()	
-	update_parts()
+	zbuf_clear()
+	forall(actors)
+	forall(parts)
 	update_orders()
-		
+
 	cam_track(plyr.x,plyr.y)
+	cam_update()
 end
 
 function _draw()
 	cls(6)
 
-	fillp()	
+	fillp()
 	--ground
 	local x,y=cam_project(0,0)
 	if y<127 then
@@ -380,30 +477,12 @@ function _draw()
 	
 	draw_clouds()
 	fillp()
-	draw_parts()
-	draw_coins()
-		
-	palt(0,false)
-	palt(14,true)
-	pal(6,13)
-	for _,a in pairs(actors) do
-		x,y=cam_project(a.x,a.y)
-
-		a.visible=true
-		if x<-16 or x>144 or y<-16 or y>144 then
-			a.visible=false
-		else		
- 		rspr(a.sx,a.sy,32,16,a.angle,2)	
- 	
- 		x-=8
- 		y-=8
- 		spr(36,x,y,2,2)
-		end
-	end
+	
+	zbuf_draw()
 	
 	-- draw hud
 	if lead and not lead.visible then
-		x,y=cam_project(lead.x,lead.y)
+		local x,y=cam_project(lead.x,lead.y)
 		x-=plyr.x
 		y-=plyr.y
 		local angle=atan2(x,y)
@@ -419,14 +498,63 @@ function _draw()
 end
 
 function _init()
+ 	all_parts={
+ 	["part_cls"]={
+ 		update=update_part,
+ 		draw=draw_pixel_part,
+ 		inertia=0.98,
+ 		r=1,dr=0,
+ 		ttl=30
+ 	},
+ 	["coin"]={
+ 		update=update_coin,
+ 		draw=draw_coin_part,
+ 		ttl=90
+ 	},
+ 	["trail"]={
+ 		c=13,
+ 		rnd={
+ 			ttl={24,32},
+ 		}
+ 	},
+ 	["smoke"]={
+ 		draw=draw_circ_part,
+ 		c=0xd7,
+ 		rnd={
+ 			dr={0.01,0.05},
+ 			ttl={30,60},
+ 		},
+ 		dy=0.2
+ 	},
+ 	["blast"]={
+ 		draw=draw_circ_part,
+ 		dr=-0.5,
+ 		r=10,
+ 		rnd={
+ 			debris={8,12}
+ 		},
+ 		ttl=16,
+ 		c=0x77
+ 	},
+ 	["debris"]={
+ 		g=true,
+ 		update=update_emitter,
+ 		rnd={
+ 			emit_dly={2,8}
+ 		},
+ 		emit_t=0,
+ 		emit_cls="smoke"
+ 	}
+ }
+
 	for i=1,10 do
 		local x,y=rnd(128)-64,rnd(128)+12
 		for j=1,flr(rnd(4)) do
 			local r=rnd(8)+4
 			make_cloud(x+r/2,y+rnd(2)-1,r)
 			x+=r
-		end	
-	end
+		end
+	end	
 
 	lead=make_actor(24,4,true)
 	plyr=make_actor(0,4)
