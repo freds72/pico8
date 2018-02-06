@@ -22,6 +22,28 @@ local dither_pat={
   0b0000001000001010,
   0b0000001000001000
 }
+local src_colors={0x.0066,0x.00dd,0x.006d,0x.00d6}
+local dst_colors={0x.00dd,0x.0066,0x.00d6,0x.006d}
+local shades={}
+
+function fillbits(src,dst,index)
+	if index>4 then
+		shades[src]=dst
+		print(src)
+		return
+	end
+	local s,d=src,dst
+	for i=1,4 do
+		local shift=(index-1)*8
+		src=bor(s,shl(src_colors[i],shift))
+		dst=bor(d,shl(dst_colors[i],shift))
+		fillbits(src,dst,index+1)
+	end	
+end
+-- seed
+fillbits(0,0,1)
+
+-- futures
 function futures_update(futures)
 	futures=futures or before_update
 	for _,f in pairs(futures) do
@@ -163,8 +185,9 @@ end
 function cam_track(x,y)
 	cam_x,cam_y=x,y
 end
-function cam_project(x,y)
-	return 64-cam_x+x,64+cam_y-y
+function cam_project(x,y,z)
+	local w=(16-z)/16
+	return 64-(cam_x-x)*w,64+(cam_y-y)*w,w
 end
 
 -- zbuffer
@@ -180,9 +203,13 @@ function zbuf_write(obj)
 end
 function zbuf_draw()
 	local xe,ye
+	for _,v in pairs(zbuf[1]) do
+		xe,ye,w=cam_project(v.obj.x,v.obj.y,8)
+		v.obj:draw(xe,ye,w)
+	end
 	for _,v in pairs(zbuf[2]) do
-		xe,ye=cam_project(v.obj.x,v.obj.y)
-		v.obj:draw(xe,ye)
+		xe,ye=cam_project(v.obj.x,v.obj.y,0)
+		v.obj:draw(xe,ye,1)
 	end
 end
 
@@ -276,18 +303,26 @@ function draw_orders()
 end
 
 local clouds={}
-function make_cloud(x,y,r)
+function make_cloud(x,y,r,z)
 	add(clouds,{
+		zorder=z or 2,
 		x=x,y=y,
-		r=r
+		r=r,
+		update=function(self)
+			zbuf_write(self)
+			return true
+		end,
+		draw=draw_cloud
 	})
 end
-function draw_clouds()
-	fillp(0b1010010110100101.1)
-	for _,c in pairs(clouds) do
-		local x,y=cam_project(c.x,c.y)
-		circfill(x,y,c.r,13)
+function draw_cloud(self,x,y,w)
+	local r=self.r*w
+	if self.zorder==1 then
+		fillp()
+	else
+		fillp(0b1010010110100101.1)
 	end
+	circfill(x,y,r,13)
 end
 
 function update_emitter(self)
@@ -359,6 +394,23 @@ function draw_coin_part(self,x,y)
 	circfill(x,y,2,7)
 end
 
+function draw_ground(self,x,y,w)
+	if(y>127) return
+	pal()
+	rectfill(0,y,127,127,13)
+	for j=3,12 do
+		x,y,w=cam_project(0,0,j)
+ 	local dx=w*(plyr.x%16)
+		x=-dx
+		while x<127 do
+			x+=w*16
+			pset(64+x,y,6)
+			pset(64-x-2*dx,y,6)
+		end
+	end
+end
+
+-- actors
 function make_actor(x,y,npc)
 	return add(actors,{
 	x=x,y=y,
@@ -457,32 +509,29 @@ function _update60()
 	time_t+=1
 	
 	zbuf_clear()
+	-- known bug: one frame delay
+	cam_track(plyr.x,plyr.y)
+	
 	forall(actors)
 	forall(parts)
+	forall(clouds)
 	update_orders()
 
-	cam_track(plyr.x,plyr.y)
 	cam_update()
 end
 
 function _draw()
 	cls(6)
 
-	fillp()
 	--ground
-	local x,y=cam_project(0,0)
-	if y<127 then
-		rectfill(0,y,127,127,6)
-	end
-	
-	draw_clouds()
-	fillp()
+	local x,y,w=cam_project(0,0,12)
+	draw_ground({},x,y,w)
 	
 	zbuf_draw()
 	
 	-- draw hud
 	if lead and not lead.visible then
-		local x,y=cam_project(lead.x,lead.y)
+		local x,y=cam_project(lead.x,lead.y,0)
 		x-=plyr.x
 		y-=plyr.y
 		local angle=atan2(x,y)
@@ -549,9 +598,10 @@ function _init()
 
 	for i=1,10 do
 		local x,y=rnd(128)-64,rnd(128)+12
+		local z=flr(rnd(2))+1
 		for j=1,flr(rnd(4)) do
 			local r=rnd(8)+4
-			make_cloud(x+r/2,y+rnd(2)-1,r)
+			make_cloud(x+r/2,y+rnd(2)-1,r,z)
 			x+=r
 		end
 	end	
