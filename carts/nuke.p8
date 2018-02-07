@@ -556,7 +556,8 @@ function cam_update()
 end
 local cam_t=0
 function cam_track(x,y)
-	cam_x,cam_y=8*x-4,8*y-4
+	-- fixed woobly actors
+	cam_x,cam_y=flr(8*x)-4,flr(8*y)-4
 end
 function cam_project(x,y)
 	return 64+8*x-cam_x,64+8*y-cam_y
