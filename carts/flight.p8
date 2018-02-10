@@ -3,7 +3,9 @@ version 16
 __lua__
 -- airshow
 -- by freds72
--- futures
+-- screen mgt
+local cur_screen
+
 local time_t,time_dt=0,0
 local dither_pat={
   0b1111111111111111,
@@ -259,13 +261,11 @@ local plyr,lead
 local actors={}
 
 local orders={}
-function make_order(btn,dly,ttl,msg)
+function make_order(btn,ttl)
 	add(orders,{
 		btn=btn,
-		dly=dly,
 		ttl=ttl,
-		check=false,
-		msg=msg
+		check=false
 	})
 end
 
@@ -273,33 +273,17 @@ function pop_order()
 	if #orders>1 then
 		local o=orders[#orders]
 		orders[#orders]=nil
-		o.dly_t=time_t+o.dly
-		o.ttl_t=o.dly_t+o.ttl
+		o.t=time_t+o.ttl
 		return o
 	end
 end
 
 local current_order
 function update_orders(btn)
-	if not current_order or current_order.ttl_t<time_t then
+	if not current_order or current_order.t<time_t then
 	 -- need new orders!
 		current_order=pop_order()
 	end
-	if current_order and current_order.dly<time_t then
-		current_order.check=true
-	end
-end
-
-function draw_orders()
- if current_order and current_order.dly_t<time_t then
-		local t=current_order.ttl_t-time_t
-		rectfill(0,8,128*t/current_order.ttl,16,7)
- 	if current_order.check then
- 		print("yeah!",2,10,0)
- 	else
- 		print(current_order.msg,2,10,0)
-		end
- end
 end
 
 local clouds={}
@@ -399,7 +383,7 @@ function draw_ground(self,x,y,w)
 	pal()
 	for j=-8,8 do
 		x,y,w=cam_project(0,0,j)
- 	local dx=w*(plyr.x%16)
+ 	local dx=w*(cam_x%16)
 		x=-dx
 		while x<127 do
 			pset(64+x,y,13)
@@ -466,11 +450,21 @@ function get_turn_rate(self,b)
 	return tr
 end
 
-function control_plyr(self)
+function process_input(self)
+	local btns={
+		[0]=btnp(0),
+		[1]=btnp(1),
+		[2]=btn(2),
+		[3]=btn(3)
+	}
+	control_actor(self,btns)
+end
+
+function control_actor(self,btns)
 	if not self.rolling then
-		if(btn(2)) self.da=get_turn_rate(self,2)
-		if(btn(3)) self.da=get_turn_rate(self,3)
-		if btnp(0) or btnp(1) then
+		if(btns[2]) self.da=get_turn_rate(self,2)
+		if(btns[3]) self.da=get_turn_rate(self,3)
+		if btns[0] or btns[1] then
 			self.rolling=true
 			if self.inverted then
 				self.df=-0.1
@@ -481,26 +475,15 @@ function control_plyr(self)
 			end
 		end
 	end
-	
-	if self.rolling then
-		if flr(self.frame)!=self.tf then
-			self.frame+=self.df
-		else
-			self.frame=self.tf
-			self.rolling=false
-			self.inverted=not self.inverted
-		end
-	end
 end
 
 function control_npc(self)
-	if current_order and current_order.dly_t<time_t then
-		if not current_order.done then	
+	if current_order then
+		if not current_order.active then
 			make_part(self.x,self.y,"coin")
-			current_order.done=true
+			current_order.active=true
 		end
-		if(current_order.btn==2) self.da=get_turn_rate(self,2)
-		if(current_order.btn==3) self.da=get_turn_rate(self,3)
+	self.da=get_turn_rate(self,current_order.btn)
 	end
 end
 
@@ -510,12 +493,9 @@ function hit(self)
 	self.disable=true
 end
 
-function update_actor(a)
-	if (a.disable) return false
-	
-	a:input()
-	
+function move_actor(a)
 	a.angle+=a.da
+	-- rotation damping
 	a.da*=0.96
 	
 	-- simulate air friction
@@ -529,6 +509,24 @@ function update_actor(a)
 	dx,dy=normalize(dx,dy)
 	a.x+=u*a.acc
 	a.y+=v*a.acc
+
+	if a.rolling then
+		if flr(a.frame)!=a.tf then
+			a.frame+=a.df
+		else
+			a.frame=a.tf
+			a.rolling=false
+			a.inverted=not a.inverted
+		end
+	end
+end
+
+function update_actor(a)
+	if (a.disable) return false
+	
+	a:input()
+	
+	move_actor(a)
 
 	-- collision?
 	local hit=false
@@ -559,7 +557,145 @@ function update_actor(a)
 	return true
 end
 
-function _update60()
+local edit_screen={}
+local edit_actor=make_actor(0,4)
+local edit_cmd_i,edit_order_i=1,0
+local edit_cmds_head=nil
+local edit_cur_cmd=nil
+local edit_cmds={
+		{spr=2,id="pull",btn=3,ttl=30},
+		{spr=3,id="push",btn=2,ttl=30},
+		{spr=4,id="roll",btn=0},
+		-- checkpoint. must be collected in order
+		{spr=5,id="wait",ttl=30},
+		{spr=6,id="chk"},
+		{spr=7,id="del"}
+	}
+function edit_screen:update()
+	if(btnp(0)) edit_cmd_i-=1
+	if(btnp(1)) edit_cmd_i+=1
+	edit_cmd_i=mid(edit_cmd_i,1,#edit_cmds)
+	
+	if btnp(2) then
+		if edit_cur_cmd and edit_cur_cmd.prev then
+			edit_cur_cmd=edit_cur_cmd.prev
+		end
+	end
+	if btnp(3) then
+		if edit_cur_cmd and edit_cur_cmd.next then
+			edit_cur_cmd=edit_cur_cmd.next
+		end
+	end
+	
+	if btnp(4) then
+		local cmd=edit_cmds[edit_cmd_i]
+		if cmd.id=="del" then
+			--
+		else
+			local cmd_item={
+				cmd=cmd,
+				t=0,
+				path={},
+				next=edit_cur_cmd and edit_cur_cmd.next or nil,
+				prev=edit_cur_cmd
+			}
+			if edit_cur_cmd then
+				edit_cur_cmd.next=cmd_item
+			end
+			if not edit_cmds_head then
+				edit_cmds_head=cmd_item
+			end			
+			-- move selection
+			edit_cur_cmd=cmd_item
+		
+			-- record segment
+			local a=edit_actor
+  	local btns={}
+  	if cmd.btn then
+ 			btns[cmd.btn]=true
+  	end
+ 		control_actor(a,btns)
+ 		if cmd.ttl then
+  		local dt=cmd.ttl
+ 			for j=1,dt do
+  			move_actor(a)
+  			if j%4==0 then
+  				add(cmd_item.path,{type=1,x=a.x,y=a.y})
+  			end
+  		end
+  		cmd_item.t=dt
+  		add(cmd_item.path,{type=1,x=a.x,y=a.y,actor=clone(a)})
+  	elseif cmd.id=="roll" then
+ 			local dt=0
+ 			while a.rolling do
+  			move_actor(a)  			
+  			if dt%4==0 then
+	  			add(cmd_item.path,{type=1,x=a.x,y=a.y})
+					end
+					dt+=1
+  		end 		
+  		cmd_item.t=dt
+  		add(cmd_item.path,{type=1,x=a.x,y=a.y,actor=clone(a)})
+  	elseif cmd.id=="chk" then
+ 			add(cmd_item.path,{type=2,x=a.x,y=a.y,actor=clone(a)})
+  	end
+		end
+	end
+end
+
+function edit_screen:draw()
+	cls(0)
+	
+	local cmd=edit_cmds_head
+	local t,count=0,0
+	local a=make_actor(0,4)
+	while cmd do
+		local x0,y0,x1,y1=1000,1000,-1000,-1000
+ 	for i=1,#cmd.path do
+ 		local path=cmd.path[i]
+ 		a=path.actor
+ 		local x,y=cam_project(path.x,path.y,8)
+ 		if path.type==1 then
+ 			pset(x,y,6)
+ 		elseif path.type==2 then
+	 		circfill(x,y,2,7) 	
+			end
+			x0,y0=min(x0,x),min(y0,y)
+			x1,y1=max(x1,x),max(y1,y)
+ 	end
+ 	
+ 	if cmd==edit_cur_cmd then
+ 		rect(x0,y0,x1,y1,10)
+ 	end
+ 	t+=cmd.t
+ 	count+=1
+ 	cmd=cmd.next
+	end
+	
+	cam_track(a.x,a.y)
+	x,y,w=cam_project(0,0,8)
+	draw_ground({},x,y,w)
+	x,y=cam_project(a.x,a.y,8)
+	draw_actor(a,x,y)
+	
+	-- draw commandbar
+	palt(14,true)
+	rectfill(0,116,127,127,1)
+	local x=1
+	for i=1,#edit_cmds do
+		local cmd=edit_cmds[i]
+		if i==edit_cmd_i then
+			rectfill(x,117,x+8,126,13)
+		end
+		spr(cmd.spr,x,118)
+		x+=10
+	end
+	
+	print((t/60).."s - "..count.."/256",2,2,7)
+end
+
+local game_screen={}
+function game_screen:update()
 	time_t+=1
 	
 	zbuf_clear()
@@ -574,7 +710,7 @@ function _update60()
 	cam_update()
 end
 
-function _draw()
+function game_screen:draw()
 	cls(6)
 
 	--ground
@@ -616,7 +752,7 @@ function _draw()
  print(plyr.acc,112,2,7)
 end
 
-function _init()
+function game_screen:init()
  	all_parts={
  	["part_cls"]={
  		update=update_part,
@@ -680,21 +816,35 @@ function _init()
 	plyr=make_actor(0,4)
 	plyr.score=0
 		
-	make_order(3,30,30,"up")
-	make_order(3,30,30,"up")
-	make_order(2,30,90,"down")
-	make_order(3,30,90,"up")
-	make_order(3,90,30,"up")
+	make_order(3,30)
+	make_order(3,30)
+	make_order(2,90)
+	make_order(3,45)
+	make_order(3,60)
 end
+
+cur_screen=edit_screen
+function _draw()
+	cur_screen:draw()
+end
+function _update60()
+	cur_screen:update()
+end
+function _init()
+	if cur_screen.init then
+		cur_screen:init()
+	end
+end
+
 __gfx__
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00700700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00077000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00077000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00700700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000eeeeeeeeeeeeeeeeee5555eeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+0000000000000000eeeeeeeeeeeeeeeee5dddd5ee555555eeeeeee5eeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+0070070000000000eee55eeee555555ee5ee5edeee5dd5eeeeeee55eee8ee8ee0000000000000000000000000000000000000000000000000000000000000000
+0007700000000000ee5555eeed5555dee5ee55eeeee55eeee55e55deeed88dee0000000000000000000000000000000000000000000000000000000000000000
+0007700000000000e555555eeed55deeed55555eee5555eeed555deeeee88eee0000000000000000000000000000000000000000000000000000000000000000
+0070070000000000eddddddeeeeddeeeeedd55dee555555eeed5deeeee8dd8ee0000000000000000000000000000000000000000000000000000000000000000
+0000000000000000eeeeeeeeeeeeeeeeeeee5deeeddddddeeeedeeeeeedeedee0000000000000000000000000000000000000000000000000000000000000000
+0000000000000000eeeeeeeeeeeeeeeeeeeedeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
 0000000000000000eeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000000000eeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000000000eeeddeee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -751,51 +901,3 @@ eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000
 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000
 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
