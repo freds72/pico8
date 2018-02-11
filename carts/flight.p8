@@ -99,6 +99,14 @@ function pop(a)
 		return p
 	end
 end
+function addat(array,idx,elt)
+	local len=#array
+	for i=idx,len do
+		array[i+1]=array[i]
+	end
+	array[idx]=elt
+end
+
 -- calls 'fn' method on all elements of a[]
 -- pairs allows add/remove while iterating
 function forall(a,fn)
@@ -394,9 +402,7 @@ function draw_ground(self,x,y,w)
 end
 
 -- actors
-function make_actor(x,y,npc)
- return add(actors,{
- 	x=x,y=y,
+local actor_cls={
  	dx=0,dy=0,
  	acc=0.8,
  	angle=0,
@@ -410,7 +416,9 @@ function make_actor(x,y,npc)
  	draw=draw_actor,
  	input=npc and control_npc or control_plyr,
  	hit=hit
- 	})
+}
+function make_actor(x,y,npc)
+	return add(actors,clone(actor_cls,{x=x,y=y}))
 end
 
 function draw_actor(self,x,y)
@@ -556,130 +564,158 @@ function update_actor(a)
 	})
 	return true
 end
+-- commandbar
+function cmdbar_update(cmds,sel)
+	if(btnp(0)) sel-=1
+	if(btnp(1)) sel+=1
+	sel=mid(sel,1,#cmds)
+		
+	if btnp(4) then
+		local cmd=cmds[sel]
+		cmd.click(cmd)
+	end
+	return sel
+end
+
+function cmdbar_draw(cmds,sel,y)
+	palt(14,true)
+	rectfill(0,y,127,y+9,1)
+	-- center buttons
+	local x=1
+	for i=1,#cmds do
+		local cmd=cmds[i]
+		pal(5,i==sel and 7 or 5)
+		spr(cmd.spr,x,y+1)
+		x+=8
+	end
+	pal()
+end
 
 -- track editor
-local save_screen={}
 local edit_screen={}
-local edit_actor=make_actor(0,4)
-local edit_cmds={}
+local edit_actor=clone(actor_cls,{x=0,y=4})
+-- working track segments
+local edit_segments={}
 local all_cmds={}
-
 local track_id=0
-local all_save_cmds={
-	{spr=1,click=cmd_next_track},
-	{spr=2,click=cmd_prev_track},
-	{spr=3,click=cmd_save_ok},
-	{spr=4,click=cmd_save_exit}
-}
-function save_screen:draw()
-	edit_screen:draw()
-	rectfill(0,110,127,118,1)
-end
-function save_screen:update()
-end
+local hide_cmdbar=false
+local edit_cam_x,edit_cam_y=0,0
 
-function cmd_fly(cmd,btns)
-	local cmd_item=add(edit_cmds,{
+-- track editor command handlers
+function cmd_to_btns(cmd)
+	local btns={}
+ if cmd.btn then
+ 	btns[cmd.btn]=true
+ end
+	return btns
+end
+function cmd_fly(cmd)
+	local segment=add(edit_segments,{
 		cmd=cmd,
 		t=0,
 		path={}
 	})
-	control_actor(edit_actor,btns)
+	control_actor(edit_actor,cmd_to_btns(cmd))
 	local dt=cmd.ttl
 	for j=1,dt do
 		move_actor(edit_actor)
 		if j%4==0 then
-			add(cmd_item.path,{type=1,x=edit_actor.x,y=edit_actor.y})
+			add(segment.path,{type=1,x=edit_actor.x,y=edit_actor.y})
 		end
 	end
-	cmd_item.t=dt
-	cmd_item.actor=clone(edit_actor)
-	add(cmd_item.path,{type=1,x=edit_actor.x,y=edit_actor.y})
+	segment.t=dt
+	segment.actor=clone(edit_actor)
+	add(segment.path,{type=1,x=edit_actor.x,y=edit_actor.y})
+	cam_track(edit_actor.x,edit_actor.y)	
 end
-function cmd_roll(cmd,btns)
-	local cmd_item=add(edit_cmds,{
+function cmd_roll(cmd)
+	local segment=add(edit_segments,{
 		cmd=cmd,
 		t=0,
 		path={}
 	})
-	control_actor(edit_actor,btns)
+	control_actor(edit_actor,cmd_to_btns(cmd))
 	local dt=0
 	while edit_actor.rolling do
 		move_actor(edit_actor)  			
 		if dt%4==0 then
-			add(cmd_item.path,{type=1,x=edit_actor.x,y=edit_actor.y})
+			add(segment.path,{type=1,x=edit_actor.x,y=edit_actor.y})
 		end
 		dt+=1
 	end 		
-	cmd_item.t=dt
-	cmd_item.actor=clone(edit_actor)
-	add(cmd_item.path,{type=1,x=edit_actor.x,y=edit_actor.y})
+	segment.t=dt
+	segment.actor=clone(edit_actor)
+	add(segment.path,{type=1,x=edit_actor.x,y=edit_actor.y})
+	cam_track(edit_actor.x,edit_actor.y)	
 end
 function cmd_checkpoint(cmd)
-	if #edit_cmds>0 then
-		if edit_cmds[#edit_cmds].cmd==cmd then
+	if #edit_segments>0 then
+		if edit_segments[#edit_segments].cmd==cmd then
 			-- cheap error feedback
 			cls(8)
 			flip()
 			return
 		end
 	end
-	local cmd_item=add(edit_cmds,{
+	local segment=add(edit_segments,{
 		cmd=cmd,
 		t=0,
 		path={}
 	})
-	cmd_item.actor=clone(edit_actor)
-	add(cmd_item.path,{type=2,x=edit_actor.x,y=edit_actor.y})
+	control_actor(edit_actor,{})
+	segment.actor=clone(edit_actor)
+	add(segment.path,{type=2,x=edit_actor.x,y=edit_actor.y})
+	cam_track(edit_actor.x,edit_actor.y)	
 end
 function cmd_del()
- pop(edit_cmds)
-	if #edit_cmds>0 then
+	pop(edit_segments)
+	if #edit_segments>0 then
 		-- start over from previous command
-		edit_actor=clone(edit_cmds[#edit_cmds].actor)
+		edit_actor=clone(edit_segments[#edit_segments].actor)
 	else
-		edit_actor=make_actor(0,4)
+		edit_actor=clone(actor_cls,{x=0,y=4})
 	end
+	cam_track(edit_actor.x,edit_actor.y)	
 end
 function cmd_save()
-	--cur_screen=save_screen
-	save_track(edit_cmds,0)
+	save_track(edit_segments,track_id)
 end
 function cmd_load()
-	--cur_screen=load_screen
-	load_track(0)
+	load_track(track_id)
 end
 function cmd_exit()
 	-- release memory
-	edit_cmds={}
+	edit_segments={}
 	edit_actor=nil
 	cur_screen=start_screen
 end
+function cmd_next_track()
+	track_id=mid(track_id+1,0,15)
+end
+function cmd_prev_track()
+	track_id=mid(track_id-1,0,15)
+end
 function load_track(id)
-	edit_cmds={}
-	edit_actor=make_actor(0,4)
+	edit_segments={}
+	edit_actor=clone(actor_cls,{x=0,y=4})
 	local mem=0x2000+id*256
 	local id=peek(mem)
 	while id!=0 do
 		local cmd=all_cmds[id]
- 	local btns={}
- 	if cmd.btn then
- 		btns[cmd.btn]=true
- 	end
-		cmd.click(cmd,btns)	
+		cmd.click(cmd)
 		mem+=1
 		id=peek(mem)
 	end
 end
-function save_track(cmds,id)
-	if(#cmds>254) assert("track too long")
+function save_track(segments,id)
+	if(#segments>254) assert("track too long")
 	
  -- map data
 	local mem=0x2000+id*256
 	local addr=mem
-	for i=1,#cmds do
-		local cmd=cmds[i]
-		poke(addr,cmd.cmd.id)
+	for i=1,#segments do
+		local segment=segments[i]
+		poke(addr,segment.cmd.id)
 		addr+=1
 	end
 	poke(addr,0)
@@ -695,42 +731,33 @@ all_cmds={
 		{spr=5,click=cmd_checkpoint},
 		{spr=6,click=cmd_del},
 		{spr=8,click=cmd_load},
+		{spr=10,click=cmd_next_track},
+		{spr=11,click=cmd_prev_track},
 		{spr=7,click=cmd_save},
 		{spr=9,click=cmd_exit}
 	}
 -- assign cmd index
--- no more than 15 commands!!!
 -- id and spr must match for fly commands
 for i=1,#all_cmds do
 	all_cmds[i].id=i
 end
-function addat(array,idx,elt)
-	local len=#array
-	for i=idx,len do
-		array[i+1]=array[i]
-	end
-	array[idx]=elt
-end
-function pop(array)
-	local len=#array
-	if(len<=0) return
-	local elt=array[len]
-	array[len]=nil
-	return elt
-end
 
+function edit_screen:init()
+	poke(0x5f2d, 1)
+	cam_track(0,4)
+end
 function edit_screen:update()
-	if(btnp(0)) edit_cmd_i-=1
-	if(btnp(1)) edit_cmd_i+=1
-	edit_cmd_i=mid(edit_cmd_i,1,#all_cmds)
-		
-	if btnp(4) then
-		local cmd=all_cmds[edit_cmd_i]
- 	local btns={}
- 	if cmd.btn then
- 		btns[cmd.btn]=true
- 	end
-		cmd.click(cmd,btns)	
+	hide_cmdbar=false
+	if btn(5) then
+		if(btn(0)) cam_x-=1
+		if(btn(1)) cam_x+=1
+		if(btn(2)) cam_y-=1
+		if(btn(3)) cam_y+=1
+
+ 	hide_cmdbar=true
+		cam_track(cam_x,cam_y)
+	else
+		edit_cmd_i=cmdbar_update(all_cmds,edit_cmd_i)
 	end
 end
 
@@ -738,43 +765,39 @@ function edit_screen:draw()
 	cls(0)
 	
 	local t,count=0,0
-	local a=make_actor(0,4)
-	for k=1,#edit_cmds do
-		local cmd=edit_cmds[k]
- 	a=cmd.actor
- 	for i=1,#cmd.path do
- 		local path=cmd.path[i]
- 		local x,y=cam_project(path.x,path.y,8)
- 		if path.type==1 then
- 			pset(x,y,6)
- 		elseif path.type==2 then
-	 		circfill(x,y,2,7) 	
+	local a
+	for k=1,#edit_segments do
+		local cmd=edit_segments[k]
+		a=cmd.actor
+		for i=1,#cmd.path do
+			local path=cmd.path[i]
+			local x,y=cam_project(path.x,path.y,8)
+			if path.type==1 then
+				pset(x,y,path.y<4 and 8 or 7)
+			elseif path.type==2 then
+ 			circfill(x,y,2,7) 	
 			end
- 	end
- 	
- 	t+=cmd.t
- 	count+=1
+		end 	
+		t+=cmd.t
+		count+=1
 	end
 	
-	cam_track(a.x,a.y)
 	x,y,w=cam_project(0,0,8)
 	draw_ground({},x,y,w)
-	x,y=cam_project(a.x,a.y,8)
-	draw_actor(a,x,y)
+	
+	if a then
+		x,y=cam_project(a.x,a.y,8)
+		draw_actor(a,x,y)
+	end
 	
 	-- draw commandbar
-	palt(14,true)
-	rectfill(0,116,127,127,1)
-	local x=1
-	for i=1,#all_cmds do
-		local cmd=all_cmds[i]
-		pal(5,i==edit_cmd_i and 7 or 5)
-		spr(cmd.spr,x,118)
-		x+=10
+	if not hide_cmdbar then
+		cmdbar_draw(all_cmds,edit_cmd_i,116)
 	end
-	pal()
 	
-	print((t/60).."s - "..count.."/256",2,2,7)
+	-- 
+	print("#"..track_id..": "..(t/60).."s - "..count.."/256",2,2,7)
+	print(stat(0),100,2,7)
 end
 
 local game_screen={}
@@ -832,7 +855,6 @@ function game_screen:draw()
 	fillp()
 	rectfill(0,0,127,8,1)
 	print((flr(1000*stat(1))/10).."%",2,2,7)
- print(plyr.acc,112,2,7)
 end
 
 function game_screen:init()
@@ -920,14 +942,14 @@ function _init()
 end
 
 __gfx__
-00000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000000000000000000000000000000000000000000000
-00000000eeeeeeeeeeeeeeeeee5555eee555555eeeeeee5eeeeeeeeeeee55eeeeee55eeeeeeeeeee000000000000000000000000000000000000000000000000
-00700700eee55eeee555555ee5eeee5eee5ee5eeeeeee55eee5ee5eeeee55eeeee5555eeee5555ee000000000000000000000000000000000000000000000000
-00077000ee5555eeee5555eee5ee5eeeeee55eeee55e55eeeee55eeeee5555eeeee55eeeee5555ee000000000000000000000000000000000000000000000000
-00077000e555555eeee55eeee5ee55eeee5555eeee555eeeeee55eeeeee55eeeeee55eeeee5555ee000000000000000000000000000000000000000000000000
-00700700eeeeeeeeeeeeeeeeee55555ee555555eeee5eeeeee5ee5eee5eeee5ee5eeee5eee5555ee000000000000000000000000000000000000000000000000
-00000000eeeeeeeeeeeeeeeeeeee55eeeeeeeeeeeeeeeeeeeeeeeeeee555555ee555555eeeeeeeee000000000000000000000000000000000000000000000000
-00000000eeeeeeeeeeeeeeeeeeee5eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000000000000000000000000000000000000000000000
+00000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
+00000000eeeeeeeeeeeeeeeeee5555eee555555eeeeeee5eeeeeeeeeeee55eeeeee55eeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
+00700700eee55eeee555555ee5eeee5eee5ee5eeeeeee55eee5ee5eeeee55eeeee5555eeee5555eeeeee5eeeeeeeeeee00000000000000000000000000000000
+00077000ee5555eeee5555eee5ee5eeeeee55eeee55e55eeeee55eeeee5555eeeee55eeeee5555eeeee555eeeee555ee00000000000000000000000000000000
+00077000e555555eeee55eeee5ee55eeee5555eeee555eeeeee55eeeeee55eeeeee55eeeee5555eeeeee5eeeeeeeeeee00000000000000000000000000000000
+00700700eeeeeeeeeeeeeeeeee55555ee555555eeee5eeeeee5ee5eee5eeee5ee5eeee5eee5555eee5eeee5ee5eeee5e00000000000000000000000000000000
+00000000eeeeeeeeeeeeeeeeeeee55eeeeeeeeeeeeeeeeeeeeeeeeeee555555ee555555eeeeeeeeee555555ee555555e00000000000000000000000000000000
+00000000eeeeeeeeeeeeeeeeeeee5eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -986,3 +1008,11 @@ eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000
 __map__
 0104040504040301040302050404020201010504040301010105040403010403050401010405030403010405040404040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0101010101040404030504040202020405010101010504040401050301010504040404040301010504040405030101000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0101010300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0404040404040105040404040403050101010504040401040504040404040403050101050404040501000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
