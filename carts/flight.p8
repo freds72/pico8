@@ -559,117 +559,122 @@ end
 
 local edit_screen={}
 local edit_actor=make_actor(0,4)
-local edit_cmd_i,edit_order_i=1,0
-local edit_cmds_head=nil
-local edit_cur_cmd=nil
-local edit_cmds={
-		{spr=2,id="pull",btn=3,ttl=30},
-		{spr=3,id="push",btn=2,ttl=30},
-		{spr=4,id="roll",btn=0},
+local edit_cmds={}
+
+function cmd_fly(cmd,btns)
+	local cmd_item=add(edit_cmds,{
+		cmd=cmd,
+		t=0,
+		path={}
+	})
+	control_actor(edit_actor,btns)
+	local dt=cmd.ttl
+	for j=1,dt do
+		move_actor(edit_actor)
+		if j%4==0 then
+			add(cmd_item.path,{type=1,x=edit_actor.x,y=edit_actor.y})
+		end
+	end
+	cmd_item.t=dt
+	cmd_item.actor=clone(edit_actor)
+	add(cmd_item.path,{type=1,x=edit_actor.x,y=edit_actor.y})
+end
+function cmd_roll(cmd,btns)
+	local cmd_item=add(edit_cmds,{
+		cmd=cmd,
+		t=0,
+		path={}
+	})
+	control_actor(edit_actor,btns)
+	local dt=0
+	while edit_actor.rolling do
+		move_actor(edit_actor)  			
+		if dt%4==0 then
+			add(cmd_item.path,{type=1,x=edit_actor.x,y=edit_actor.y})
+		end
+		dt+=1
+	end 		
+	cmd_item.t=dt
+	cmd_item.actor=clone(edit_actor)
+	add(cmd_item.path,{type=1,x=edit_actor.x,y=edit_actor.y})
+end
+function cmd_checkpoint(cmd)
+	local cmd_item=add(edit_cmds,{
+		cmd=cmd,
+		t=0,
+		path={}
+	})
+	cmd_item.actor=clone(edit_actor)
+	add(cmd_item.path,{type=2,x=edit_actor.x,y=edit_actor.y})
+end
+function cmd_del()
+ pop(edit_cmds)
+	if #edit_cmds>0 then
+		-- start over from previous command
+		edit_actor=clone(edit_cmds[#edit_cmds].actor)
+	else
+		edit_actor=make_actor(0,4)
+	end
+end
+local all_cmds={
+		{spr=2,click=cmd_fly,btn=3,ttl=30},
+		{spr=3,click=cmd_fly,btn=2,ttl=30},
+		{spr=4,click=cmd_roll,btn=0},
 		-- checkpoint. must be collected in order
-		{spr=5,id="wait",ttl=30},
-		{spr=6,id="chk"},
-		{spr=7,id="del"}
+		{spr=5,click=cmd_fly,ttl=30},
+		{spr=6,click=cmd_checkpoint},
+		{spr=7,click=cmd_del}
 	}
+function addat(array,idx,elt)
+	local len=#array
+	for i=idx,len do
+		array[i+1]=array[i]
+	end
+	array[idx]=elt
+end
+function pop(array)
+	local len=#array
+	if(len<=0) return
+	local elt=array[len]
+	array[len]=nil
+	return elt
+end
+
 function edit_screen:update()
 	if(btnp(0)) edit_cmd_i-=1
 	if(btnp(1)) edit_cmd_i+=1
-	edit_cmd_i=mid(edit_cmd_i,1,#edit_cmds)
-	
-	if btnp(2) then
-		if edit_cur_cmd and edit_cur_cmd.prev then
-			edit_cur_cmd=edit_cur_cmd.prev
-		end
-	end
-	if btnp(3) then
-		if edit_cur_cmd and edit_cur_cmd.next then
-			edit_cur_cmd=edit_cur_cmd.next
-		end
-	end
-	
-	if btnp(4) then
-		local cmd=edit_cmds[edit_cmd_i]
-		if cmd.id=="del" then
-			--
-		else
-			local cmd_item={
-				cmd=cmd,
-				t=0,
-				path={},
-				next=edit_cur_cmd and edit_cur_cmd.next or nil,
-				prev=edit_cur_cmd
-			}
-			if edit_cur_cmd then
-				edit_cur_cmd.next=cmd_item
-			end
-			if not edit_cmds_head then
-				edit_cmds_head=cmd_item
-			end			
-			-- move selection
-			edit_cur_cmd=cmd_item
+	edit_cmd_i=mid(edit_cmd_i,1,#all_cmds)
 		
-			-- record segment
-			local a=edit_actor
-  	local btns={}
-  	if cmd.btn then
- 			btns[cmd.btn]=true
-  	end
- 		control_actor(a,btns)
- 		if cmd.ttl then
-  		local dt=cmd.ttl
- 			for j=1,dt do
-  			move_actor(a)
-  			if j%4==0 then
-  				add(cmd_item.path,{type=1,x=a.x,y=a.y})
-  			end
-  		end
-  		cmd_item.t=dt
-  		add(cmd_item.path,{type=1,x=a.x,y=a.y,actor=clone(a)})
-  	elseif cmd.id=="roll" then
- 			local dt=0
- 			while a.rolling do
-  			move_actor(a)  			
-  			if dt%4==0 then
-	  			add(cmd_item.path,{type=1,x=a.x,y=a.y})
-					end
-					dt+=1
-  		end 		
-  		cmd_item.t=dt
-  		add(cmd_item.path,{type=1,x=a.x,y=a.y,actor=clone(a)})
-  	elseif cmd.id=="chk" then
- 			add(cmd_item.path,{type=2,x=a.x,y=a.y,actor=clone(a)})
-  	end
-		end
+	if btnp(4) then
+		local cmd=all_cmds[edit_cmd_i]
+ 	local btns={}
+ 	if cmd.btn then
+ 		btns[cmd.btn]=true
+ 	end
+		cmd.click(cmd,btns)	
 	end
 end
 
 function edit_screen:draw()
 	cls(0)
 	
-	local cmd=edit_cmds_head
 	local t,count=0,0
 	local a=make_actor(0,4)
-	while cmd do
-		local x0,y0,x1,y1=1000,1000,-1000,-1000
+	for k=1,#edit_cmds do
+		local cmd=edit_cmds[k]
+ 	a=cmd.actor
  	for i=1,#cmd.path do
  		local path=cmd.path[i]
- 		a=path.actor
  		local x,y=cam_project(path.x,path.y,8)
  		if path.type==1 then
  			pset(x,y,6)
  		elseif path.type==2 then
 	 		circfill(x,y,2,7) 	
 			end
-			x0,y0=min(x0,x),min(y0,y)
-			x1,y1=max(x1,x),max(y1,y)
  	end
  	
- 	if cmd==edit_cur_cmd then
- 		rect(x0,y0,x1,y1,10)
- 	end
  	t+=cmd.t
  	count+=1
- 	cmd=cmd.next
 	end
 	
 	cam_track(a.x,a.y)
@@ -682,8 +687,8 @@ function edit_screen:draw()
 	palt(14,true)
 	rectfill(0,116,127,127,1)
 	local x=1
-	for i=1,#edit_cmds do
-		local cmd=edit_cmds[i]
+	for i=1,#all_cmds do
+		local cmd=all_cmds[i]
 		if i==edit_cmd_i then
 			rectfill(x,117,x+8,126,13)
 		end
