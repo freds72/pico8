@@ -560,6 +560,7 @@ end
 local edit_screen={}
 local edit_actor=make_actor(0,4)
 local edit_cmds={}
+local all_cmds={}
 
 function cmd_fly(cmd,btns)
 	local cmd_item=add(edit_cmds,{
@@ -599,6 +600,14 @@ function cmd_roll(cmd,btns)
 	add(cmd_item.path,{type=1,x=edit_actor.x,y=edit_actor.y})
 end
 function cmd_checkpoint(cmd)
+	if #edit_cmds>0 then
+		if edit_cmds[#edit_cmds].cmd==cmd then
+			-- cheap error feedback
+			cls(8)
+			flip()
+			return
+		end
+	end
 	local cmd_item=add(edit_cmds,{
 		cmd=cmd,
 		t=0,
@@ -616,15 +625,64 @@ function cmd_del()
 		edit_actor=make_actor(0,4)
 	end
 end
-local all_cmds={
+function cmd_save()
+	cur_screen=save_screen
+end
+function cmd_load()
+	cur_screen=load_screen
+end
+function cmd_exit()
+	-- release memory
+	edit_cmds={}
+	cur_screen=start_screen
+end
+function load_track(id)
+	edit_cmds={}
+	local mem=0x2000+id*256
+	local id=peek(mem)
+	while id!=0 do
+		local cmd=all_cmds[id]
+ 	local btns={}
+ 	if cmd.btn then
+ 		btns[cmd.btn]=true
+ 	end
+		cmd.click(cmd,btns)	
+		mem+=1
+		id=peek(mem)
+	end
+end
+function save_track(cmds,id)
+	if(#cmds>255) assert("track too long")
+	
+ -- map data
+	local mem=0x2000+id*256
+	local addr=mem
+	for i=1,#cmds do
+		local cmd=cmds[i]
+		poke(addr,cmd.id)
+		addr+=1
+	end
+	poke(addr,0)
+	cstore(mem,mem,256)
+end
+
+all_cmds={
 		{spr=2,click=cmd_fly,btn=3,ttl=30},
 		{spr=3,click=cmd_fly,btn=2,ttl=30},
 		{spr=4,click=cmd_roll,btn=0},
 		-- checkpoint. must be collected in order
 		{spr=5,click=cmd_fly,ttl=30},
 		{spr=6,click=cmd_checkpoint},
-		{spr=7,click=cmd_del}
+		{spr=7,click=cmd_del},
+		{spr=9,click=cmd_load},
+		{spr=8,click=cmd_save},
+		{spr=10,click=cmd_exit}
 	}
+-- assign cmd index
+-- no more than 15 commands!!!
+for i=1,#all_cmds do
+	all_cmds[i].id=i
+end
 function addat(array,idx,elt)
 	local len=#array
 	for i=idx,len do
@@ -689,12 +747,11 @@ function edit_screen:draw()
 	local x=1
 	for i=1,#all_cmds do
 		local cmd=all_cmds[i]
-		if i==edit_cmd_i then
-			rectfill(x,117,x+8,126,13)
-		end
+		pal(5,i==edit_cmd_i and 7 or 5)
 		spr(cmd.spr,x,118)
 		x+=10
 	end
+	pal()
 	
 	print((t/60).."s - "..count.."/256",2,2,7)
 end
@@ -842,14 +899,14 @@ function _init()
 end
 
 __gfx__
-0000000000000000eeeeeeeeeeeeeeeeee5555eeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-0000000000000000eeeeeeeeeeeeeeeee5dddd5ee555555eeeeeee5eeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
-0070070000000000eee55eeee555555ee5ee5edeee5dd5eeeeeee55eee8ee8ee0000000000000000000000000000000000000000000000000000000000000000
-0007700000000000ee5555eeed5555dee5ee55eeeee55eeee55e55deeed88dee0000000000000000000000000000000000000000000000000000000000000000
-0007700000000000e555555eeed55deeed55555eee5555eeed555deeeee88eee0000000000000000000000000000000000000000000000000000000000000000
-0070070000000000eddddddeeeeddeeeeedd55dee555555eeed5deeeee8dd8ee0000000000000000000000000000000000000000000000000000000000000000
-0000000000000000eeeeeeeeeeeeeeeeeeee5deeeddddddeeeedeeeeeedeedee0000000000000000000000000000000000000000000000000000000000000000
-0000000000000000eeeeeeeeeeeeeeeeeeeedeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+0000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000
+0000000000000000eeeeeeeeeeeeeeeeee5555eee555555eeeeeee5eeeeeeeeeeee55eeeeee55eeeeeeeeeee0000000000000000000000000000000000000000
+0070070000000000eee55eeee555555ee5eeee5eee5ee5eeeeeee55eee5ee5eeeee55eeeee5555eeee5555ee0000000000000000000000000000000000000000
+0007700000000000ee5555eeee5555eee5ee5eeeeee55eeee55e55eeeee55eeeee5555eeeee55eeeee5555ee0000000000000000000000000000000000000000
+0007700000000000e555555eeee55eeee5ee55eeee5555eeee555eeeeee55eeeeee55eeeeee55eeeee5555ee0000000000000000000000000000000000000000
+0070070000000000eeeeeeeeeeeeeeeeee55555ee555555eeee5eeeeee5ee5eee5eeee5ee5eeee5eee5555ee0000000000000000000000000000000000000000
+0000000000000000eeeeeeeeeeeeeeeeeeee55eeeeeeeeeeeeeeeeeeeeeeeeeee555555ee555555eeeeeeeee0000000000000000000000000000000000000000
+0000000000000000eeeeeeeeeeeeeeeeeeee5eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000
 0000000000000000eeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000000000eeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000000000eeeddeee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
