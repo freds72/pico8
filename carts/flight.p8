@@ -5,7 +5,10 @@ __lua__
 -- by freds72
 -- screen mgt
 local cur_screen
-
+-- track replay
+local all_cmds={}
+local track_id=0
+--
 local time_t,time_dt=0,0
 local dither_pat={
   0b1111111111111111,
@@ -109,7 +112,7 @@ end
 
 -- calls 'fn' method on all elements of a[]
 -- pairs allows add/remove while iterating
-function forall(a,fn)
+function filter(a,fn)
 	fn=fn or "update"
 	for _,v in pairs(a) do
 		if not v[fn](v) then
@@ -268,32 +271,6 @@ end
 local plyr,lead
 local actors={}
 
-local orders={}
-function make_order(btn,ttl)
-	add(orders,{
-		btn=btn,
-		ttl=ttl,
-		check=false
-	})
-end
-
-function pop_order()
-	if #orders>1 then
-		local o=orders[#orders]
-		orders[#orders]=nil
-		o.t=time_t+o.ttl
-		return o
-	end
-end
-
-local current_order
-function update_orders(btn)
-	if not current_order or current_order.t<time_t then
-	 -- need new orders!
-		current_order=pop_order()
-	end
-end
-
 local clouds={}
 function make_cloud(x,y,r,z)
 	add(clouds,{
@@ -402,25 +379,6 @@ function draw_ground(self,x,y,w)
 end
 
 -- actors
-local actor_cls={
- 	dx=0,dy=0,
- 	acc=0.8,
- 	angle=0,
- 	da=0,
- 	frames={64,66,68,70,72,74,76},
- 	frame=1,
- 	df=0,
- 	rolling=false,
- 	inverted=false,
- 	update=update_actor,
- 	draw=draw_actor,
- 	input=npc and control_npc or control_plyr,
- 	hit=hit
-}
-function make_actor(x,y,npc)
-	return add(actors,clone(actor_cls,{x=x,y=y}))
-end
-
 function draw_actor(self,x,y)
 	local s=self.frames[flr(self.frame)]
 	rspr(s,32,16,self.angle,2)
@@ -476,23 +434,30 @@ function control_actor(self,btns)
 			self.rolling=true
 			if self.inverted then
 				self.df=-0.1
-				self.tf=1
+				self.target_frame=1
 			else
 				self.df=0.1
-				self.tf=#self.frames
+				self.target_frame=#self.frames
 			end
 		end
 	end
 end
 
-function control_npc(self)
-	if current_order then
-		if not current_order.active then
-			make_part(self.x,self.y,"coin")
-			current_order.active=true
-		end
-	self.da=get_turn_rate(self,current_order.btn)
+local track_section=0
+function follow_track_async(a)
+	local mem=0x2000+track_id*256
+	local id=peek(mem)
+	while id!=0 do
+		local cmd=all_cmds[id]
+		track_section+=1
+		cmd.apply(cmd,a)
+		mem+=1
+		id=peek(mem)
 	end
+end
+
+function process_track(self)
+	assert(coresume(self.cor_track,self))
 end
 
 function hit(self)
@@ -519,14 +484,15 @@ function move_actor(a)
 	a.y+=v*a.acc
 
 	if a.rolling then
-		if flr(a.frame)!=a.tf then
+		if flr(a.frame)!=a.target_frame then
 			a.frame+=a.df
 		else
-			a.frame=a.tf
+			a.frame=a.target_frame
 			a.rolling=false
 			a.inverted=not a.inverted
 		end
 	end
+	return u,v,dx,dy
 end
 
 function update_actor(a)
@@ -534,7 +500,7 @@ function update_actor(a)
 	
 	a:input()
 	
-	move_actor(a)
+	local u,v,dx,dy=move_actor(a)
 
 	-- collision?
 	local hit=false
@@ -564,6 +530,26 @@ function update_actor(a)
 	})
 	return true
 end
+
+local actor_cls={
+ 	dx=0,dy=0,
+ 	acc=0.8,
+ 	angle=0,
+ 	da=0,
+ 	frames={64,66,68,70,72,74,76},
+ 	frame=1,
+ 	df=0,
+ 	rolling=false,
+ 	inverted=false,
+ 	update=update_actor,
+ 	draw=draw_actor,
+ 	hit=hit
+}
+function make_actor(x,y)
+	local a=clone(actor_cls,{x=x,y=y})
+	return add(actors,a)
+end
+
 -- commandbar
 function cmdbar_update(cmds,sel)
 	if(btnp(0)) sel-=1
@@ -596,17 +582,15 @@ local edit_screen={}
 local edit_actor=clone(actor_cls,{x=0,y=4})
 -- working track segments
 local edit_segments={}
-local all_cmds={}
-local track_id=0
 local hide_cmdbar=false
 local edit_cam_x,edit_cam_y=0,0
 
 -- track editor command handlers
 function cmd_to_btns(cmd)
 	local btns={}
- if cmd.btn then
- 	btns[cmd.btn]=true
- end
+	if cmd.btn then
+		btns[cmd.btn]=true
+	end
 	return btns
 end
 function cmd_fly(cmd)
@@ -628,6 +612,10 @@ function cmd_fly(cmd)
 	add(segment.path,{type=1,x=edit_actor.x,y=edit_actor.y})
 	cam_track(edit_actor.x,edit_actor.y)	
 end
+function apply_fly_async(cmd,a)
+	control_actor(a,cmd_to_btns(cmd))
+	wait_async(cmd.ttl)
+end
 function cmd_roll(cmd)
 	local segment=add(edit_segments,{
 		cmd=cmd,
@@ -637,16 +625,22 @@ function cmd_roll(cmd)
 	control_actor(edit_actor,cmd_to_btns(cmd))
 	local dt=0
 	while edit_actor.rolling do
-		move_actor(edit_actor)  			
+		move_actor(edit_actor)
 		if dt%4==0 then
 			add(segment.path,{type=1,x=edit_actor.x,y=edit_actor.y})
 		end
 		dt+=1
-	end 		
+	end
 	segment.t=dt
 	segment.actor=clone(edit_actor)
 	add(segment.path,{type=1,x=edit_actor.x,y=edit_actor.y})
 	cam_track(edit_actor.x,edit_actor.y)	
+end
+function apply_roll_async(cmd,a)
+	control_actor(a,cmd_to_btns(cmd))
+	while a.rolling do
+		yield()
+	end
 end
 function cmd_checkpoint(cmd)
 	if #edit_segments>0 then
@@ -665,7 +659,12 @@ function cmd_checkpoint(cmd)
 	control_actor(edit_actor,{})
 	segment.actor=clone(edit_actor)
 	add(segment.path,{type=2,x=edit_actor.x,y=edit_actor.y})
-	cam_track(edit_actor.x,edit_actor.y)	
+	cam_track(edit_actor.x,edit_actor.y)
+end
+function apply_checkpoint_async(cmd,a)
+	control_actor(a,{})
+	make_part(a.x,a.y,"coin")
+	-- do not take a frame
 end
 function cmd_del()
 	pop(edit_segments)
@@ -723,12 +722,24 @@ function save_track(segments,id)
 end
 
 all_cmds={
-		{spr=1,click=cmd_fly,btn=3,ttl=30},
-		{spr=2,click=cmd_fly,btn=2,ttl=30},
-		{spr=3,click=cmd_roll,btn=0},
-		-- checkpoint. must be collected in order
-		{spr=4,click=cmd_fly,ttl=30},
-		{spr=5,click=cmd_checkpoint},
+		{spr=1,
+		click=cmd_fly,
+		apply=apply_fly_async,
+		btn=3,ttl=30},
+		{spr=2,
+		click=cmd_fly,
+		apply=apply_fly_async,
+		btn=2,ttl=30},
+		{spr=3,
+		click=cmd_roll,
+		apply=apply_roll_async,
+		btn=0},
+		{spr=4,
+		click=cmd_fly,
+		apply=apply_fly_async,ttl=30},
+		{spr=5,
+		click=cmd_checkpoint,
+		apply=apply_checkpoint_async},
 		{spr=6,click=cmd_del},
 		{spr=8,click=cmd_load},
 		{spr=10,click=cmd_next_track},
@@ -806,12 +817,11 @@ function game_screen:update()
 	
 	zbuf_clear()
 	-- known bug: one frame delay
-	cam_track(plyr.x,plyr.y)
+	cam_track(lead.x,lead.y)
 	
-	forall(actors)
-	forall(parts)
-	forall(clouds)
-	update_orders()
+	filter(actors)
+	filter(parts)
+	filter(clouds)
 
 	cam_update()
 end
@@ -855,6 +865,7 @@ function game_screen:draw()
 	fillp()
 	rectfill(0,0,127,8,1)
 	print((flr(1000*stat(1))/10).."%",2,2,7)
+	print(track_section,100,2,7)
 end
 
 function game_screen:init()
@@ -915,24 +926,23 @@ function game_screen:init()
 			make_cloud(x+r/2,y+rnd(2)-1,r,z)
 			x+=r
 		end
-	end	
+	end
 
-	lead=make_actor(24,4,true)
+	lead=make_actor(24,4)
+	lead.input=process_track
+	lead.cor_track=cocreate(follow_track_async)
 	plyr=make_actor(0,4)
+	plyr.input=process_input
 	plyr.score=0
-		
-	make_order(3,30)
-	make_order(3,30)
-	make_order(2,90)
-	make_order(3,45)
-	make_order(3,60)
 end
 
-cur_screen=edit_screen
+cur_screen=game_screen
 function _draw()
 	cur_screen:draw()
+	time_dt=0
 end
 function _update60()
+	time_dt+=1
 	cur_screen:update()
 end
 function _init()
