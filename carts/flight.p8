@@ -347,20 +347,24 @@ function draw_circ_part(self,x,y)
 	circfill(x,y,self.r,self.c or 13)
 end
 
-function update_coin(c)
-	if(c.t<time_t) return false
+function draw_clouds(z,fp)
+	--[[
+	local x,y,w=cam_project(0,0,z)
+	local dist=16
+	local dx,dy=w*(cam_x%dist),w*(cam_y%dist)
 	
-	if sqr_dist(c.x,c.y,plyr.x,plyr.y)<4 then
-		plyr.score+=1
-		-- todo: sound + feedback
-		return false
+	fillp(fp)
+	y=-dy
+	while y<127 do
+		x=-dx
+		while x<127 do
+			circfill(64+x,64-y,w*8,13)
+			circfill(64-x-2*dx,64-y,w*8,13)
+			x+=w*dist
+		end
+		y+=w*dist
 	end
-	zbuf_write(c)
-	return true
-end
-
-function draw_coin_part(self,x,y)
-	circfill(x,y,2,7)
+	]]
 end
 
 function draw_ground(self,x,y,w)
@@ -368,7 +372,7 @@ function draw_ground(self,x,y,w)
 	pal()
 	for j=-8,8 do
 		x,y,w=cam_project(0,0,j)
- 	local dx=w*(cam_x%16)
+		local dx=w*(cam_x%16)
 		x=-dx
 		while x<127 do
 			pset(64+x,y,13)
@@ -383,23 +387,18 @@ function draw_actor(self,x,y)
 	local s=self.frames[flr(self.frame)]
 	rspr(s,32,16,self.angle,2)
 	
-	x-=8
-	y-=8
 	palt(14,true)
-	--[[
 	palt(0,false)
-	pal(7,0)
- pal(6,0)
-	spr(36,x+1,y,2,2)
-	spr(36,x-1,y,2,2)
-	spr(36,x,y+1,2,2)
-	spr(36,x,y-1,2,2)
-	pal()
-	]]
-	
-	pal(6,13)
+	pal(6,self.in_sight and 8 or 0)
 	palt(14,true)
-	spr(36,x,y,2,2)
+	spr(36,x-8,y-8,2,2)
+
+--	circ(x,y,	sqrt(256),7)
+	for _,f in pairs(self.f) do
+		local x1,y1=x+f[2],y-f[3]
+		line(x,y,x1,y1,11)
+		print(f[1],x1,y1-6,7)
+	end
 end
 
 function draw_actor_shadow(self,x,y,w)
@@ -416,21 +415,88 @@ function get_turn_rate(self,b)
 	return tr
 end
 
-function process_input(self)
-	local btns={
-		[0]=btnp(0),
-		[1]=btnp(1),
-		[2]=btn(2),
-		[3]=btn(3)
-	}
-	control_actor(self,btns)
+function arrive(self,pos)
+end
+function follow(self,other,dist)
+	-- target point
+	local x,y=other.x-dist*other.u,other.y-dist*other.v
+	--return normalize(x-self.x,y-self.y)
+	return x-self.x,y-self.y
+end
+function evade(self,other,dist)
+	self.in_sight=false
+
+	local dx,dy=other.x-self.x,other.y-self.y
+	local d=dx*dx+dy*dy
+	if d<dist*dist then
+		d=sqrt(d)
+		if abs(d)>0.001 then
+			dx/=d
+			dy/=d
+		end
+		local angle=other.u*dx+other.v*dy
+		-- in cone?
+		if angle<-0.9 then
+			self.in_sight=true
+			return -self.v,self.u
+		end
+	end
+	return 0,0
+end
+function avoid(self,dist)
+	local dx,dy=0,0
+	for _,other in pairs(actors) do
+		if other!=self then
+			local ddx,ddy=other.x-self.x,other.y-self.y
+			local d=ddx*ddx+ddy*ddy
+			local scale=1-smoothstep(d/dist*dist)
+			--[[
+			d=sqrt(d)
+			if abs(d)>0.001 then
+				ddx/=d
+				ddy/=d
+			end
+			]]
+			dx-=scale*ddx
+			dy-=scale*ddy
+		end
+	end
+	-- avoid ground
+	if self.y<32 then
+		--dy+=-self.y/32
+		dy+=abs(self.y)
+	end
+	return dx,dy
 end
 
-function control_actor(self,btns)
+function control_npc(self)
+	local fx,fy,dx,dy=0,0,0,0
+	self.f={}
+	fx,fy=evade(self,plyr,32)
+	dx+=fx
+	dy+=fy
+	--add(self.f,{"evade",fx,fy})
+	fx,fy=avoid(self,32)
+	dx+=fx
+	dy+=fy
+	add(self.f,{"avoid",fx,fy})
+	fx,fy=follow(self,plyr,32)
+	dx+=fx
+	dy+=fy
+	--add(self.f,{"follow",fx,fy})
+	
+	-- project force into thrust normal
+	-- pull/push based on sign
+	dx,dy=normalize(dx,dy)
+	local d=-self.v*dx+self.u*dy
+	self.da=lerp(0.005,-0.01,smoothstep((d+1)/2))
+end
+
+function control_plyr(self)
 	if not self.rolling then
-		if(btns[2]) self.da=get_turn_rate(self,2)
-		if(btns[3]) self.da=get_turn_rate(self,3)
-		if btns[0] or btns[1] then
+		if(btn(2)) self.da=get_turn_rate(self,2)
+		if(btn(3)) self.da=get_turn_rate(self,3)
+		if btnp(0) or btnp(1) then
 			self.rolling=true
 			if self.inverted then
 				self.df=-0.1
@@ -441,23 +507,6 @@ function control_actor(self,btns)
 			end
 		end
 	end
-end
-
-local track_section=0
-function follow_track_async(a)
-	local mem=0x2000+track_id*256
-	local id=peek(mem)
-	while id!=0 do
-		local cmd=all_cmds[id]
-		track_section+=1
-		cmd.apply(cmd,a)
-		mem+=1
-		id=peek(mem)
-	end
-end
-
-function process_track(self)
-	assert(coresume(self.cor_track,self))
 end
 
 function hit(self)
@@ -479,7 +528,6 @@ function move_actor(a)
 	a.dx+=dx
 	a.dy+=dy
 	local u,v=normalize(a.dx,a.dy)
-	dx,dy=normalize(dx,dy)
 	a.x+=u*a.acc
 	a.y+=v*a.acc
 
@@ -492,6 +540,9 @@ function move_actor(a)
 			a.inverted=not a.inverted
 		end
 	end
+	a.u=u
+	a.v=v
+	dx,dy=normalize(dx,dy)
 	return u,v,dx,dy
 end
 
@@ -509,13 +560,14 @@ function update_actor(a)
 	end
 	for _,other in pairs(actors) do
 		if other!=a and sqr_dist(a.x,a.y,other.x,other.y)<64 then
-			other:hit()
+			--other:hit()
+			
 			hit=true
 		end
 	end
 	if hit then
-		a:hit()
-		return false
+		--a:hit()
+		--return false
 	end
 	
 	-- calculate drift force
@@ -534,6 +586,8 @@ end
 local actor_cls={
  	dx=0,dy=0,
  	acc=0.8,
+ 	u=1,
+ 	v=0,
  	angle=0,
  	da=0,
  	frames={64,66,68,70,72,74,76},
@@ -546,282 +600,23 @@ local actor_cls={
  	hit=hit
 }
 function make_actor(x,y)
-	local a=clone(actor_cls,{x=x,y=y})
+	local a=clone(actor_cls,{x=x,y=y,f={}})
 	return add(actors,a)
 end
 
--- commandbar
-function cmdbar_update(cmds,sel)
-	if(btnp(0)) sel-=1
-	if(btnp(1)) sel+=1
-	sel=mid(sel,1,#cmds)
-		
-	if btnp(4) then
-		local cmd=cmds[sel]
-		cmd.click(cmd)
-	end
-	return sel
-end
 
-function cmdbar_draw(cmds,sel,y)
-	palt(14,true)
-	rectfill(0,y,127,y+9,1)
-	-- center buttons
-	local x=1
-	for i=1,#cmds do
-		local cmd=cmds[i]
-		pal(5,i==sel and 7 or 5)
-		spr(cmd.spr,x,y+1)
-		x+=8
-	end
-	pal()
-end
-
--- track editor
-local edit_screen={}
-local edit_actor=clone(actor_cls,{x=0,y=4})
--- working track segments
-local edit_segments={}
-local hide_cmdbar=false
-local edit_cam_x,edit_cam_y=0,0
-
--- track editor command handlers
-function cmd_to_btns(cmd)
-	local btns={}
-	if cmd.btn then
-		btns[cmd.btn]=true
-	end
-	return btns
-end
-function cmd_fly(cmd)
-	local segment=add(edit_segments,{
-		cmd=cmd,
-		t=0,
-		path={}
-	})
-	control_actor(edit_actor,cmd_to_btns(cmd))
-	local dt=cmd.ttl
-	for j=1,dt do
-		move_actor(edit_actor)
-		if j%4==0 then
-			add(segment.path,{type=1,x=edit_actor.x,y=edit_actor.y})
-		end
-	end
-	segment.t=dt
-	segment.actor=clone(edit_actor)
-	add(segment.path,{type=1,x=edit_actor.x,y=edit_actor.y})
-	cam_track(edit_actor.x,edit_actor.y)	
-end
-function apply_fly_async(cmd,a)
-	control_actor(a,cmd_to_btns(cmd))
-	wait_async(cmd.ttl)
-end
-function cmd_roll(cmd)
-	local segment=add(edit_segments,{
-		cmd=cmd,
-		t=0,
-		path={}
-	})
-	control_actor(edit_actor,cmd_to_btns(cmd))
-	local dt=0
-	while edit_actor.rolling do
-		move_actor(edit_actor)
-		if dt%4==0 then
-			add(segment.path,{type=1,x=edit_actor.x,y=edit_actor.y})
-		end
-		dt+=1
-	end
-	segment.t=dt
-	segment.actor=clone(edit_actor)
-	add(segment.path,{type=1,x=edit_actor.x,y=edit_actor.y})
-	cam_track(edit_actor.x,edit_actor.y)	
-end
-function apply_roll_async(cmd,a)
-	control_actor(a,cmd_to_btns(cmd))
-	while a.rolling do
-		yield()
-	end
-end
-function cmd_checkpoint(cmd)
-	if #edit_segments>0 then
-		if edit_segments[#edit_segments].cmd==cmd then
-			-- cheap error feedback
-			cls(8)
-			flip()
-			return
-		end
-	end
-	local segment=add(edit_segments,{
-		cmd=cmd,
-		t=0,
-		path={}
-	})
-	control_actor(edit_actor,{})
-	segment.actor=clone(edit_actor)
-	add(segment.path,{type=2,x=edit_actor.x,y=edit_actor.y})
-	cam_track(edit_actor.x,edit_actor.y)
-end
-function apply_checkpoint_async(cmd,a)
-	control_actor(a,{})
-	make_part(a.x,a.y,"coin")
-	-- do not take a frame
-end
-function cmd_del()
-	pop(edit_segments)
-	if #edit_segments>0 then
-		-- start over from previous command
-		edit_actor=clone(edit_segments[#edit_segments].actor)
-	else
-		edit_actor=clone(actor_cls,{x=0,y=4})
-	end
-	cam_track(edit_actor.x,edit_actor.y)	
-end
-function cmd_save()
-	save_track(edit_segments,track_id)
-end
-function cmd_load()
-	load_track(track_id)
-end
-function cmd_exit()
-	-- release memory
-	edit_segments={}
-	edit_actor=nil
-	cur_screen=start_screen
-end
-function cmd_next_track()
-	track_id=mid(track_id+1,0,15)
-end
-function cmd_prev_track()
-	track_id=mid(track_id-1,0,15)
-end
-function load_track(id)
-	edit_segments={}
-	edit_actor=clone(actor_cls,{x=0,y=4})
-	local mem=0x2000+id*256
-	local id=peek(mem)
-	while id!=0 do
-		local cmd=all_cmds[id]
-		cmd.click(cmd)
-		mem+=1
-		id=peek(mem)
-	end
-end
-function save_track(segments,id)
-	if(#segments>254) assert("track too long")
 	
- -- map data
-	local mem=0x2000+id*256
-	local addr=mem
-	for i=1,#segments do
-		local segment=segments[i]
-		poke(addr,segment.cmd.id)
-		addr+=1
-	end
-	poke(addr,0)
-	cstore(mem,mem,256)
-end
-
-all_cmds={
-		{spr=1,
-		click=cmd_fly,
-		apply=apply_fly_async,
-		btn=3,ttl=30},
-		{spr=2,
-		click=cmd_fly,
-		apply=apply_fly_async,
-		btn=2,ttl=30},
-		{spr=3,
-		click=cmd_roll,
-		apply=apply_roll_async,
-		btn=0},
-		{spr=4,
-		click=cmd_fly,
-		apply=apply_fly_async,ttl=30},
-		{spr=5,
-		click=cmd_checkpoint,
-		apply=apply_checkpoint_async},
-		{spr=6,click=cmd_del},
-		{spr=8,click=cmd_load},
-		{spr=10,click=cmd_next_track},
-		{spr=11,click=cmd_prev_track},
-		{spr=7,click=cmd_save},
-		{spr=9,click=cmd_exit}
-	}
--- assign cmd index
--- id and spr must match for fly commands
-for i=1,#all_cmds do
-	all_cmds[i].id=i
-end
-
-function edit_screen:init()
-	poke(0x5f2d, 1)
-	cam_track(0,4)
-end
-function edit_screen:update()
-	hide_cmdbar=false
-	if btn(5) then
-		if(btn(0)) cam_x-=1
-		if(btn(1)) cam_x+=1
-		if(btn(2)) cam_y-=1
-		if(btn(3)) cam_y+=1
-
- 	hide_cmdbar=true
-		cam_track(cam_x,cam_y)
-	else
-		edit_cmd_i=cmdbar_update(all_cmds,edit_cmd_i)
-	end
-end
-
-function edit_screen:draw()
-	cls(0)
-	
-	local t,count=0,0
-	local a
-	for k=1,#edit_segments do
-		local cmd=edit_segments[k]
-		a=cmd.actor
-		for i=1,#cmd.path do
-			local path=cmd.path[i]
-			local x,y=cam_project(path.x,path.y,8)
-			if path.type==1 then
-				pset(x,y,path.y<4 and 8 or 7)
-			elseif path.type==2 then
- 			circfill(x,y,2,7) 	
-			end
-		end 	
-		t+=cmd.t
-		count+=1
-	end
-	
-	x,y,w=cam_project(0,0,8)
-	draw_ground({},x,y,w)
-	
-	if a then
-		x,y=cam_project(a.x,a.y,8)
-		draw_actor(a,x,y)
-	end
-	
-	-- draw commandbar
-	if not hide_cmdbar then
-		cmdbar_draw(all_cmds,edit_cmd_i,116)
-	end
-	
-	-- 
-	print("#"..track_id..": "..(t/60).."s - "..count.."/256",2,2,7)
-	print(stat(0),100,2,7)
-end
-
 local game_screen={}
 function game_screen:update()
 	time_t+=1
 	
 	zbuf_clear()
 	-- known bug: one frame delay
-	cam_track(lead.x,lead.y)
+	cam_track(plyr.x,plyr.y)
 	
 	filter(actors)
 	filter(parts)
-	filter(clouds)
+	--filter(clouds)
 
 	cam_update()
 end
@@ -833,8 +628,9 @@ function game_screen:draw()
 	local x,y,w=cam_project(0,0,12)
 	draw_ground({},x,y,w)
 	
+	draw_clouds(8)
 	zbuf_draw()
-	
+	draw_clouds(0,0b1010010110100101.1)
 	-- draw hud
 	if lead and not lead.visible then
 		local x,y=cam_project(lead.x,lead.y,0)
@@ -846,6 +642,7 @@ function game_screen:draw()
  	line(64+8*x,64+8*y,64+10*x,64+10*y,13)
 	end
 	
+	--[[
 	local mem=0x6000+flr(y)*64
 	for j=y,127 do
 		for i=0,15 do
@@ -853,14 +650,16 @@ function game_screen:draw()
 			mem+=4
 		end
 	end
+	]]
 	
-	pal()
-	palt(14,true)
-	spr(34,2,100,2,2)
+	circ(12+1,117,10,0)
+	circ(12,117,10,13)
+	
 	local angle=(time_t%128)/128
 	angle=lerp(0.2,0.8,angle)-0.2
 	x,y=6*cos(angle),-6*sin(angle)
-	line(10,108,10+x,110-y,6)
+	line(12+1,117,12+x+1,117-y,0)
+	line(12,117,12+x,117-y,13)
 	
 	fillp()
 	rectfill(0,0,127,8,1)
@@ -876,11 +675,6 @@ function game_screen:init()
  		inertia=0.98,
  		r=1,dr=0,
  		ttl=30
- 	},
- 	["coin"]={
- 		update=update_coin,
- 		draw=draw_coin_part,
- 		ttl=90
  	},
  	["trail"]={
  		c=13,
@@ -928,11 +722,16 @@ function game_screen:init()
 		end
 	end
 
-	lead=make_actor(24,4)
-	lead.input=process_track
-	lead.cor_track=cocreate(follow_track_async)
-	plyr=make_actor(0,4)
-	plyr.input=process_input
+	lead=make_actor(24,24)
+	lead.input=control_npc
+	lead.npc=true
+	
+	lead=make_actor(-24,32)
+	lead.input=control_npc
+	lead.npc=true
+	
+	plyr=make_actor(0,24)
+	plyr.input=control_plyr
 	plyr.score=0
 end
 
