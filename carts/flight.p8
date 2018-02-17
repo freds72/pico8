@@ -3,49 +3,98 @@ version 16
 __lua__
 -- airshow
 -- by freds72
+local good_side,bad_side,any_side=0x1,0x2,0x0
+-- register json context here
+local _tok={
+ ['true']=true,
+ ['false']=false}
+function nop() end
+local _g={
+	good_side=good_side,
+	bad_side=bad_side,
+	any_side=any_side,
+	nop=nop}
+
+-- json parser
+-- from: https://gist.github.com/tylerneylon/59f4bcf316be525b30ab
+local table_delims={['{']="}",['[']="]"}
+local function match(s,tokens)
+	for i=1,#tokens do
+		if(s==sub(tokens,i,i)) return true
+	end
+	return false
+end
+local function skip_delim(str, pos, delim, err_if_missing)
+ if sub(str,pos,pos)!=delim then
+  if(err_if_missing) assert('delimiter missing')
+  return pos,false
+ end
+ return pos+1,true
+end
+local function parse_str_val(str, pos, val)
+	val=val or ''
+	if pos>#str then
+		assert('end of input found while parsing string.')
+	end
+	local c=sub(str,pos,pos)
+	if(c=='"') return _g[val] or val,pos+1
+	return parse_str_val(str,pos+1,val..c)
+end
+local function parse_num_val(str,pos,val)
+	val=val or ''
+	if pos>#str then
+		assert('end of input found while parsing string.')
+	end
+	local c=sub(str,pos,pos)
+	-- support base 10, 16 and 2 numbers
+	if(not match(c,"-xb0123456789abcdef.")) return tonum(val),pos
+	return parse_num_val(str,pos+1,val..c)
+end
+-- public values and functions.
+
+function json_parse(str, pos, end_delim)
+	pos=pos or 1
+	if(pos>#str) assert('reached unexpected end of input.')
+	local first=sub(str,pos,pos)
+	if match(first,"{[") then
+		local obj,key,delim_found={},true,true
+		pos+=1
+		while true do
+			key,pos=json_parse(str, pos, table_delims[first])
+			if(key==nil) return obj,pos
+			if not delim_found then assert('comma missing between table items.') end
+			if first=="{" then
+				pos=skip_delim(str,pos,':',true)  -- true -> error if missing.
+				obj[key],pos=json_parse(str,pos)
+			else
+				add(obj,key)
+			end
+			pos,delim_found=skip_delim(str, pos, ',')
+	end
+	elseif first=='"' then
+		-- parse a string (or a global object)
+		return parse_str_val(str,pos+1)
+	elseif match(first,"-0123456789") then
+		-- parse a number.
+		return parse_num_val(str, pos)
+	elseif first==end_delim then  -- end of an object or array.
+		return nil,pos+1
+	else  -- parse true, false
+		for lit_str,lit_val in pairs(_tok) do
+			local lit_end=pos+#lit_str-1
+			if sub(str,pos,lit_end)==lit_str then return lit_val,lit_end+1 end
+		end
+		assert('invalid json token')
+	end
+end
+
 -- screen mgt
 local cur_screen
--- track replay
-local all_cmds={}
-local track_id=0
 --
 local time_t,time_dt=0,0
-local dither_pat={
-  0b1111111111111111,
-  0b0111111111111111,
-  0b0111111111011111,
-  0b0101111111011111,
-  0b0101111101011111,
-  0b0101101101011111,
-  0b0101101101011110,
-  0b0101101001011110,
-  0b0101101001011010,
-  0b0001101001011010,
-  0b0001101001001010,
-  0b0000101001001010,
-  0b0000101000001010,
-  0b0000001000001010,
-  0b0000001000001000
-}
-local src_colors={0x.0066,0x.00dd,0x.006d,0x.00d6}
-local dst_colors={0x.00dd,0x.0066,0x.00d6,0x.006d}
-local shades={}
+local dither_pat=json_parse('[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]')
 
-function fillbits(src,dst,index)
-	if index>4 then
-		shades[src]=dst
-		return
-	end
-	local s,d=src,dst
-	for i=1,4 do
-		local shift=(index-1)*8
-		src=bor(s,shl(src_colors[i],shift))
-		dst=bor(d,shl(dst_colors[i],shift))
-		fillbits(src,dst,index+1)
-	end	
-end
--- seed
-fillbits(0,0,1)
+local colors={0,13,6,7}
 
 -- futures
 function futures_update(futures)
@@ -101,13 +150,6 @@ function pop(a)
 		a[#a]=nil
 		return p
 	end
-end
-function addat(array,idx,elt)
-	local len=#array
-	for i=idx,len do
-		array[i+1]=array[i]
-	end
-	array[idx]=elt
 end
 
 -- calls 'fn' method on all elements of a[]
@@ -228,7 +270,7 @@ end
 function rspr(s,x,y,a,w)
 	local sx,sy=band(s*8,127),8*flr(s/16)
 	local ca,sa=cos(a),sin(a)
- local srcx,srcy,addr,pixel_pair
+ local srcx,srcy
  local ddx0,ddy0=ca,sa
  local mask=shl(0xfff8,(w-1))
  w*=4
@@ -252,7 +294,47 @@ function rspr(s,x,y,a,w)
 end
 
 -- particles
-local parts,all_parts={}
+local parts={}
+_g.update_emitter=function(self)
+	if _g.update_part(self) then
+		if self.emit_t<time_t then
+			make_part(self.x,self.y,self.emit_cls)
+			self.emit_t=time_t+self.emit_dly
+		end
+		return true
+	end
+	return false
+end
+_g.update_part=function(p)
+	if(p.t<time_t or p.r<=0) return false
+	p.x+=p.dx
+	p.y+=p.dy
+	if p.y<0 then
+		p.y=0
+		p.dy=-0.9*p.dy
+	end
+	p.r+=p.dr
+	p.dx*=p.inertia
+	p.dy*=p.inertia
+	-- gravity
+	if p.g then
+		p.dy-=0.01
+	end
+	zbuf_write(p)
+	return true
+end
+
+_g.draw_pixel_part=function(self,x,y)
+	pset(x,y,self.c or 13)
+end
+_g.draw_circ_part=function(self,x,y)
+	local f=smoothstep((self.t-time_t)/self.ttl)
+	fillp(dither_pat[flr(#dither_pat*f)+1])
+	circfill(x,y,self.r,self.c or 13)
+end
+
+
+local all_parts=json_parse('{"flash":{"dly":8,"r":0.8,"c":7,"dr":-0.1},"part_cls":{"update":"update_part","draw":"draw_pixel_part","inertia":0.98,"r":1,"dr":0,"ttl":30},"trail":{"c":13,"rnd":{"ttl":[24,32]}},"smoke":{"draw":"draw_circ_part","c":0xd7,"rnd":{"dr":[0.01,0.05],"ttl":[30,60]},"dy":0.2},"blast":{"draw":"draw_circ_part","dr":-0.5,"r":10,"rnd":{"debris":[8,12]},"ttl":16,"c":0x77},"debris":{"g":true,"update":"update_emitter","rnd":{"emit_dly":[2,8]},"emit_t":0,"emit_cls":"smoke"}}')
 function make_part(x,y,src,dx,dy)
 	src=all_parts[src]
 	local p=clone(all_parts[src.base_cls or "part_cls"],
@@ -294,16 +376,6 @@ function draw_cloud(self,x,y,w)
 	circfill(x,y,r,13)
 end
 
-function update_emitter(self)
-	if update_part(self) then
-		if self.emit_t<time_t then
-			make_part(self.x,self.y,self.emit_cls)
-			self.emit_t=time_t+self.emit_dly
-		end
-		return true
-	end
-	return false
-end
 function make_blast(x,y,dx,dy)
 	local p=make_part(x,y,"blast")
 	for i=1,p.debris do
@@ -318,33 +390,6 @@ function make_blast(x,y,dx,dy)
 		make_part(px,py,"debris",pdx,pdy)
 	end
 	cam_shake(rnd(),rnd(),5)
-end
-
-function update_part(p)
-	if(p.t<time_t) return false
-	p.x+=p.dx
-	p.y+=p.dy
-	if p.y<0 then
-		p.y=0
-		p.dy=-0.9*p.dy
-	end
-	p.r+=p.dr
-	p.dx*=p.inertia
-	p.dy*=p.inertia
-	if p.g then
-		p.dy-=0.01
-	end
-	zbuf_write(p)
-	return true
-end
-
-function draw_pixel_part(self,x,y)
-	pset(x,y,self.c or 13)
-end
-function draw_circ_part(self,x,y)
-	local f=smoothstep((self.t-time_t)/self.ttl)
-	fillp(dither_pat[flr(#dither_pat*f)+1])
-	circfill(x,y,self.r,self.c or 13)
 end
 
 function draw_clouds(z,fp)
@@ -560,14 +605,14 @@ function update_actor(a)
 	end
 	for _,other in pairs(actors) do
 		if other!=a and sqr_dist(a.x,a.y,other.x,other.y)<64 then
-			--other:hit()
+			other:hit()
 			
 			hit=true
 		end
 	end
 	if hit then
-		--a:hit()
-		--return false
+		a:hit()
+		return false
 	end
 	
 	-- calculate drift force
@@ -668,50 +713,6 @@ function game_screen:draw()
 end
 
 function game_screen:init()
- 	all_parts={
- 	["part_cls"]={
- 		update=update_part,
- 		draw=draw_pixel_part,
- 		inertia=0.98,
- 		r=1,dr=0,
- 		ttl=30
- 	},
- 	["trail"]={
- 		c=13,
- 		rnd={
- 			ttl={24,32},
- 		}
- 	},
- 	["smoke"]={
- 		draw=draw_circ_part,
- 		c=0xd7,
- 		rnd={
- 			dr={0.01,0.05},
- 			ttl={30,60},
- 		},
- 		dy=0.2
- 	},
- 	["blast"]={
- 		draw=draw_circ_part,
- 		dr=-0.5,
- 		r=10,
- 		rnd={
- 			debris={8,12}
- 		},
- 		ttl=16,
- 		c=0x77
- 	},
- 	["debris"]={
- 		g=true,
- 		update=update_emitter,
- 		rnd={
- 			emit_dly={2,8}
- 		},
- 		emit_t=0,
- 		emit_cls="smoke"
- 	}
- }
-
 	for i=1,10 do
 		local x,y=rnd(128)-64,rnd(128)+12
 		local z=flr(rnd(2))+1
