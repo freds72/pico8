@@ -293,7 +293,7 @@ function rspr(s,x,y,a,w)
  end
 end
 
--- particles
+-- particles (inc. bullets)
 local parts={}
 _g.update_emitter=function(self)
 	if _g.update_part(self) then
@@ -333,8 +333,22 @@ _g.draw_circ_part=function(self,x,y)
 	circfill(x,y,self.r,self.c or 13)
 end
 
+_g.draw_blt=function(self,x,y)
+	local x1,y1=cam_project(self.prevx,self.prevy,0)
+	line(x,y,x1,y1,7)
+end
+_g.update_blt=function(self)
+	local x0,y0=self.x,self.y
+	self.x+=self.dx
+	self.y+=self.dy
+	self.prevx,self.prevy=x0,y0
+	
+	zbuf_write(self)
+	return true
+end
 
-local all_parts=json_parse('{"flash":{"dly":8,"r":0.8,"c":7,"dr":-0.1},"part_cls":{"update":"update_part","draw":"draw_pixel_part","inertia":0.98,"r":1,"dr":0,"ttl":30},"trail":{"c":13,"rnd":{"ttl":[24,32]}},"smoke":{"draw":"draw_circ_part","c":0xd7,"rnd":{"dr":[0.01,0.05],"ttl":[30,60]},"dy":0.2},"blast":{"draw":"draw_circ_part","dr":-0.5,"r":10,"rnd":{"debris":[8,12]},"ttl":16,"c":0x77},"debris":{"g":true,"update":"update_emitter","rnd":{"emit_dly":[2,8]},"emit_t":0,"emit_cls":"smoke"}}')
+local all_weapons=json_parse('{"gun":{"sfx":63,"spread":0.04,"dmg":1,"v":0.4,"ttl":[15,24],"dly":5,"ammo":75,"shk_pow":2,"cost":1}}')
+local all_parts=json_parse('{"flash":{"dly":8,"r":6.4,"c":7,"dr":-0.8,"draw":"draw_circ_part"},"part_cls":{"update":"update_part","draw":"draw_pixel_part","inertia":0.98,"r":1,"dr":0,"ttl":30},"trail":{"c":13,"rnd":{"ttl":[24,32]}},"smoke":{"draw":"draw_circ_part","c":0xd7,"rnd":{"dr":[0.01,0.05],"ttl":[30,60]},"dy":0.2},"blast":{"draw":"draw_circ_part","dr":-0.5,"r":10,"rnd":{"debris":[8,12]},"ttl":16,"c":0x77},"debris":{"g":true,"update":"update_emitter","rnd":{"emit_dly":[2,8]},"emit_t":0,"emit_cls":"smoke"}}')
 function make_part(x,y,src,dx,dy)
 	src=all_parts[src]
 	local p=clone(all_parts[src.base_cls or "part_cls"],
@@ -347,6 +361,50 @@ function make_part(x,y,src,dx,dy)
 	if(p.sfx) sfx(p.sfx)
 	p.t=time_t+p.ttl
 	return add(parts,p)
+end
+function make_blt(a,anchor,wp)
+	local n=wp.blts or 1
+	local ang,da
+	if n==1 then
+		ang,da=anchor.angle+wp.spread*(rnd(2)-1),0
+	else
+		ang,da=anchor.angle-wp.spread/n,wp.spread/n
+	end
+	for i=1,n do
+		if anchor.ammo then
+			if a==plyr and anchor.ammo<=0 then
+				sfx(57)
+				return
+			end
+			anchor.ammo-=1
+		end
+		if wp.sfx then
+			sfx(wp.sfx)
+		end
+		local u,v=cos(ang),sin(ang)
+		-- absolute position
+		local x,y=anchor.x,anchor.y
+		local b={
+			u=u,v=v,
+			dx=wp.v*u+a.u,dy=wp.v*v+a.v,
+			side=a.side,
+			angle=ang
+		}
+		clone({
+			x=x,y=y,
+			wp=wp,
+			side=a.side,
+			-- weapon ttl is a range
+			t=time_t+lerp(wp.ttl[1],wp.ttl[2],rnd()),
+			-- for fast collision
+			prevx=b.x,prevy=b.y,
+			update=wp.update or _g.update_blt,
+			draw=wp.draw or _g.draw_blt},b)
+		add(parts,b)
+		-- muzzle flash
+		if(i==1) make_part(x,y+0.5,"flash")
+		ang+=da
+	end
 end
 
 
@@ -552,6 +610,10 @@ function control_plyr(self)
 			end
 		end
 	end
+
+	if btn(4) then
+		make_blt(self,self.anchors[1],self.anchors[1].wp)
+	end
 end
 
 function hit(self)
@@ -569,12 +631,12 @@ function move_actor(a)
 	a.dx*=0.95
 	a.dy*=0.95
 	-- apply thrust force
-	local dx,dy=cos(a.angle),sin(a.angle)
-	a.dx+=dx
-	a.dy+=dy
-	local u,v=normalize(a.dx,a.dy)
-	a.x+=u*a.acc
-	a.y+=v*a.acc
+	local u,v=cos(a.angle),sin(a.angle)
+	a.dx+=u
+	a.dy+=v
+	local dx,dy=normalize(a.dx,a.dy)
+	a.x+=dx*a.acc
+	a.y+=dy*a.acc
 
 	if a.rolling then
 		if flr(a.frame)!=a.target_frame then
@@ -587,7 +649,15 @@ function move_actor(a)
 	end
 	a.u=u
 	a.v=v
-	dx,dy=normalize(dx,dy)
+	
+	-- update weapon anchors
+	if a.anchors then
+ 	for _,anchor in pairs(a.anchors) do
+ 		anchor.x=a.x+u*anchor.x0		
+ 		anchor.y=a.y+v*anchor.y0		
+ 	end
+	end
+	
 	return u,v,dx,dy
 end
 
@@ -648,7 +718,6 @@ function make_actor(x,y)
 	local a=clone(actor_cls,{x=x,y=y,f={}})
 	return add(actors,a)
 end
-
 
 	
 local game_screen={}
@@ -734,6 +803,18 @@ function game_screen:init()
 	plyr=make_actor(0,24)
 	plyr.input=control_plyr
 	plyr.score=0
+	-- anchor points
+	plyr.anchors={}
+	-- primary weapon
+	add(plyr.anchors,{
+		wp=all_weapons["gun"],
+		-- relative position
+		x0=8,y0=0,
+		-- absolute position
+		x=0,y=0,
+		angle=0,
+		ammo=100
+	})
 end
 
 cur_screen=game_screen

@@ -602,44 +602,20 @@ function update_blt(self)
 		end
 
 		-- actors hit?
-		-- note: will be wrong for very fast bullets
-		cmap_iterator(x1,y1,self.side)
-		local a=cmap_next()
-		while a do
-			if circline_coll(a.x,a.y,a.w,x0,y0,x1,y1) then
-				-- law of conservation!
-				if a.acc!=0 then
-					a.dx+=self.dx
-					a.dy+=self.dy
-				end
-				a:hit(self.wp.dmg+cur_loop-1)
-				goto die
-			end
-			a=cmap_next()
-		end
+		-- todo
 
-		local touch,bounce=false,self.bounce or 0
+		local touch=false
 		if solid(x1,y0) then
 			x1=x0
-			self.dx*=-bounce
-			self.u=-self.u
 			touch=true
 		end
 		if solid(x0,y1) then
 			y1=y0
-			self.dy*=-bounce
-			self.v=-self.v
 			touch=true
 		end
 
 		if touch then
-		 if self.bounce then
-				self.side=self.wp.side
-				make_part(x1,y1,0.25,all_parts.flash)
-				sfx(self.wp.bounce_sfx or 58)
-			else
-				goto die
-			end
+			goto die
 		end
 		self.prevx,self.prevy,self.x,self.y=x0,y0,x1,y1
 		zbuf_write(self)
@@ -647,11 +623,6 @@ function update_blt(self)
 	end
 	
 	::die::
-	if self.wp.blast_on_die then
-		make_part(x1,y1,0,all_parts["blast"])
-	else
-		make_part(x1,y1,0.25,all_parts[self.wp.hit_part or "hit"],self.dx/4,self.dy/4,0,self.angle)
-	end
 	-- sub bullet?
 	local wp=self.wp.sub_cls
 	if wp then
