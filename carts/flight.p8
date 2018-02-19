@@ -94,12 +94,13 @@ local cur_screen
 local time_t,time_dt=0,0
 local dither_pat=json_parse('[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]')
 
--- night?
---local colors={0,13,6,7}
+-- fog
+-- local colors={0,13,6,7}
 -- sunset
---local colors={0,9,10,7}
+-- local colors={0,9,10,7}
 -- sea
 --local colors={0,1,12,7}
+-- night
 local colors={0,1,5,7}
 
 -- futures
@@ -220,6 +221,9 @@ function sqr_dist(x0,y0,x1,y1)
 	return dx*dx+dy*dy
 end
 
+function dot(a,b,u,v)
+	return a*u+b*v
+end
 function normalize(u,v,scale)
 	scale=scale or 1
 	local d=sqrt(u*u+v*v)
@@ -340,9 +344,7 @@ _g.draw_circ_part=function(self,x,y)
 end
 
 _g.draw_blt=function(self,x,y)
-	--local x1,y1=cam_project(self.prevx,self.prevy,0)
-	--line(x,y,x1,y1,7)
-	
+	-- todo: get sprite from self!!
 	-- blit sprite
 	local src,dst=0x4300,0x0
 	local angle=self.angle
@@ -387,15 +389,16 @@ function make_part(x,y,src,dx,dy)
 	p.t=time_t+p.ttl
 	return add(parts,p)
 end
-function make_blt(a,anchor,wp)
+function make_blt(a,x,y,angle,wp)
 	local n=wp.blts or 1
 	local ang,da
 	if n==1 then
-		ang,da=anchor.angle+wp.spread*(rnd(2)-1),0
+		ang,da=angle+wp.spread*(rnd(2)-1),0
 	else
-		ang,da=anchor.angle-wp.spread/n,wp.spread/n
+		ang,da=angle-wp.spread/n,wp.spread/n
 	end
 	for i=1,n do
+		--[[
 		if anchor.ammo then
 			if a==plyr and anchor.ammo<=0 then
 				sfx(57)
@@ -403,12 +406,12 @@ function make_blt(a,anchor,wp)
 			end
 			anchor.ammo-=1
 		end
+		]]
 		if wp.sfx then
 			sfx(wp.sfx)
 		end
 		local u,v=cos(ang),sin(ang)
 		-- absolute position
-		local x,y=anchor.x,anchor.y
 		local b={
 			u=u,v=v,
 			dx=wp.v*u+a.u,dy=wp.v*v+a.v,
@@ -563,7 +566,7 @@ function evade(self,other,dist)
 			dx/=d
 			dy/=d
 		end
-		local angle=other.u*dx+other.v*dy
+		local angle=dot(other.u,other.v,dx,dy)
 		-- in cone?
 		if angle<-0.9 then
 			self.in_sight=true
@@ -639,10 +642,10 @@ function control_plyr(self)
 
 	local anchor=self.anchors[1]
 	if btn(4) and anchor.fire_t<time_t then
-			if anchor.ammo>0 then
-				anchor.fire_t=time_t+wp.dly
-				make_blt(self,anchor,anchor.wp)
-			end
+		if anchor.ammo>0 then
+			anchor.fire_t=time_t+anchor.wp.dly
+			local x,y=self.x+self.u*anchor.x,self.y+self.v*anchor.y
+			make_blt(self,x,y,self.angle,anchor.wp)
 		end
 	end
 end
@@ -680,16 +683,6 @@ function move_actor(a)
 	end
 	a.u=u
 	a.v=v
-	
-	-- update weapon anchors
-	if a.anchors then
- 	for _,anchor in pairs(a.anchors) do
- 		anchor.x=a.x+u*anchor.x0		
- 		anchor.y=a.y+v*anchor.y0
- 		-- todo: fix		
-			anchor.angle=a.angle
- 	end
-	end
 	
 	return u,v,dx,dy
 end
@@ -768,8 +761,10 @@ function make_actor(x,y,src)
 		for i=0,a.w-1 do
 			for j=0,a.h-1 do
 				local s=mget(a.cx+i,a.cy+j)
-				local anchor=make_anchor(i,j,s)
-				if(anchor) add(a.anchors,anchor)
+				local anchor=make_anchor(a,i,j,s)
+				if anchor then
+				 add(a.anchors,anchor)
+				end
 			end
 		end
 	end
@@ -777,20 +772,30 @@ function make_actor(x,y,src)
 end
 function make_anchor(a,i,j,s)
 	local flags=fget(s)
+
+	-- anchor point?
 	if(band(flags,0x1)==0) return
+
 	-- orientation
 	flags=shr(flags,1)
-	local angle=band(15,flags)/4
+	local angle=band(0b11,flags)/4
+
 	-- weapon type
-	flags=shr(flags,4)
+	flags=band(15,shr(flags,2))
+	printh("got weapon:"..flags)
+
 	for _,wp in pairs(all_weapons) do
 		if wp.id==flags then
+
 			return {
 				actor=a,
 				x=i*8,
-				y=j*8,
+				y=-j*8,
 				base_angle=angle,
 				angle=0,
+				u=cos(angle),
+				v=-sin(angle),
+				--angle=0,
 				fire_t=0,
 				ammo=wp.ammo, -- can be nil
 				wp=wp}
@@ -803,11 +808,13 @@ function update_anchor(self)
 	local dx,dy=x-plyr.x,y-plyr.y
 	local d=dx*dx+dy*dy
 	-- todo: fix overflow risk
-	if d<self.wp.los*self.wp.los and self.fire_t<time_t then
+	local wp=self.wp
+	if d<wp.los*wp.los and self.fire_t<time_t then
 		if(d>0.001) dx/=d dy/=d
-		if abs(dot(dx,dy,self.u,self.v))<self.wp.los_radius then
+		if abs(dot(dx,dy,self.u,self.v))<wp.los_angle then
 			self.fire_t=time_t+self.wp.dly
-			make_blt(x,y,angkeself.wp)
+			local angle=atan2(dx,dy)+0.5
+			make_blt(self.actor,x,y,angle,wp)
 		end
 	end
 end
