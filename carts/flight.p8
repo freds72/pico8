@@ -372,7 +372,7 @@ _g.update_blt=function(self)
 	return true
 end
 
-local all_weapons=json_parse('{"gun":{"sfx":63,"spread":0.04,"dmg":1,"v":2,"ttl":[32,48],"dly":5,"ammo":75,"shk_pow":2,"cost":1}}')
+local all_weapons=json_parse('{"gun":{"sfx":63,"spread":0.04,"dmg":1,"v":2,"ttl":[32,48],"dly":5,"ammo":75,"shk_pow":2},"gun_turret":{"id":0,"sfx":63,"spread":0.04,"dmg":1,"v":2,"ttl":[32,48],"dly":10,"los":64,"los_angle":0.2}}')
 local all_parts=json_parse('{"flash":{"dly":8,"r":6.4,"c":7,"dr":-0.8,"draw":"draw_circ_part"},"part_cls":{"update":"update_part","draw":"draw_pixel_part","inertia":0.98,"r":1,"dr":0,"ttl":30},"trail":{"c":13,"rnd":{"ttl":[24,32]}},"smoke":{"draw":"draw_circ_part","c":0xd7,"rnd":{"dr":[0.01,0.05],"ttl":[30,60]},"dy":0.2},"blast":{"draw":"draw_circ_part","dr":-0.5,"r":10,"rnd":{"debris":[8,12]},"ttl":16,"c":0x77},"debris":{"g":true,"update":"update_emitter","rnd":{"emit_dly":[2,8]},"emit_t":0,"emit_cls":"smoke"}}')
 function make_part(x,y,src,dx,dy)
 	src=all_parts[src]
@@ -604,7 +604,7 @@ function control_npc(self)
 	fx,fy=evade(self,plyr,32)
 	dx+=fx
 	dy+=fy
-	--add(self.f,{"evade",fx,fy})
+	add(self.f,{"evade",fx,fy})
 	fx,fy=avoid(self,32)
 	dx+=fx
 	dy+=fy
@@ -612,7 +612,7 @@ function control_npc(self)
 	fx,fy=follow(self,plyr,32)
 	dx+=fx
 	dy+=fy
-	--add(self.f,{"follow",fx,fy})
+	add(self.f,{"follow",fx,fy})
 	
 	-- project force into thrust normal
 	-- pull/push based on sign
@@ -637,8 +637,13 @@ function control_plyr(self)
 		end
 	end
 
-	if btn(4) then
-		make_blt(self,self.anchors[1],self.anchors[1].wp)
+	local anchor=self.anchors[1]
+	if btn(4) and anchor.fire_t<time_t then
+			if anchor.ammo>0 then
+				anchor.fire_t=time_t+wp.dly
+				make_blt(self,anchor,anchor.wp)
+			end
+		end
 	end
 end
 
@@ -745,16 +750,68 @@ end
 _g.update_b29=function(self)
 	self.x+=self.dx
 	self.y+=self.dy
+	
+	for _,anchor in pairs(self.anchors) do
+		update_anchor(anchor)
+	end
 	zbuf_write(self)
 	return true
 end
-local all_actors=json_parse('{"b29":{"draw":"draw_map_actor","update":"update_b29","w":9,"h":3,"cx":0,"cy":0,"dx":-0.5,"dy":0},"f14":{"frames":[64,66,68,70,72,74,76],"frame":1,"df":0,"rolling":false,"inverted":false}}')
+
+local all_actors=json_parse('{"b29":{"draw":"draw_map_actor","update":"update_b29","w":9,"h":3,"cx":0,"cy":0,"dx":-0.5,"dy":0,"is_map":true},"f14":{"frames":[64,66,68,70,72,74,76],"frame":1,"df":0,"rolling":false,"inverted":false}}')
 function make_actor(x,y,src)
-	local a=clone(actor_cls,clone(all_actors[src],{x=x,y=y,f={}}))
+	src=all_actors[src]
+	local a=clone(actor_cls,clone(src,{x=x,y=y,f={}}))
+	-- scan map for anchors
+	if a.is_map then
+		a.anchors={}
+		for i=0,a.w-1 do
+			for j=0,a.h-1 do
+				local s=mget(a.cx+i,a.cy+j)
+				local anchor=make_anchor(i,j,s)
+				if(anchor) add(a.anchors,anchor)
+			end
+		end
+	end
 	return add(actors,a)
 end
+function make_anchor(a,i,j,s)
+	local flags=fget(s)
+	if(band(flags,0x1)==0) return
+	-- orientation
+	flags=shr(flags,1)
+	local angle=band(15,flags)/4
+	-- weapon type
+	flags=shr(flags,4)
+	for _,wp in pairs(all_weapons) do
+		if wp.id==flags then
+			return {
+				actor=a,
+				x=i*8,
+				y=j*8,
+				base_angle=angle,
+				angle=0,
+				fire_t=0,
+				ammo=wp.ammo, -- can be nil
+				wp=wp}
+		end
+	end
+	assert("unknown wp:"..flags)
+end
+function update_anchor(self)
+	local x,y=self.actor.x+self.x,self.actor.y+self.y
+	local dx,dy=x-plyr.x,y-plyr.y
+	local d=dx*dx+dy*dy
+	-- todo: fix overflow risk
+	if d<self.wp.los*self.wp.los and self.fire_t<time_t then
+		if(d>0.001) dx/=d dy/=d
+		if abs(dot(dx,dy,self.u,self.v))<self.wp.los_radius then
+			self.fire_t=time_t+self.wp.dly
+			make_blt(x,y,angkeself.wp)
+		end
+	end
+end
 
-	
 local game_screen={}
 function game_screen:update()
 	time_t+=1
@@ -827,7 +884,7 @@ function game_screen:init()
 	lead.input=control_npc
 	lead.npc=true
 	
- make_actor(-24,64,"b29")
+	local a=make_actor(-24,64,"b29")
  
 	plyr=make_actor(0,24,"f14")
 	plyr.input=control_plyr
@@ -836,6 +893,7 @@ function game_screen:init()
 	plyr.anchors={}
 	-- primary weapon
 	add(plyr.anchors,{
+		fire_t=0,
 		wp=all_weapons["gun"],
 		-- relative position
 		x0=8,y0=0,
@@ -936,7 +994,7 @@ ee0000000000eeeeeeeeeeee00000eee00000000e000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 ee0000000000eeeeeeeeeeee00eeeeeee0000000e000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000eeeeeeee00000000000000000000000000000000
 __gff__
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000010300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000030700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __map__
 8b8b858b8b858b80810000000404020201010504040301010105040403010403050401010405030403010405040404040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 848a8a8a8a8a8a83820000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
