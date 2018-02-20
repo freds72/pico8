@@ -247,11 +247,11 @@ function cam_update()
 	camera(shkx,shky)
 end
 function cam_track(x,y)
-	cam_x,cam_y=x,y
+	cam_x,cam_y=8*x,8*y
 end
 function cam_project(x,y,z)
-	local w=(16-z)/16
-	return 64-(cam_x-x)*w,64+(cam_y-y)*w,w
+	local w=(1-z)
+	return 64-(cam_x-8*x)*w,64+(cam_y-8*y)*w,w
 end
 
 -- zbuffer
@@ -321,7 +321,8 @@ _g.update_part=function(p)
 	p.y+=p.dy
 	if p.y<0 then
 		p.y=0
-		p.dy=-0.9*p.dy
+		-- simulate friction
+		p.dy*=-0.9
 	end
 	p.r+=p.dr
 	p.dx*=p.inertia
@@ -340,7 +341,7 @@ end
 _g.draw_circ_part=function(self,x,y)
 	local f=smoothstep((self.t-time_t)/self.ttl)
 	fillp(dither_pat[flr(#dither_pat*f)+1])
-	circfill(x,y,self.r,self.c or 13)
+	circfill(x,y,8*self.r,self.c or 13)
 end
 
 _g.draw_blt=function(self,x,y)
@@ -374,8 +375,8 @@ _g.update_blt=function(self)
 	return true
 end
 
-local all_weapons=json_parse('{"gun":{"sfx":63,"spread":0.04,"dmg":1,"v":2,"ttl":[32,48],"dly":5,"ammo":75,"shk_pow":2},"gun_turret":{"id":0,"sfx":63,"spread":0.04,"dmg":1,"v":2,"ttl":[32,48],"dly":10,"los":64,"los_angle":0.2}}')
-local all_parts=json_parse('{"flash":{"dly":8,"r":6.4,"c":7,"dr":-0.8,"draw":"draw_circ_part"},"part_cls":{"update":"update_part","draw":"draw_pixel_part","inertia":0.98,"r":1,"dr":0,"ttl":30},"trail":{"c":13,"rnd":{"ttl":[24,32]}},"smoke":{"draw":"draw_circ_part","c":0xd7,"rnd":{"dr":[0.01,0.05],"ttl":[30,60]},"dy":0.2},"blast":{"draw":"draw_circ_part","dr":-0.5,"r":10,"rnd":{"debris":[8,12]},"ttl":16,"c":0x77},"debris":{"g":true,"update":"update_emitter","rnd":{"emit_dly":[2,8]},"emit_t":0,"emit_cls":"smoke"}}')
+local all_weapons=json_parse('{"gun":{"sfx":63,"spread":0.04,"dmg":1,"v":0.4,"ttl":[32,48],"dly":5,"ammo":75,"shk_pow":2},"gun_turret":{"id":0,"sfx":63,"spread":0.04,"dmg":1,"v":0.4,"ttl":[32,48],"dly":10,"los":16,"los_angle":0.5}}')
+local all_parts=json_parse('{"flash":{"dly":8,"r":0.9,"c":7,"dr":-0.1,"draw":"draw_circ_part"},"part_cls":{"update":"update_part","draw":"draw_pixel_part","inertia":0.98,"r":1,"dr":0,"ttl":30},"trail":{"c":13,"rnd":{"ttl":[24,32]}},"smoke":{"draw":"draw_circ_part","c":0xd7,"rnd":{"dr":[0.01,0.05],"ttl":[30,60]},"dy":0.2},"blast":{"draw":"draw_circ_part","dr":-0.09,"r":2,"rnd":{"debris":[8,12]},"ttl":16,"c":0x77},"debris":{"g":true,"update":"update_emitter","rnd":{"emit_dly":[2,8]},"emit_t":0,"emit_cls":"smoke"}}')
 function make_part(x,y,src,dx,dy)
 	src=all_parts[src]
 	local p=clone(all_parts[src.base_cls or "part_cls"],
@@ -414,7 +415,7 @@ function make_blt(a,x,y,angle,wp)
 		-- absolute position
 		local b={
 			u=u,v=v,
-			dx=wp.v*u+a.u,dy=wp.v*v+a.v,
+			dx=wp.v*u,dy=wp.v*v,
 			side=a.side,
 			angle=ang%1
 		}
@@ -502,7 +503,7 @@ function draw_ground(self,x,y,w)
 	if(y>127) return
 	pal()
 	rectfill(0,y,127,127,colors[2])
-	for j=-8,8 do
+	for j=-0.5,0.5,0.1 do
 		x,y,w=cam_project(0,0,j)
 		local dx=w*(cam_x%16)
 		x=-dx
@@ -594,8 +595,8 @@ function avoid(self,dist)
 		end
 	end
 	-- avoid ground
-	if self.y<32 then
-		--dy+=-self.y/32
+	if self.y<2 then
+		--dy+=-self.y/2
 		dy+=abs(self.y)
 	end
 	return dx,dy
@@ -604,15 +605,15 @@ end
 function control_npc(self)
 	local fx,fy,dx,dy=0,0,0,0
 	self.f={}
-	fx,fy=evade(self,plyr,32)
+	fx,fy=evade(self,plyr,4)
 	dx+=fx
 	dy+=fy
 	add(self.f,{"evade",fx,fy})
-	fx,fy=avoid(self,32)
+	fx,fy=avoid(self,4)
 	dx+=fx
 	dy+=fy
 	add(self.f,{"avoid",fx,fy})
-	fx,fy=follow(self,plyr,32)
+	fx,fy=follow(self,plyr,4)
 	dx+=fx
 	dy+=fy
 	add(self.f,{"follow",fx,fy})
@@ -696,11 +697,11 @@ function update_actor(a)
 
 	-- collision?
 	local hit=false
-	if a.y<4 then
+	if a.y<1 then
 		hit=true
 	end
 	for _,other in pairs(actors) do
-		if other!=a and sqr_dist(a.x,a.y,other.x,other.y)<64 then
+		if other!=a and sqr_dist(a.x,a.y,other.x,other.y)<4 then
 			--other:hit()
 			
 			hit=true
@@ -713,7 +714,7 @@ function update_actor(a)
 	
 	-- calculate drift force
 	if abs(dx*u+dy*v)<0.90 then
-		make_part(a.x+rnd(2)-1-8*u,a.y+rnd(2)-1-10*v,"trail")
+		make_part(a.x+rnd()-1-u,a.y+rnd()-1-v,"trail")
 	end
 	
 	zbuf_write(a)
@@ -726,7 +727,7 @@ end
 
 local actor_cls={
  	dx=0,dy=0,
- 	acc=0.8,
+ 	acc=0.1,
  	u=1,
  	v=0,
  	angle=0,
@@ -739,6 +740,13 @@ _g.draw_map_actor=function(self,x,y)
 	palt(14,true)
 	pal(8,time_t%2==0 and 14 or 6)
 	map(self.cx,self.cy,x,y,self.w,self.h)
+
+	for _,anchor in pairs(self.anchors) do
+		local x,y=self.x+anchor.x,self.y+anchor.y
+		x,y=cam_project(x,y,0)
+		line(x,y,x+8*anchor.u,y-8*anchor.v,8)
+	end
+
 end
 _g.update_b29=function(self)
 	self.x+=self.dx
@@ -751,7 +759,7 @@ _g.update_b29=function(self)
 	return true
 end
 
-local all_actors=json_parse('{"b29":{"draw":"draw_map_actor","update":"update_b29","w":9,"h":3,"cx":0,"cy":0,"dx":-0.5,"dy":0,"is_map":true},"f14":{"frames":[64,66,68,70,72,74,76],"frame":1,"df":0,"rolling":false,"inverted":false}}')
+local all_actors=json_parse('{"b29":{"draw":"draw_map_actor","update":"update_b29","w":9,"h":3,"cx":0,"cy":0,"dx":0,"dy":0,"is_map":true},"f14":{"frames":[64,66,68,70,72,74,76],"frame":1,"df":0,"rolling":false,"inverted":false}}')
 function make_actor(x,y,src)
 	src=all_actors[src]
 	local a=clone(actor_cls,clone(src,{x=x,y=y,f={}}))
@@ -776,21 +784,20 @@ function make_anchor(a,i,j,s)
 	-- anchor point?
 	if(band(flags,0x1)==0) return
 
-	-- orientation
+	-- orientation (2 bits)
 	flags=shr(flags,1)
 	local angle=band(0b11,flags)/4
 
-	-- weapon type
+	-- weapon type (7 bits)
 	flags=band(15,shr(flags,2))
-	printh("got weapon:"..flags)
 
 	for _,wp in pairs(all_weapons) do
 		if wp.id==flags then
 
 			return {
 				actor=a,
-				x=i*8,
-				y=-j*8,
+				x=i,
+				y=-j,
 				base_angle=angle,
 				angle=0,
 				u=cos(angle),
@@ -805,15 +812,17 @@ function make_anchor(a,i,j,s)
 end
 function update_anchor(self)
 	local x,y=self.actor.x+self.x,self.actor.y+self.y
-	local dx,dy=x-plyr.x,y-plyr.y
+	local dx,dy=plyr.x-x,plyr.y-y
 	local d=dx*dx+dy*dy
+	
 	-- todo: fix overflow risk
 	local wp=self.wp
 	if d<wp.los*wp.los and self.fire_t<time_t then
-		if(d>0.001) dx/=d dy/=d
-		if abs(dot(dx,dy,self.u,self.v))<wp.los_angle then
+	
+		if(d>0.001) d=sqrt(d) dx/=d dy/=d
+		if dot(dx,dy,self.u,self.v)>wp.los_angle then
 			self.fire_t=time_t+self.wp.dly
-			local angle=atan2(dx,dy)+0.5
+			local angle=atan2(dx,dy)
 			make_blt(self.actor,x,y,angle,wp)
 		end
 	end
@@ -838,7 +847,7 @@ function game_screen:draw()
 	cls(colors[3])
 
 	--ground
-	local x,y,w=cam_project(0,0,12)
+	local x,y,w=cam_project(0,0,0.8)
 	draw_ground({},x,y,w)
 	
 	draw_clouds(8)
@@ -883,17 +892,17 @@ function game_screen:init()
 		end
  end
 	
-	lead=make_actor(24,24,"f14")
+	lead=make_actor(3,3,"f14")
 	lead.input=control_npc
 	lead.npc=true
 	
-	lead=make_actor(-24,32,"f14")
+	lead=make_actor(-3,4,"f14")
 	lead.input=control_npc
 	lead.npc=true
 	
-	local a=make_actor(-24,64,"b29")
+	local a=make_actor(-3,8,"b29")
  
-	plyr=make_actor(0,24,"f14")
+	plyr=make_actor(0,3,"f14")
 	plyr.input=control_plyr
 	plyr.score=0
 	-- anchor points
@@ -903,7 +912,7 @@ function game_screen:init()
 		fire_t=0,
 		wp=all_weapons["gun"],
 		-- relative position
-		x0=8,y0=0,
+		x0=1,y0=0,
 		-- absolute position
 		x=0,y=0,
 		angle=0,
@@ -1001,7 +1010,7 @@ ee0000000000eeeeeeeeeeee00000eee00000000e000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 ee0000000000eeeeeeeeeeee00eeeeeee0000000e000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000eeeeeeee00000000000000000000000000000000
 __gff__
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000030700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000010005030700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __map__
 8b8b858b8b858b80810000000404020201010504040301010105040403010403050401010405030403010405040404040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 848a8a8a8a8a8a83820000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
