@@ -116,8 +116,7 @@ function _init()
   local noisedy = rnd(32)
   for x=0,127 do
     for y=0,127 do
-    	--[[
-      local octaves = 3
+      local octaves = 5
       local freq = .007
       local max_amp = 0
       local amp = 1
@@ -131,9 +130,11 @@ function _init()
       end
       value/=max_amp
       value=mid(value+1,0,2)/2
-      ]]
+
+						--[[
       local x0,y0=x-8,y-8
       local value=(x0*x0+y0*y0)<64 and 1 or 0
+      ]]
       add(clouds,value)
     end
   end
@@ -145,47 +146,31 @@ function _init()
  	end
 end
 
+local mode=0
 function _update60()
 	if(btn(0)) x-=1 isdirty=true
 	if(btn(1)) x+=1 isdirty=true
 	if(btn(2)) y-=1 isdirty=true
 	if(btn(3)) y+=1 isdirty=true
+	if(btnp(4)) mode+=1 isdirty=true	
+	mode%=4
 end
 
---local dither={0,1,5,6,7}
-local dither={
-  0b1111111111111111,
-  0b0111111111111111,
-  0b0111111111011111,
-  0b0101111111011111,
-  0b0101111101011111,
-  0b0101101101011111,
-  0b0101101101011110,
-  0b0101101001011110,
-  0b0101101001011010,
-  0b0001101001011010,
-  0b0001101001001010,
-  0b0000101001001010,
-  0b0000101000001010,
-  0b0000001000001010,
-  0b0000001000001000,
-  0b0000000000000000
-}
 function solid(i,j)
 	-- wrap around
 	i%=128
 	j%=128
 	if(i<0) i+=128
 	if(j<0) j+=128
-	return clouds[i+128*j+1]>0.7 and 1 or 0
+	return clouds[i+128*j+1]>0.8 and 1 or 0
 end
 
 function flags(i,j)
 	return
 		solid(i,j)+
 		shl(solid(i+1,j),1)+
-		shl(solid(i+1,j+1),2)+
-		shl(solid(i,j+1),3)
+		shl(solid(i,j+1),2)+
+		shl(solid(i+1,j+1),3)
 end
 
 function flags_cache(i,j)
@@ -197,12 +182,74 @@ function flags_cache(i,j)
 	return cache[i+128*j+1]
 end
 
+local hex="0123456789abcdef"
+local dither={
+  0b1111111111111111.1,
+  0b0111111111111111.1,
+  0b0111111111011111.1,
+  0b0101111111011111.1,
+  0b0101111101011111.1,
+  0b0101101101011111.1,
+  0b0101101101011110.1,
+  0b0101101001011110.1,
+  0b0101101001011010.1,
+  0b0001101001011010.1,
+  0b0001101001001010.1,
+  0b0000101001001010.1,
+  0b0000101000001010.1,
+  0b0000001000001010.1,
+  0b0000001000001000.1,
+  0b0000000000000000.1
+}
+function draw_clouds(x,y,fp)
+ local scale=16
+ local dx,dy=x%scale,y%scale
+ local i0,j0=flr(x/scale),flr(y/scale)
+	local i=i0
+	local x0=-dx-24
+	fillp(fp)
+ while x0<127+24 do
+ 	local j=j0
+ 	local y0=-dy-24
+ 	local cx=(i%128+128)%128 	 	
+ 	while y0<127+24 do
+ 		local cy=(j%128+128)%128
+			local f=cache[cx+128*cy+1]
+			if f==1 then
+				circfill(x0,y0,scale,7)
+			elseif f==2 then
+				circfill(x0,y0+scale,scale,7)
+			elseif f==4 then
+				circfill(x0+scale,y0,scale,7)
+			elseif f==8 then
+				circfill(x0+scale,y0+scale,scale,7)
+			elseif f>0 and f<=15 then
+				rectfill(x0,y0,x0+scale-1,y0+scale-1,7)
+			end
+			j+=1
+			y0+=scale
+		end
+		i+=1
+		x0+=scale
+ end
+end
+
 function _draw()
+	cls(12)
+	draw_clouds(x*0.8,y*0.8)
+	draw_clouds(x,y,0b1010010110100101.1)
+	fillp()
+	rectfill(0,0,127,8,1)
+ print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)
+	--print(x.."/"..y,2,2,7)	
+end
+
+function draw_noise(x,y)
 	if isdirty then
- 	cls()
+ 	cls(12)
 	 --fillp(dither[8])
 
-  local scale=8
+  local scale=16
   local dx,dy=x%scale,y%scale
   local i0,j0=flr(x/scale),flr(y/scale)
 		local i=i0
@@ -211,26 +258,44 @@ function _draw()
   	local j=j0
 	 	local y0=-dy-24
 	 	while y0<127+24 do
-	 		local f=solid(i,j)
-	 		if f!=0 then
-	 			--[[
-	 			if f==1 or f==8 or f==4 or f==2 then
-	 				circfill(x0,y0,scale,7)
-	 			elseif f==12 then
-	 				circfill(x0,y0-scale/2,scale/2,7)
-	 			else
-	 				rectfill(x0-scale/2,y0-scale/2,x0+scale/2,y0+scale/2,7)
-	 			end
-	 			
- 			 ]]
+	 		--if f!=0 then
  			 --spr(f,x0,y0)
 				--print(f,x0+3,y0+2,5)
-				rectfill(x0,y0,x0+scale-1,y0+scale-1,(i+j)%2+9)
-				if(solid(i,j)==1) pset(x0+1,y0+1,1)
-				if(solid(i+1,j)==1) pset(x0+3,y0+1,1)
-				if(solid(i+1,j+1)==1) pset(x0+3,y0+3,1)
-				if(solid(i,j+1)==1) pset(x0+1,y0+3,1)
- 			end
+				-- rectfill(x0,y0,x0+scale-1,y0+scale-1,(i+j)%2+9)
+ 				if mode==0 then
+	 				pset(x0,y0,8) 				
+  				if(solid(i,j)==1) pset(x0+1,y0+1,1)
+  				if(solid(i+1,j)==1) pset(x0+3,y0+1,1)
+  				if(solid(i+1,j+1)==1) pset(x0+3,y0+3,1)
+  				if(solid(i,j+1)==1) pset(x0+1,y0+3,1)
+					elseif mode==1 then
+			 		local f=flags_cache(i,j)
+			 		if f!=0 then
+			 			f+=1
+	 					print(sub(hex,f,f),x0+1,y0+1,6)
+	 				end
+	 			elseif mode==2 then
+	 				local f=flags_cache(i,j)
+	 				spr(16+f,x0,y0)
+					else
+						local f=flags_cache(i,j)
+						--clip(x0,y0,x0+scale,y0+scale)
+						--fillp(dither[8])
+						if f==1 then
+							circfill(x0,y0,scale,7)
+						elseif f==2 then
+							circfill(x0,y0+scale,scale,7)
+						elseif f==4 then
+							circfill(x0+scale,y0,scale,7)
+						elseif f==8 then
+							circfill(x0+scale,y0+scale,scale,7)
+						elseif f>0 and f<=15 then
+							-- spr(16+f,x0,y0)
+							--fillp(dither[f+1])
+							rectfill(x0,y0,x0+scale-1,y0+scale-1,7)
+						end
+ 				end
+ 			--end
  			
  			j+=1
  			y0+=scale
@@ -240,19 +305,22 @@ function _draw()
   end
  	isdirty=false
 	end
-	
-	fillp()
-	rectfill(0,0,127,8,1)
- print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)
-	--print(x.."/"..y,2,2,7)
 end
 
 __gfx__
-0000000000000000000000000000000000dddddd0000dddd0000dddd0000ddddddddd000dddd0000dddd0000dddd0000dddddddddddddddddddddddddddddddd
-00000000000000000000000000000000000ddddd00000ddd0000dddd000ddddddddd0000dddd0000ddd00000ddddd000dddddddddddddddddddddddddddddddd
-00000000d00000000000000d000000000000dddd000000dd0000dddd00ddddddddd00000dddd0000dd000000dddddd00dddddddddddddddddddddddddddddddd
-00000000dd000000000000dd0000000000000ddd0000000d0000dddd0ddddddddd000000dddd0000d0000000ddddddd0dddddddddddddddddddddddddddddddd
-00000000ddd0000000000ddddddddddd000000ddd00000000000ddddddddddddd0000000dddd00000000000ddddddddd00000000ddddddd00ddddddddddddddd
-00000000dddd00000000dddddddddddd0000000ddd0000000000dddddddddddd00000000dddd0000000000dddddddddd00000000dddddd0000dddddddddddddd
-00000000ddddd000000ddddddddddddd00000000ddd000000000dddddddddddd00000000dddd000000000ddddddddddd00000000ddddd000000ddddddddddddd
-00000000dddddd0000dddddddddddddd00000000dddd00000000dddddddddddd00000000dddd00000000dddddddddddd00000000dddd00000000dddddddddddd
+00000000dddd000000000000dddd00000000dddddddddddd0000dddddddddddd00000000dddd000000000000dddd00000000dddddddddddd0000dddddddddddd
+00000000ddd0000000000000dddd000000000ddddddddddd0000dddddddddddd00000000dddd000000000000ddddd0000000dddddddddddd000ddddddddddddd
+00000000dd00000000000000dddd0000000000dddddddddd0000dddddddddddd00000000dddd000000000000dddddd000000dddddddddddd00dddddddddddddd
+00000000d000000000000000dddd00000000000ddddddddd0000dddddddddddd00000000dddd000000000000ddddddd00000dddddddddddd0ddddddddddddddd
+0000000000000000d0000000dddd000000000000000000000000ddddddddddd00000000ddddd0000dddddddddddddddd0000dddd0ddddddddddddddddddddddd
+0000000000000000dd000000dddd000000000000000000000000dddddddddd00000000dddddd0000dddddddddddddddd0000dddd00dddddddddddddddddddddd
+0000000000000000ddd00000dddd000000000000000000000000ddddddddd00000000ddddddd0000dddddddddddddddd0000dddd000ddddddddddddddddddddd
+0000000000000000dddd0000dddd000000000000000000000000dddddddd00000000dddddddd0000dddddddddddddddd0000dddd0000dddddddddddddddddddd
+00000000777770000000000077770000000777777777777700007777777777770000000077770000000000007777770000007777777777770077777777777777
+00000000777770000000000077777000000777777777777700077777777777770000000077777000000000007777777000077777777777770777777777777777
+00000000777770000000000077777700000777777777777700777777777777770000000077777000007777007777777700077777777777777777777777777777
+00000000777700007770000077777700000077777777777700777777777777770000077777777000077777707777777700077777777777777777777777777777
+00000000777000007777000077777700000007777777777700777777777777770000777777770000777777777777777700077777777777777777777777777777
+00000000000000007777700077777700000000000000000000777777777777770007777777777000777777777777777700077777777777777777777777777777
+00000000000000007777700077777000000000000000000000077777777777700007777777777000777777777777777700007777077777777777777777777777
+00000000000000007777700077770000000000000000000000007777777777000007777777770000777777777777777700007777007777777777777777777777
