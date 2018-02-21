@@ -116,31 +116,33 @@ function _init()
   local noisedy = rnd(32)
   for x=0,127 do
     for y=0,127 do
-      local octaves = 5
+    	--[[
+      local octaves = 3
       local freq = .007
       local max_amp = 0
       local amp = 1
       local value = 0
       local persistance = .65
       for n=1,octaves do
-
-        value = value + simplex2d(noisedx + freq * x,
-                                  noisedy + freq * y)
-        max_amp += amp
-        amp *= persistance
+      	value+=simplex2d(noisedx + freq * x,noisedy + freq * y)
+        max_amp+=amp
+        amp*=persistance
         freq *= 2
       end
-      value /= max_amp
+      value/=max_amp
       value=mid(value+1,0,2)/2
+      ]]
+      local x0,y0=x-8,y-8
+      local value=(x0*x0+y0*y0)<64 and 1 or 0
       add(clouds,value)
     end
   end
   
 	for x=0,127 do
-  for y=0,127 do
+  	for y=0,127 do
   	add(cache,flags(x,y))
-  end
- end
+  	end
+ 	end
 end
 
 function _update60()
@@ -209,7 +211,7 @@ function _draw()
   	local j=j0
 	 	local y0=-dy-24
 	 	while y0<127+24 do
-	 		local f=flags_cache(i,j)
+	 		local f=solid(i,j)
 	 		if f!=0 then
 	 			--[[
 	 			if f==1 or f==8 or f==4 or f==2 then
@@ -221,8 +223,13 @@ function _draw()
 	 			end
 	 			
  			 ]]
- 			 spr(f,x0,y0)
-					print(f,x0,y0,8)					
+ 			 --spr(f,x0,y0)
+				--print(f,x0+3,y0+2,5)
+				rectfill(x0,y0,x0+scale-1,y0+scale-1,(i+j)%2+9)
+				if(solid(i,j)==1) pset(x0+1,y0+1,1)
+				if(solid(i+1,j)==1) pset(x0+3,y0+1,1)
+				if(solid(i+1,j+1)==1) pset(x0+3,y0+3,1)
+				if(solid(i,j+1)==1) pset(x0+1,y0+3,1)
  			end
  			
  			j+=1
