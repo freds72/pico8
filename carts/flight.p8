@@ -189,7 +189,7 @@ function make_clouds()
   local noisedy = rnd(32)
   for x=0,127 do
     for y=0,127 do
-      local octaves = 1
+      local octaves = 3
       local freq = .007
       local max_amp = 0
       local amp = 1
@@ -227,9 +227,9 @@ local dither_pat=json_parse('[0b1111111111111111,0b0111111111111111,0b0111111111
 -- sunset
 -- local colors={0,9,10,7}
 -- sea
---local colors={0,1,12,7}
+local colors={0,1,12,7}
 -- night
-local colors={0,1,5,7}
+-- local colors={0,1,5,7}
 
 -- futures
 function futures_update(futures)
@@ -556,7 +556,7 @@ _g.update_blt=function(self)
 end
 
 local all_weapons=json_parse('{"gun":{"sfx":63,"spread":0.04,"dmg":1,"v":0.4,"ttl":[32,48],"dly":5,"ammo":75,"shk_pow":2},"gun_turret":{"id":0,"sfx":63,"spread":0.04,"dmg":1,"v":0.4,"ttl":[32,48],"dly":10,"los":16,"los_angle":0.5}}')
-local all_parts=json_parse('{"flash":{"dly":8,"r":0.9,"c":7,"dr":-0.1,"draw":"draw_circ_part"},"part_cls":{"update":"update_part","draw":"draw_pixel_part","inertia":0.98,"r":1,"dr":0,"ttl":30},"trail":{"c":13,"rnd":{"ttl":[24,32]}},"smoke":{"draw":"draw_circ_part","c":0xd7,"rnd":{"dr":[0.01,0.05],"ttl":[30,60]},"dy":0.2},"blast":{"draw":"draw_circ_part","dr":-0.09,"r":2,"rnd":{"debris":[8,12]},"ttl":16,"c":0x77},"debris":{"g":true,"update":"update_emitter","rnd":{"emit_dly":[2,8]},"emit_t":0,"emit_cls":"smoke"}}')
+local all_parts=json_parse('{"flash":{"dly":8,"r":0.9,"c":7,"dr":-0.1,"draw":"draw_circ_part"},"part_cls":{"update":"update_part","draw":"draw_pixel_part","inertia":0.98,"r":1,"dr":0,"ttl":30},"trail":{"c":13,"rnd":{"ttl":[24,32]}},"smoke":{"draw":"draw_circ_part","c":0xd7,"rnd":{"dr":[0.002,0.005],"ttl":[30,60]},"dy":0.08},"blast":{"draw":"draw_circ_part","dr":-0.09,"r":1,"rnd":{"debris":[8,12]},"ttl":16,"c":0x77},"debris":{"g":true,"update":"update_emitter","rnd":{"emit_dly":[2,8]},"emit_t":0,"emit_cls":"smoke"}}')
 function make_part(x,y,src,dx,dy)
 	src=all_parts[src]
 	local p=clone(all_parts[src.base_cls or "part_cls"],
@@ -625,8 +625,8 @@ function make_blast(x,y,dx,dy)
 	for i=1,p.debris do
 		local angle=rnd()
 		local c,s=cos(angle),sin(angle)
-		local px,py=x+rnd(8)*c,y+rnd(8)*s
-		local pdx,pdy=dx+c,dy+s
+		local px,py=x+rnd(2)*c,y+rnd(2)*s
+		local pdx,pdy=dx+c/4,dy+s/4
 		if py<0 then
 			pdy=abs(0.8*pdy)
 			py=0
@@ -638,14 +638,13 @@ end
 
 
 local clouds={}
-function draw_clouds(x,y,fp)
- local scale=16
+function draw_clouds(x,y,fp,scale)
  local dx,dy=x%scale,y%scale
  local i0,j0=flr(x/scale),flr(y/scale)
 	local i=i0
 	local x0=-dx-24
 	fillp(fp)
-	color(colors[3])
+	color(colors[2])
  while x0<127+24 do
  	local j=j0
  	local y0=-dy-24
@@ -873,19 +872,20 @@ function update_actor(a)
 	
 	-- collision?
 	local hit=false
-	if a.y<1 then
+	if a.y<0.5 then
 		hit=true
 	end
 	for _,other in pairs(actors) do
-		if other!=a and sqr_dist(a.x,a.y,other.x,other.y)<4 then
+		if other!=a and sqr_dist(a.x,a.y,other.x,other.y)<1 then
 			--other:hit()
 			
-			hit=true
+			--hit=true
 		end
 	end
 	if hit then
-		--a:hit()
-		--return false
+		a:hit()
+		cmap_op(a,cmap_del)
+		return false
 	end
 	
 	-- calculate drift force
@@ -920,13 +920,13 @@ _g.draw_map_actor=function(self,x,y,w)
 	y-=4*self.ch
 	map(self.cx,self.cy,x,y,self.cw,self.ch)
 
-	--[[
 	for _,anchor in pairs(self.anchors) do
 		local x,y=self.x+anchor.x,self.y+anchor.y
 		x,y=cam_project(x,y,0)
+		--print(anchor.x.."/"..anchor.y,x,y,9)
+		--rectfill(x,y,x+7,y+7,9)		
 		line(x,y,x+8*anchor.u,y-8*anchor.v,8)
 	end
-	]]
 end
 _g.update_b29=function(self)
 
@@ -978,14 +978,15 @@ function make_anchor(a,i,j,s)
 	for _,wp in pairs(all_weapons) do
 		if wp.id==flags then
 
+	local u,v=cos(angle),-sin(angle)
 	return {
 				actor=a,
-				x=i,
-				y=-j,
+				x=i-a.cw/2+0.5*v,---a.cw/2+0.5*v,
+				y=-j+a.ch/2-0.5*u,--+a.ch/2+a.cy+0.5*u,
 				base_angle=angle,
 				angle=0,
-				u=cos(angle),
-				v=-sin(angle),
+				u=u,
+				v=v,
 				--angle=0,
 				fire_t=0,
 				ammo=wp.ammo,-- can be nil
@@ -1032,12 +1033,12 @@ function game_screen:draw()
 
 	--ground
 	local x,y,w=cam_project(0,0,0.8)
-	draw_clouds(x,y)
+	draw_clouds(x,y,nil,8)
 	draw_ground({},x,y,w)
 
 	zbuf_draw()
-	x,y,w=cam_project(0,0,-0.2)
-	draw_clouds(x,y,0b1010010110100101.1)
+	x,y,w=cam_project(0,0,-0.8)
+	draw_clouds(x,y,0b1010010110100101.1,16)
 	-- draw hud
 	if lead and not lead.visible then
 		x,y=cam_project(lead.x,lead.y,0)
@@ -1047,6 +1048,7 @@ function game_screen:draw()
 		line(64+8*x,64+8*y,64+10*x,64+10*y,13)
 	end
 	
+	--[[
 	for i=0,196 do
 		for j=0,16 do
 			local h=i+196*j
@@ -1056,6 +1058,7 @@ function game_screen:draw()
 			end
 		end
 	end
+	]]
 	
 	fillp()
 	rectfill(0,0,127,8,1)
@@ -1088,7 +1091,7 @@ function game_screen:init()
 	
 	local a=make_actor(24,8,"b29")
  
-	plyr=make_actor(36,3,"f14")
+	plyr=make_actor(30,3,"f14")
 	plyr.input=control_plyr
 	plyr.score=0
 	-- anchor points
