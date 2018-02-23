@@ -547,12 +547,31 @@ _g.update_blt=function(self)
 	self.y+=self.dy
 	self.prevx,self.prevy=x0,y0
 	
- if self.y<0 then
- 	make_part(self.x,0,"flash")
- 	return false
- end
-	zbuf_write(self)
-	return true
+	local hit=false
+	if(self.y<0) then
+		self.y=0
+		hit=true
+	else
+ 	cmap_iterator(self.x,self.y,self.side)
+ 	local a=cmap_next()
+ 	while a do
+ 		local x,y=self.x-a.x,self.y-a.y
+ 		if abs(x)<(a.w+0.4)/2 and
+       abs(y)<(a.h+0.4)/2 and a:hit(self) then
+				hit=true
+				break
+ 		end
+ 		a=cmap_next()
+ 	end
+	end
+	
+	if hit then
+		make_part(self.x,self.y,"flash")
+		return false
+	end
+	
+ zbuf_write(self)
+ return true
 end
 
 local all_weapons=json_parse('{"gun":{"sfx":63,"spread":0.04,"dmg":1,"v":0.4,"ttl":[32,48],"dly":5,"ammo":75,"shk_pow":2},"gun_turret":{"id":0,"sfx":63,"spread":0.04,"dmg":1,"v":0.4,"ttl":[32,48],"dly":10,"los":16,"los_angle":0.5}}')
@@ -883,7 +902,7 @@ function update_actor(a)
 		end
 	end
 	if hit then
-		a:hit()
+		--a:hit()
 		cmap_op(a,cmap_del)
 		return false
 	end
@@ -909,8 +928,7 @@ local actor_cls={
  	angle=0,
  	da=0,
  	update=update_actor,
- 	draw=draw_actor,
- 	hit=hit
+ 	draw=draw_actor
 }
 _g.draw_map_actor=function(self,x,y,w)
 	palt(14,true)
@@ -920,12 +938,20 @@ _g.draw_map_actor=function(self,x,y,w)
 	y-=4*self.ch
 	map(self.cx,self.cy,x,y,self.cw,self.ch)
 
+	--[[
 	for _,anchor in pairs(self.anchors) do
 		local x,y=self.x+anchor.x,self.y+anchor.y
 		x,y=cam_project(x,y,0)
-		--print(anchor.x.."/"..anchor.y,x,y,9)
-		--rectfill(x,y,x+7,y+7,9)		
 		line(x,y,x+8*anchor.u,y-8*anchor.v,8)
+	end
+	]]
+end
+_g.hit_map_actor=function(self,blt)
+	for _,anchor in pairs(self.anchors) do
+		local x,y=self.x+anchor.x,self.y+anchor.y
+		if sqr_dist(x,y,blt.x,blt.y)<0.25 then
+			return true
+		end
 	end
 end
 _g.update_b29=function(self)
@@ -942,7 +968,17 @@ _g.update_b29=function(self)
 	return true
 end
 
-local all_actors=json_parse('{"b29":{"draw":"draw_map_actor","update":"update_b29","w":4.4,"h":1.4,"cx":0,"cy":0,"dx":0,"dy":0,"is_map":true},"f14":{"w":0.9,"h":0.4,"frames":[64,66,68,70,72,74,76],"frame":1,"df":0,"rolling":false,"inverted":false}}')
+_g.hit_plane_actor=function(self,blt)
+	for i=-1,1 do
+		local x,y=self.x+i*self.u/2,self.y+i*self.v/2
+		if sqr_dist(x,y,blt.x,blt.y)<0.25 then
+			-- todo: damage+feedback
+			return true
+		end
+	end
+end
+
+local all_actors=json_parse('{"b29":{"draw":"draw_map_actor","update":"update_b29","hit":"hit_map_actor","w":4.4,"h":1.4,"cx":0,"cy":0,"dx":0,"dy":0,"is_map":true},"f14":{"w":0.9,"h":0.4,"frames":[64,66,68,70,72,74,76],"frame":1,"df":0,"rolling":false,"inverted":false,"hit":"hit_plane_actor"}}')
 function make_actor(x,y,src)
 	src=all_actors[src]
 	local a=clone(actor_cls,clone(src,{x=x,y=y,f={}}))
@@ -977,16 +1013,14 @@ function make_anchor(a,i,j,s)
 
 	for _,wp in pairs(all_weapons) do
 		if wp.id==flags then
-
-	local u,v=cos(angle),-sin(angle)
-	return {
+			return {
 				actor=a,
-				x=i-a.cw/2+0.5*v,---a.cw/2+0.5*v,
-				y=-j+a.ch/2-0.5*u,--+a.ch/2+a.cy+0.5*u,
+				x=i-a.cw/2+0.5,
+				y=-j+a.ch/2-0.5,
 				base_angle=angle,
 				angle=0,
-				u=u,
-				v=v,
+				u=cos(angle),
+				v=-sin(angle),
 				--angle=0,
 				fire_t=0,
 				ammo=wp.ammo,-- can be nil
@@ -1048,17 +1082,15 @@ function game_screen:draw()
 		line(64+8*x,64+8*y,64+10*x,64+10*y,13)
 	end
 	
-	--[[
-	for i=0,196 do
+	for i=0,195 do
 		for j=0,16 do
 			local h=i+196*j
 			if cmap[h] then
 				x,y=cam_project(i,j,0)
-				print(#cmap[h],x,y,7)
+				print(#cmap[h],x-4,y-4,7)
 			end
 		end
 	end
-	]]
 	
 	fillp()
 	rectfill(0,0,127,8,1)
@@ -1084,16 +1116,21 @@ function game_screen:init()
 	lead=make_actor(32,3,"f14")
 	lead.input=control_npc
 	lead.npc=true
+	lead.side=bad_side
 	
 	lead=make_actor(30,4,"f14")
 	lead.input=control_npc
 	lead.npc=true
+	lead.side=bad_side
 	
 	local a=make_actor(24,8,"b29")
- 
+	a.side=bad_side
+	
 	plyr=make_actor(30,3,"f14")
 	plyr.input=control_plyr
 	plyr.score=0
+	plyr.side=good_side
+	
 	-- anchor points
 	plyr.anchors={}
 	-- primary weapon
