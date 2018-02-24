@@ -172,7 +172,7 @@ function noise_get(n,i,j)
 	j%=128
 	if(i<0) i+=128
 	if(j<0) j+=128
-	return n[i+128*j+1]>0.8 and 1 or 0
+	return n[i+128*j+1]>0.7 and 1 or 0
 end
 
 function noise_flags(n,i,j)
@@ -189,7 +189,7 @@ function make_clouds()
   local noisedy = rnd(32)
   for x=0,127 do
     for y=0,127 do
-      local octaves = 3
+      local octaves = 5
       local freq = .007
       local max_amp = 0
       local amp = 1
@@ -1052,8 +1052,8 @@ function game_screen:update()
 	time_t+=1
 	
 	zbuf_clear()
-	-- known bug: one frame delay
-	cam_track(plyr.x,plyr.y)
+
+	cam_track(plyr.x+4*plyr.u,plyr.y+4*plyr.v)
 	
 	filter(actors)
 	filter(parts)
@@ -1082,6 +1082,7 @@ function game_screen:draw()
 		line(64+8*x,64+8*y,64+10*x,64+10*y,13)
 	end
 	
+	--[[
 	for i=0,195 do
 		for j=0,16 do
 			local h=i+196*j
@@ -1091,6 +1092,7 @@ function game_screen:draw()
 			end
 		end
 	end
+	]]
 	
 	fillp()
 	rectfill(0,0,127,8,1)
