@@ -141,7 +141,8 @@ function lerp(a,b,t)
 	return a*(1-t)+b*t
 end
 
-local time_t=0
+local time_t,start_t=0,0
+
 local fonts={
 	["0"]={{0,0,1,0},{1,0,1,1},{1,1,0,1},{0,1,0,0}},
 	["1"]={{0.5,0,0.5,1}},
@@ -269,6 +270,7 @@ end
 
 local actors={}
 local plyr
+local npc_count=0
 function make_plyr(x,y)
 	return add(actors,{
 		score=0,
@@ -301,19 +303,7 @@ function collide_blt(self)
 					plyr.score+=1
 					plyr.combo_t=time_t+30
 					
-					make_blast(a.x,a.y)
-					del(actors,a)
-			
-					-- spawn mini rocks
-					local r=a.r/2
-					if r>2 then
- 					local angle,da=rnd(),1/3
-    		for i=1,3 do
-    			local u,v=cos(angle),-sin(angle)
-    			make_rock(a.x+r*u,a.y-r*v,u,v,r,6)
-    			angle+=da
-    		end
-					end
+					a:die()
 				else
 					make_part(self.x,self.y,0,0,0,flash_part)
 				end
@@ -324,7 +314,7 @@ function collide_blt(self)
 	return true
 end
 
-function make_rock(x,y,u,v,radius,n)
+function make_rock(x,y,u,v,radius,n,hp)
 	local angle,da=0,1/n
 	local segments={}
 	for i=1,n do
@@ -334,8 +324,9 @@ function make_rock(x,y,u,v,radius,n)
 		angle+=da
 	end
 		
+	npc_count+=1
 	add(actors,{
-		hp=3,
+		hp=hp or 3,
 		x=x,
 		y=y,
 		acc=0.25+0.25*rnd(),
@@ -346,7 +337,8 @@ function make_rock(x,y,u,v,radius,n)
 		r=radius, -- keep initial radius
 		segments=segments,
 		draw=draw_rock,
-		update=update_rock
+		update=update_rock,
+		die=die_rock
 	})
 end
 
@@ -375,6 +367,24 @@ function update_rock(self)
 	self.x%=128
 	self.y%=128
 	return true
+end
+
+function die_rock(self)
+	make_blast(self.x,self.y)
+	
+	npc_count-=1
+	del(actors,self)
+
+	-- spawn mini rocks
+	local r=self.r/2
+	if r>2 then
+		local angle,da=rnd(),1/3
+		for i=1,3 do
+			local u,v=cos(angle),-sin(angle)
+			make_rock(self.x+r*u,self.y-r*v,u,v,r,6,2)
+			angle+=da
+		end
+	end
 end
 
 function control_plyr(self)
@@ -429,7 +439,7 @@ function draw_plyr(self)
  aaline(x1,y1,x2,y2)
 end
 
-local font_scale=8
+local font_scale=6
 function draw_char(x,y,c)
 	local font=fonts[c]
 	if(not font) assert("unsupported char:"..c)
@@ -442,14 +452,57 @@ function draw_char(x,y,c)
 	end
 end
 
+function resolve_collisions()
+	local a,r=plyr.a,plyr.r
+	local points={}
+	add(points,{plyr.x+r*cos(a),plyr.y-r*sin(a)})
+	a+=1/3
+	add(points,{plyr.x+r*cos(a),plyr.y-r*sin(a)})
+	a+=1/3
+	add(points,{plyr.x+r*cos(a),plyr.y-r*sin(a)})
+
+	for _,a in pairs(actors) do
+		if a!=plyr then
+			local dx,dy=a.x-plyr.x,a.y-plyr.y
+			local d=a.r+r
+			if dx*dx+dy*dy<d*d then
+				make_blast(plyr.x,plyr.y)
+				plyr.disable=true
+				del(actors,plyr)
+				return
+			end
+		end
+	end
+end
+
 function _update60()
 	time_t+=1
 	
-	control_plyr(plyr)
-
+	if npc_count==0 and start_t==0 then
+		start_t=time_t+60
+	end
+	
+	if start_t!=0 and start_t<time_t then
+		start_t=0
+		local angle=rnd()
+		for i=1,5 do
+			local u,v=cos(angle),-sin(angle)
+			make_rock(64+60*u,64-60*v,-u,-v,8,8)
+			angle+=1/5
+		end
+	end
+	
+	if not plyr.disable then
+		control_plyr(plyr)
+	end
+	
 	filter(actors,"update")
 	filter(parts,"update")	
 	
+	if not plyr.disable then
+		resolve_collisions()
+	end
+		
 	cam_update()
 end
 
@@ -490,14 +543,14 @@ function _draw()
 	-- score
 	local score=tostr(plyr.score)
 	local x=2
-	for i=1,6-#score do
-		draw_char(x,12,"0")
-		x+=10
+	for i=1,4-#score do
+		draw_char(x,4,"0")
+		x+=font_scale+2
 	end
 	for i=1,#score do
 		local c=sub(score,i,i)
-		draw_char(x,12,c)
-		x+=10
+		draw_char(x,4,c)
+		x+=font_scale+2
 	end
 	-- cheap crt effect
 	if rnd()>0.5 then
@@ -507,8 +560,29 @@ function _draw()
 		memcpy(dst,src,64)
 	end
 	
-	rectfill(0,0,127,8,1)
-	print("cpu:"..flr(100*stat(1)).."%",2,2,15)
+	--rectfill(0,0,127,8,1)
+	--print("cpu:"..flr(100*stat(1)).."%",2,2,15)
+	print(start_t,2,110,15)
+end
+
+local start_screen={
+	starting=false,
+	start_t=0
+}
+function start_screen:update()
+	if btnp(4) and btnp(5) then
+		self.starting=true
+		self.start_t=time_t+12
+	end
+end
+function start_screen:draw()
+	cls()
+	
+	
+	print("press start",48,110,15)
+end
+function start_screen:init()
+	self.starting=false
 end
 
 function _init()
@@ -521,12 +595,5 @@ function _init()
 				{x=rnd(127),
 				 y=rnd(127),
 				 c=rnd()})
-		end
-		
-		local angle=rnd()
-		for i=1,5 do
-			local u,v=cos(angle),-sin(angle)
-			make_rock(64+48*u,64-48*v,u,v,8,8)
-			angle+=1/5
 		end
 end
