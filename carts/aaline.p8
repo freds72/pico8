@@ -137,7 +137,23 @@ function forall(array,fn)
 	end
 end
 
+function lerp(a,b,t)
+	return a*(1-t)+b*t
+end
+
 local time_t=0
+local fonts={
+	["0"]={{0,0,1,0},{1,0,1,1},{1,1,0,1},{0,1,0,0}},
+	["1"]={{0.5,0,0.5,1}},
+	["2"]={{0,0,1,0},{1,0,1,0.5},{1,0.5,0,0.5},{0,0.5,0,1},{0,1,1,1}},
+	["3"]={{0,0,1,0},{1,0,1,1},{1,1,0,1},{0,0.5,1,0.5}},
+	["4"]={{0,0,0,0.5},{0,0.5,1,0.5},{1,0,1,1}},
+	["5"]={{1,0,0,0},{0,0,0,0.5},{0,0.5,1,0.5},{1,0.5,1,1},{1,1,0,1}},
+	["6"]={{1,0,0,0},{0,0,0,1},{0,0.5,1,0.5},{1,0.5,1,1},{1,1,0,1}},
+	["7"]={{0,0,1,0},{1,0,1,1}},
+	["8"]={{0,0,1,0},{1,0,1,1},{1,1,0,1},{0,1,0,0},{0,0.5,1,0.5}},
+	["9"]={{1,0,0,0},{0,0,0,0.5},{0,0.5,1,0.5},{1,0,1,1}}
+}
 local pixel_part=0
 local flash_part=1
 local parts={}
@@ -213,6 +229,9 @@ function update_part(self)
 	self.y+=self.f*self.v
 	self.f*=self.inertia
 	
+ self.x%=128
+	self.y%=128
+
 	if self.r then
 		self.r+=self.dr
 	end
@@ -241,16 +260,20 @@ function draw_blt(self)
 	local x,y=self.x,self.y
 	pset(x,y,15)
 	local dx,dy=x-flr(x),y-flr(y)
+	-- kind of unit circle dithering
 	shadepix_xy(x+1,y,dx)
 	shadepix_xy(x-1,y,1-dx)
-	shadepix_xy(x,y-1,1-dx)
-	shadepix_xy(x,y+1,dx)
+	shadepix_xy(x,y-1,dx)
+	shadepix_xy(x,y+1,1-dx)
 end
 
 local actors={}
 local plyr
 function make_plyr(x,y)
 	return add(actors,{
+		score=0,
+		combo_mult=0,
+		combo_t=0,
 		r=4,
 		x=x,
 		y=y,
@@ -272,11 +295,25 @@ function collide_blt(self)
 		-- rock?
 		if a!=plyr then
 			local dx,dy=a.x-self.x,a.y-self.y
-			if dx*dx+dy*dy<64 then
+			if dx*dx+dy*dy<a.r*a.r then
 				a.hp-=1
 				if a.hp<=0 then
+					plyr.score+=1
+					plyr.combo_t=time_t+30
+					
 					make_blast(a.x,a.y)
 					del(actors,a)
+			
+					-- spawn mini rocks
+					local r=a.r/2
+					if r>2 then
+ 					local angle,da=rnd(),1/3
+    		for i=1,3 do
+    			local u,v=cos(angle),-sin(angle)
+    			make_rock(a.x+r*u,a.y-r*v,u,v,r,6)
+    			angle+=da
+    		end
+					end
 				else
 					make_part(self.x,self.y,0,0,0,flash_part)
 				end
@@ -287,28 +324,27 @@ function collide_blt(self)
 	return true
 end
 
-function make_rock()
-	local radius,n={},2*(2+flr(rnd(2)))
+function make_rock(x,y,u,v,radius,n)
 	local angle,da=0,1/n
+	local segments={}
 	for i=1,n do
-		local r=4+4*rnd()
+		local r=lerp(radius*0.8,radius*1.2,rnd())
 		local y,x=r*cos(angle),-r*sin(angle)
-		add(radius,{x=x,y=y})
+		add(segments,{x=x,y=y})
 		angle+=da
 	end
-	local angle,acc=rnd(),rnd()/2
-	local u,v=cos(angle),-sin(angle)
 		
 	add(actors,{
 		hp=3,
-		x=64+48*u,
-		y=64-48*v,
-		acc=acc,
+		x=x,
+		y=y,
+		acc=0.25+0.25*rnd(),
 		u=-u,
 		v=v,
 		a=rnd(),
 		da=rnd()/64,
-		segments=radius,
+		r=radius, -- keep initial radius
+		segments=segments,
 		draw=draw_rock,
 		update=update_rock
 	})
@@ -335,14 +371,9 @@ function update_rock(self)
 	self.a+=self.da
 	self.x+=self.acc*self.u
 	self.y+=self.acc*self.v
-	if self.x>110 or self.x<12 then
-		self.x=mid(self.x,12,110)
-		self.u=-self.u
-	end
-	if self.y>110 or self.y<12 then
-		self.y=mid(self.y,12,110)
-		self.v=-self.v
-	end
+	
+	self.x%=128
+	self.y%=128
 	return true
 end
 
@@ -376,6 +407,9 @@ function update_plyr(self)
 	
 	self.x+=self.f*self.u
 	self.y+=self.f*self.v
+
+	self.x%=128
+	self.y%=128
 	
 	self.f*=0.96
 	
@@ -393,6 +427,19 @@ function draw_plyr(self)
 	aaline(x0,y0,x1,y1)			
 	aaline(x0,y0,x2,y2)
  aaline(x1,y1,x2,y2)
+end
+
+local font_scale=8
+function draw_char(x,y,c)
+	local font=fonts[c]
+	if(not font) assert("unsupported char:"..c)
+	for _,seg in pairs(font) do
+		aaline(
+			x+font_scale*seg[1],
+			y+font_scale*seg[2],
+			x+font_scale*seg[3],
+			y+font_scale*seg[4],15)
+	end
 end
 
 function _update60()
@@ -421,12 +468,45 @@ function normpal()
 	end
 end
 
+local stars={}
 function _draw()
-	cls()
+	cls(0)
+	
+	-- scanline effect	
+	local mem=0x6000
+	for i=0,127 do
+		local c=band(i,1)
+		memset(mem,bor(shl(c,4),c),64)
+		mem+=64
+	end
+	
+	for _,s in pairs(stars) do
+		pset(s.x,s.y,15*s.c)
+	end
 	
 	forall(actors,"draw")
 	forall(parts,"draw")
 
+	-- score
+	local score=tostr(plyr.score)
+	local x=2
+	for i=1,6-#score do
+		draw_char(x,12,"0")
+		x+=10
+	end
+	for i=1,#score do
+		local c=sub(score,i,i)
+		draw_char(x,12,c)
+		x+=10
+	end
+	-- cheap crt effect
+	if rnd()>0.5 then
+		-- avoid memcpy overflow
+		local i=flr(rnd(126))
+		local src,dst=0x6000+i*64,0x6000+i*64+2+flr(rnd(2))
+		memcpy(dst,src,64)
+	end
+	
 	rectfill(0,0,127,8,1)
 	print("cpu:"..flr(100*stat(1)).."%",2,2,15)
 end
@@ -436,7 +516,17 @@ function _init()
 		
 		plyr=make_plyr(64,64)
 		
+		for i=1,32 do
+			add(stars,
+				{x=rnd(127),
+				 y=rnd(127),
+				 c=rnd()})
+		end
+		
+		local angle=rnd()
 		for i=1,5 do
-			make_rock()
+			local u,v=cos(angle),-sin(angle)
+			make_rock(64+48*u,64-48*v,u,v,8,8)
+			angle+=1/5
 		end
 end
