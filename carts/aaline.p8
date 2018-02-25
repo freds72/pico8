@@ -229,7 +229,7 @@ function draw_circ_part(self)
 end
 
 function draw_part(self)
- shadepix_xy(self.x,self.y,0)
+ pset(self.x,self.y,15)
  local d=0.75*self.f
  shadepix_xy(self.x+1,self.y,d)
  shadepix_xy(self.x,self.y+1,d)
@@ -238,7 +238,13 @@ function draw_part(self)
 end
 
 function draw_blt(self)
-	aaline(self.x,self.y,self.x+8*self.u,self.y+8*self.v)
+	local x,y=self.x,self.y
+	pset(x,y,15)
+	local dx,dy=x-flr(x),y-flr(y)
+	shadepix_xy(x+1,y,dx)
+	shadepix_xy(x-1,y,1-dx)
+	shadepix_xy(x,y-1,1-dx)
+	shadepix_xy(x,y+1,dx)
 end
 
 local actors={}
@@ -283,8 +289,12 @@ end
 
 function make_rock()
 	local radius,n={},2*(2+flr(rnd(2)))
+	local angle,da=0,1/n
 	for i=1,n do
-		add(radius,4+4*rnd())
+		local r=4+4*rnd()
+		local y,x=r*cos(angle),-r*sin(angle)
+		add(radius,{x=x,y=y})
+		angle+=da
 	end
 	local angle,acc=rnd(),rnd()/2
 	local u,v=cos(angle),-sin(angle)
@@ -304,17 +314,21 @@ function make_rock()
 	})
 end
 
+function rotate(x,y,c,s)
+	return x*c-y*s,x*s+y*c
+end
 function draw_rock(self)	
-	local a,da=self.a,1/#self.segments
+	local u,v=cos(self.a),-sin(self.a)
 	local r=self.segments[1]
-	local x0,y0,x1,y1=self.x+r*cos(a),self.y+r*sin(a)
+	local rx,ry=rotate(r.x,r.y,u,v)
+	local x0,y0,x1,y1=self.x+rx,self.y+ry
 	local x2,y2=x0,y0
-	for i=1,#self.segments+1 do
+	for i=1,#self.segments do
 		r=self.segments[i%#self.segments+1]
-		x1,y1=self.x+r*cos(a),self.y+r*sin(a)
+		rx,ry=rotate(r.x,r.y,u,v)
+		x1,y1=self.x+rx,self.y+ry
 		aaline(x0,y0,x1,y1)
 		x0,y0=x1,y1
-		a+=da
 	end
 end
 function update_rock(self)
@@ -349,6 +363,7 @@ function control_plyr(self)
 		self.emit_t=time_t+rnd(3)
 		local emit_v=0.5+rnd()
 		make_part(self.x-0.5*self.u,self.y-0.5*self.v,-self.u,-self.v,emit_v)
+		make_part(self.x-4*self.u,self.y-4*self.v,-self.u,-self.v,0,flash_part)
 	end
 end
 
