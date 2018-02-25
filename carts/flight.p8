@@ -189,7 +189,7 @@ function make_clouds()
   local noisedy = rnd(32)
   for x=0,127 do
     for y=0,127 do
-      local octaves = 5
+      local octaves = 1
       local freq = .007
       local max_amp = 0
       local amp = 1
@@ -521,15 +521,17 @@ end
 _g.draw_circ_part=function(self,x,y)
 	local f=smoothstep((self.t-time_t)/self.ttl)
 	fillp(dither_pat[flr(#dither_pat*f)+1])
-	circfill(x,y,8*self.r,self.c or 13)
+	circfill(x,y,8*self.r,self.c)
 end
 
-_g.draw_blt=function(self,x,y)
-	-- todo: get sprite from self!!
+_g.draw_spr_part=function(self,x,y)
+	spr(self.spr,x,y)
+end
+
+_g.draw_cached_rspr_part=function(self,x,y)
 	-- blit sprite
-	local src,dst=0x4300,0x0
-	local angle=self.angle
-	if(angle<0) angle+=1 
+	local src,dst=self.rspr_mem,0x0
+	local angle=((self.angle%1)+1)%1
 	src+=flr(angle*32)*32
 	for i=0,7 do
 		poke4(dst,peek4(src))
@@ -574,8 +576,8 @@ _g.update_blt=function(self)
  return true
 end
 
-local all_weapons=json_parse('{"gun":{"sfx":63,"spread":0.04,"dmg":1,"v":0.4,"ttl":[32,48],"dly":5,"ammo":75,"shk_pow":2},"gun_turret":{"id":0,"sfx":63,"spread":0.04,"dmg":1,"v":0.4,"ttl":[32,48],"dly":10,"los":16,"los_angle":0.5}}')
-local all_parts=json_parse('{"flash":{"dly":8,"r":0.9,"c":7,"dr":-0.1,"draw":"draw_circ_part"},"part_cls":{"update":"update_part","draw":"draw_pixel_part","inertia":0.98,"r":1,"dr":0,"ttl":30},"trail":{"c":13,"rnd":{"ttl":[24,32]}},"smoke":{"draw":"draw_circ_part","c":0xd7,"rnd":{"dr":[0.002,0.005],"ttl":[30,60]},"dy":0.08},"blast":{"draw":"draw_circ_part","dr":-0.09,"r":1,"rnd":{"debris":[8,12]},"ttl":16,"c":0x77},"debris":{"g":true,"update":"update_emitter","rnd":{"emit_dly":[2,8]},"emit_t":0,"emit_cls":"smoke"}}')
+local all_weapons=json_parse('{"gun":{"sfx":63,"spread":0.01,"dmg":1,"v":0.4,"ttl":[32,48],"dly":5,"ammo":75,"shk_pow":2,"spr":2},"gun_turret":{"id":0,"sfx":63,"spread":0.04,"dmg":1,"v":0.4,"ttl":[32,48],"dly":10,"los":16,"los_angle":0.5,"draw":"draw_cached_rspr_part","rspr_mem":0,"spr":1}}')
+local all_parts=json_parse('{"flash":{"dly":8,"r":0.9,"c":7,"dr":-0.1,"draw":"draw_circ_part"},"part_cls":{"update":"update_part","draw":"draw_pixel_part","inertia":0.98,"r":1,"dr":0,"ttl":30},"trail":{"c":13,"rnd":{"ttl":[24,32]}},"smoke":{"draw":"draw_circ_part","c":0xd7,"rnd":{"dr":[0.002,0.005],"ttl":[30,60]},"dy":0.08},"blast":{"draw":"draw_circ_part","dr":-0.09,"r":1,"rnd":{"debris":[8,12]},"ttl":16,"c":0x77},"debris":{"g":true,"update":"update_emitter","rnd":{"emit_dly":[2,8]},"emit_t":0,"emit_cls":"smoke"},"thruster":{"rnd":{"r":[0.3,0.4],"dly":[8,12]},"c":0x77,"dr":-0.02,"draw":"draw_circ_part"}}')
 function make_part(x,y,src,dx,dy)
 	src=all_parts[src]
 	local p=clone(all_parts[src.base_cls or "part_cls"],
@@ -626,11 +628,14 @@ function make_blt(a,x,y,angle,wp)
 			t=time_t+lerp(wp.ttl[1],wp.ttl[2],rnd()),
 			-- for fast collision
 			prevx=b.x,prevy=b.y,
+			spr=wp.spr,
+			-- if using rspr mem cache
+			rspr_mem=wp.rspr_mem,
 			update=wp.update or _g.update_blt,
-			draw=wp.draw or _g.draw_blt},b)
+			draw=wp.draw or _g.draw_spr_part},b)
 		add(parts,b)
 		-- muzzle flash
-		if(i==1) make_part(x,y+0.5,"flash")
+		if(i==1) make_part(x,y,"flash")
 		ang+=da
 	end
 end
@@ -833,13 +838,22 @@ function control_plyr(self)
 		end
 	end
 
-	local anchor=self.anchors[1]
-	if btn(4) and anchor.fire_t<time_t then
-		if anchor.ammo>0 then
-			anchor.fire_t=time_t+anchor.wp.dly
-			local x,y=self.x+self.u*anchor.x,self.y+self.v*anchor.y
-			make_blt(self,x,y,self.angle,anchor.wp)
+	if btn(4) and self.fire_t<time_t then
+		if self.ammo>0 then
+			self.fire_t=time_t+self.wp.dly
+			local x,y=self.x+1.2*self.u,self.y+1.2*self.v
+			make_blt(self,x,y,self.angle,self.wp)
 		end
+	end
+	
+	if btnp(5) and self.boost_t<time_t then
+		self.boost=0.2
+		self.boost_t=time_t+self.boost_dly
+	end
+
+	if self.boost_t>time_t then
+		local x,y=self.x-0.8*self.u,self.y-0.8*self.v
+		make_part(x,y,"thruster")
 	end
 end
 
@@ -862,8 +876,14 @@ function move_actor(a)
 	a.dx+=u
 	a.dy+=v
 	local dx,dy=normalize(a.dx,a.dy)
-	a.x+=dx*a.acc
-	a.y+=dy*a.acc
+
+	local acc=a.acc
+	if a.boost then
+		acc+=a.boost
+		a.boost*=0.98
+	end
+	a.x+=dx*acc
+	a.y+=dy*acc
 
 	if a.rolling then
 		if flr(a.frame)!=a.target_frame then
@@ -978,7 +998,7 @@ _g.hit_plane_actor=function(self,blt)
 	end
 end
 
-local all_actors=json_parse('{"b29":{"draw":"draw_map_actor","update":"update_b29","hit":"hit_map_actor","w":4.4,"h":1.4,"cx":0,"cy":0,"dx":0,"dy":0,"is_map":true},"f14":{"w":0.9,"h":0.4,"frames":[64,66,68,70,72,74,76],"frame":1,"df":0,"rolling":false,"inverted":false,"hit":"hit_plane_actor"}}')
+local all_actors=json_parse('{"b29":{"draw":"draw_map_actor","update":"update_b29","hit":"hit_map_actor","w":4.4,"h":1.4,"cx":0,"cy":0,"dx":0,"dy":0,"is_map":true},"f14":{"w":0.9,"h":0.4,"frames":[64,66,68,70,72,74,76],"frame":1,"df":0,"rolling":false,"inverted":false,"hit":"hit_plane_actor","wp":"gun","fire_t":0}}')
 function make_actor(x,y,src)
 	src=all_actors[src]
 	local a=clone(actor_cls,clone(src,{x=x,y=y,f={}}))
@@ -1103,18 +1123,7 @@ end
 function game_screen:init()
  -- noise clouds (marching squares)
  clouds=make_clouds()
- 
-	-- sprite cache 
- local src,dst=0x0+16+16*64,0x4300
- for i=0,31 do
- 	rspr(1,32,16,i/32,1)
-		-- copy image to user data
-		for k=0,7 do
-			poke4(dst,peek4(src+k*64))
-			dst+=4
-		end
- end
-	
+ 	
 	lead=make_actor(32,3,"f14")
 	lead.input=control_npc
 	lead.npc=true
@@ -1132,20 +1141,11 @@ function game_screen:init()
 	plyr.input=control_plyr
 	plyr.score=0
 	plyr.side=good_side
-	
-	-- anchor points
-	plyr.anchors={}
-	-- primary weapon
-	add(plyr.anchors,{
-		fire_t=0,
-		wp=all_weapons["gun"],
-		-- relative position
-		x0=1,y0=0,
-		-- absolute position
-		x=0,y=0,
-		angle=0,
-		ammo=100
-	})
+	plyr.ammo=100
+	plyr.wp=all_weapons[plyr.wp]
+	plyr.boost=0
+	plyr.boost_t=0
+	plyr.boost_dly=90
 end
 
 cur_screen=game_screen
@@ -1158,20 +1158,38 @@ function _update60()
 	cur_screen:update()
 end
 function _init()
+	-- sprite cache
+	local dst=0x4300
+	for _,wp in pairs(all_weapons) do
+		if wp.rspr_mem then
+  	wp.rspr_mem=dst
+ 		-- using spr 36
+   local src=0x0+16+16*64
+   for i=0,31 do
+   	rspr(wp.spr,32,16,i/32,1)
+  		-- copy image to user data
+  		for k=0,7 do
+  			poke4(dst,peek4(src+k*64))
+  			dst+=4
+  		end
+  	end
+		end
+	end
+
 	if cur_screen.init then
 		cur_screen:init()
 	end
 end
 
 __gfx__
-00000000eeeeeeee0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000eeeeeeee0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00700700eeeeeeee0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00077000e777777e0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00077000e777777e0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00700700eeeeeeee0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000eeeeeeee0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000eeeeeeee0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000eeeeeeeeeeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000eeeeeeeeeee00eee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00700700e66666eeee0770ee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00077000e777776ee077770e00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00077000e777776ee077770e00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00700700e66666eeee0770ee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000eeeeeeeeeee00eee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000eeeeeeeeeeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
