@@ -15,7 +15,7 @@ function grayvid()
 	for i=0,15 do
 		pal(i,i,0)
 		pal(i,ramp[i],1)
-		palt(i,false)
+	 palt(i,false)
 	end
 end
 function normvid()
@@ -146,10 +146,13 @@ end
 -- game globals
 local time_t,time_dt=0,1
 local cur_screen
-local start_screen={}
+local start_screen={
+	starting=false
+}
 local game_screen={
 	starting=false
 }
+local gameover_screen={}
 
 -- futures
 local before_update,after_draw={},{}
@@ -302,10 +305,10 @@ function draw_char(c,x,y,scale)
 		else
 			local x1,y1=seg[1],12-seg[2]
 			aaline(
-				x+font_scale*x0/12,
-				y+font_scale*y0/12,
-				x+font_scale*x1/12,
-				y+font_scale*y1/12)
+				x+scale*x0/12,
+				y+scale*y0/12,
+				x+scale*x1/12,
+				y+scale*y1/12)
 			x0,y0=x1,y1
 		end
 		::continue::
@@ -348,10 +351,11 @@ function make_part(x,y,u,v,f,typ)
 		update=update_part
 	})
 end
-function make_blt(x,y,u,v)
+function make_blt(x,y,u,v,side)
 	local ttl=60+rnd(12)
 	sfx(4)
 	return add(parts,{
+		side=side,
 		x=x,
 		y=y,
 		u=u,
@@ -387,7 +391,7 @@ function make_blast(x,y)
 		local u,v=cos(angle),sin(angle)
 		make_part(x+8*u,y+8*v,u,v,rnd())		
 	end
-	cam_shake(rnd(),rnd(),5)
+	cam_shake(rnd(),rnd(),3)
 end
 
 function update_part(self)
@@ -402,12 +406,9 @@ function update_part(self)
 	if self.r then
 		self.r+=self.dr
 	end
+
 	--	custom update function?
-	if self.collide then
-		return self:collide()
-	end
-	return true
-	--return self.collide and  or true
+	return self.collide and self:collide() or true
 end
 
 function draw_circ_part(self)
@@ -437,17 +438,27 @@ end
 local actors={}
 local plyr
 local npc_count=0
+
+local plyr_r=4
+local plyr_segments={}
+add(plyr_segments,{x=0,y=plyr_r})
+add(plyr_segments,{x=1.2*plyr_r*cos(1/3),y=plyr_r*sin(1/3)})
+add(plyr_segments,{x=0,y=-0.5*plyr_r})
+add(plyr_segments,{x=-1.2*plyr_r*cos(1/3),y=plyr_r*sin(1/3)})
+
 function make_plyr(x,y)
 	return add(actors,{
+		hp=1,
+		side=0,
 		score=0,
 		combo_mult=0,
 		combo_t=0,
 		safe_t=0,
 		live=3,
-		r=4,
+		r=plyr_r,
 		x=x,
 		y=y,
-		a=0.25,
+		a=0,
 		da=0,
 		u=0,
 		v=1,		
@@ -455,22 +466,25 @@ function make_plyr(x,y)
 		acc=0.5,
 		emit_t=0,
 		fire_t=0,
+		segments=plyr_segments,
 		update=update_plyr,
-		draw=draw_plyr
+		draw=draw_plyr,
+		die=die_plyr
 	})
 end
 
 function collide_blt(self)
 	for _,a in pairs(actors) do
-		-- rock?
-		if a!=plyr then
+		if a.side!=self.side then
 			local dx,dy=a.x-self.x,a.y-self.y
 			if dx*dx+dy*dy<a.r*a.r then
 				a.hp-=1
 				if a.hp<=0 then
-					plyr.score+=1
-					plyr.combo_t=time_t+30
-
+					-- no score for the dead!
+					if plyr and self.side==plyr.side then
+						plyr.score+=1
+						plyr.combo_t=time_t+30
+					end
 					a:die()
 				else
 					sfx(5)
@@ -495,26 +509,90 @@ function make_rock(x,y,u,v,radius,n,hp)
 		
 	npc_count+=1
 	add(actors,{
+		side=1, -- bad guys
 		hp=hp or 3,
 		x=x,
 		y=y,
 		acc=0.25+0.25*rnd(),
-		u=-u,
+		u=u,
 		v=v,
 		a=rnd(),
 		da=rnd()/64,
 		r=radius, -- keep initial radius
 		segments=segments,
-		draw=draw_rock,
+		draw=draw_actor,
 		update=update_rock,
 		die=die_rock
+	})
+end
+
+local saucer_pts={}
+add(saucer_pts,{x=0,y=-16})
+add(saucer_pts,{x=6,y=-16})
+add(saucer_pts,{x=12,y=-10})
+add(saucer_pts,{x=16,y=0})
+add(saucer_pts,{x=32,y=6})
+add(saucer_pts,{x=16,y=16})
+add(saucer_pts,{x=-16,y=16})
+add(saucer_pts,{x=-32,y=6})
+add(saucer_pts,{x=-16,y=0})
+add(saucer_pts,{x=-12,y=-10})
+add(saucer_pts,{x=-6,y=-16})
+
+function die_saucer(self)
+	die_actor(self)
+	if plyr then
+	 --
+		plyr.score+=19
+	end
+end
+
+function update_saucer(self)
+	self.a=lerp(-0.01,0.01,abs(sin(time_t/32)))
+	self.x+=self.acc*self.u
+	self.y+=self.acc*self.v
+	
+	self.x%=128
+	self.y%=128
+
+	if plyr and self.fire_t<time_t then
+		self.fire_t=time_t+60
+		local dx,dy=plyr.x-self.x,plyr.y-self.y
+		if abs(dx)>0.001 or abs(dy)>0.001 then
+			local d=sqrt(dx*dx+dy*dy)
+			dx/=d
+			dy/=d
+		end
+		make_blt(self.x,self.y,dx,dy,self.side)	
+	end
+	return true	
+end
+
+function make_saucer(x,y)
+	npc_count+=1
+	add(actors,{
+		side=1,
+		hp=hp or 3,
+		x=x,
+		y=y,
+		acc=0.25+0.25*rnd(),
+		u=1,
+		v=0,
+		a=0,
+		da=0,
+		r=8,
+		fire_t=0,
+		segments=saucer_pts,
+		draw=draw_actor,
+		update=update_saucer,
+		die=die_saucer
 	})
 end
 
 function rotate(x,y,c,s)
 	return x*c-y*s,x*s+y*c
 end
-function draw_rock(self)	
+function draw_actor(self)	
 	local u,v=cos(self.a),-sin(self.a)
 	local r=self.segments[1]
 	local rx,ry=rotate(r.x,r.y,u,v)
@@ -538,12 +616,16 @@ function update_rock(self)
 	return true
 end
 
-function die_rock(self)
+function die_actor(self)
 	make_blast(self.x,self.y)
 	
 	npc_count-=1
 	del(actors,self)
+end
 
+function die_rock(self)
+	die_actor(self)
+	
 	-- spawn mini rocks
 	local r=self.r/2
 	if r>2 then
@@ -560,13 +642,13 @@ function control_plyr(self)
 	if(btn(0)) self.da=-0.01
 	if(btn(1)) self.da=0.01
 	local thrust=false
-	if(btn(4)) self.f=self.acc thrust=true
+	if(btn(4) or btn(2)) self.f=self.acc thrust=true
 	local fire=false
 	if(btn(5)) fire=true
 	
 	if fire and self.fire_t<time_t then
 		self.fire_t=time_t+8
-		make_blt(self.x,self.y,self.u,self.v)
+		make_blt(self.x,self.y,self.u,self.v,self.side)
 	end
 	
 	if thrust and self.emit_t<time_t then
@@ -600,16 +682,25 @@ function draw_plyr(self)
 	-- safe mode
 	if(self.safe_t>time_t and time_t%2==0) return
 
-	local a,r=self.a,self.r
-	local x0,y0=self.x+r*cos(a),self.y-r*sin(a)
-	a+=1/3
-	local x1,y1=self.x+r*cos(a),self.y-r*sin(a)
-	a+=1/3
-	local x2,y2=self.x+r*cos(a),self.y-r*sin(a)
-	
-	aaline(x0,y0,x1,y1)			
-	aaline(x0,y0,x2,y2)
- 	aaline(x1,y1,x2,y2)
+	draw_actor(self)
+end
+
+function die_plyr(self)
+	make_blast(plyr.x,plyr.y)
+	plyr.live-=1
+	if plyr.live==0 then
+		del(actors,plyr)
+		plyr=nil
+		cur_screen=gameover_screen
+		futures_add(function()
+			wait_async(60)
+			cur_screen=start_screen
+		end)
+	else
+		plyr.x,plyr.y,plyr.a,plyr.da=64,64,0.25,0
+		plyr.u,plyr.v=0,1
+		plyr.safe_t=time_t+45
+	end
 end
 
 function resolve_collisions()
@@ -623,20 +714,7 @@ function resolve_collisions()
 			local dx,dy=a.x-plyr.x,a.y-plyr.y
 			local d=a.r+r
 			if dx*dx+dy*dy<d*d then
-				make_blast(plyr.x,plyr.y)
-				plyr.live-=1
-				if plyr.live==0 then
-					del(actors,plyr)
-					plyr=nil
-					futures_add(function()
-						wait_async(60)
-						cur_screen=start_screen
-					end)
-				else
-					plyr.x,plyr.y,plyr.a,plyr.da=64,64,0.25,0
-					plyr.u,plyr.v=0,1
-					plyr.safe_t=time_t+45
-				end
+				plyr:die()
 				return
 			end
 		end
@@ -644,6 +722,7 @@ function resolve_collisions()
 end
 
 -- "crt" display effects
+local crt_mode=0
 function crt_cls()
 	-- scanline effect	
 	local mem=0x6000
@@ -652,31 +731,63 @@ function crt_cls()
 		memset(mem,bor(shl(c,4),c),64)
 		mem+=64
 	end
+	if crt_mode==0 then
+ 	if time_t%2==0 then
+ 		local mem=0x6000
+ 		local j=time_t
+ 		for i=0,64 do
+ 			memset(mem+64*(j%128),0xee,64)
+ 			j+=1
+ 		end
+ 	end
+	end
 end
 function crt_glitch()
-	-- cheap crt effect
-	if rnd()>0.5 then
-		-- avoid memcpy overflow
-		local i=flr(rnd(126))
-		local src,dst=0x6000+i*64,0x6000+i*64+2+flr(rnd(2))
-		memcpy(dst,src,64)
+	if crt_mode==1 then
+ 	-- cheap crt effect
+ 	if rnd()>0.5 then
+ 		-- avoid memcpy overflow
+ 		local i=flr(rnd(126))
+ 		local src,dst=0x6000+i*64,0x6000+i*64+2+flr(rnd(2))
+ 		memcpy(dst,src,64)
+ 	end
 	end
 end
 
 -- wait loop
 function start_screen:update()
-	if btnp(4) or btnp(5) then
+	if not self.starting and (btnp(4) or btnp(5)) then
 		sfx(0)
-		actors={}
-		npc_count=0
-		plyr=make_plyr(64,64)
-		cur_screen=game_screen
+		-- avoid start reentrancy
+		self.starting=true
+		futures_add(function()
+			wait_async(30)
+			actors={}
+			npc_count=0
+			plyr=make_plyr(64,64)
+			cur_screen=game_screen
+			start_screen.starting=false
+		end)
+	end
+	
+	if btnp(0) or btnp(1) then
+		crt_mode+=1
+		crt_mode%=3
+		cam_shake(1,0,5)
 	end
 end
 function start_screen:draw()
-	if time_t%4<2 then	
-		draw_text("press start",28,110,6)
+	if (starting and time_t%2==0) or time_t%24<12 then	
+		draw_text("press start",32,110,5)
 	end
+end
+
+function gameover_screen:update()
+end
+
+function gameover_screen:draw()
+	draw_text("game",40,48,12)
+	draw_text("over",40,72,12)
 end
 
 -- play loop
@@ -694,6 +805,7 @@ function game_screen:draw()
 			r=4,
 			x=x,
 			y=18,
+			segments=plyr_segments,
 			a=0.75,
 			u=0,v=-1})
 		x+=8
@@ -716,6 +828,9 @@ function _update60()
 				make_rock(64+60*u,64-60*v,-u,-v,8,8)
 				angle+=1/5
 			end
+		
+			make_saucer(100,0)
+
 			spawning_npc=false
 		end)
 	end
