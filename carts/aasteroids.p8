@@ -64,7 +64,7 @@ function aaline(x0,y0,x1,y1)
 		-- thanks to freds72 for neat trick from https://oroboro.com/fast-approximate-distance/
   -- 	local k=h/d
 		local k=h/(h*0.9609+w*0.3984)
- 	
+		 	
  	for y=flr(y0)+0.5-y0,flr(y1)+0.5-y0 do	
  		local x=x0+dx*y/h
  		-- originally flr(x-0.5)+0.5
@@ -93,7 +93,7 @@ function aaline(x0,y0,x1,y1)
 		-- thanks to freds72 for neat trick from https://oroboro.com/fast-approximate-distance/
   -- local k=w/d
 		local k=w/(w*0.9609+h*0.3984)
- 	
+
  	for x=flr(x0)+0.5-x0,flr(x1)+0.5-x0 do	
  		local y=y0+dy*x/w
  		-- originally flr(y-0.5)+0.5
@@ -526,18 +526,33 @@ function make_rock(x,y,u,v,radius,n,hp)
 	})
 end
 
-local saucer_pts={}
-add(saucer_pts,{x=0,y=-16})
-add(saucer_pts,{x=6,y=-16})
-add(saucer_pts,{x=12,y=-10})
-add(saucer_pts,{x=16,y=0})
-add(saucer_pts,{x=32,y=6})
-add(saucer_pts,{x=16,y=16})
-add(saucer_pts,{x=-16,y=16})
-add(saucer_pts,{x=-32,y=6})
-add(saucer_pts,{x=-16,y=0})
-add(saucer_pts,{x=-12,y=-10})
-add(saucer_pts,{x=-6,y=-16})
+local saucer_pts={
+	{x=0,y=-16},
+	{x=6,y=-16},
+	{x=12,y=-10},
+	{x=16,y=0},
+	{x=32,y=6},
+	{x=16,y=16},
+	{x=-16,y=16},
+	{x=-32,y=6},
+	{x=-16,y=0},
+	{x=-12,y=-10},
+	{x=-6,y=-16}}
+for p in all(saucer_pts) do
+	p.x/=3
+	p.y/=3
+end
+local saucer_details={
+	{{x=-32,y=6},{x=32,y=6}},
+	{{x=-16,y=0},{x=16,y=0}},
+	{{x=-12,y=-10},{x=12,y=-10}}
+}
+for p in all(saucer_details) do
+	p[1].x/=3
+	p[1].y/=3
+	p[2].x/=3
+	p[2].y/=3
+end
 
 function die_saucer(self)
 	die_actor(self)
@@ -548,7 +563,10 @@ function die_saucer(self)
 end
 
 function update_saucer(self)
-	self.a=lerp(-0.01,0.01,abs(sin(time_t/32)))
+	if self.turn_t<time_t then
+		self.turn_t=time_t+90+rnd(120)
+		self.u=-self.u
+	end
 	self.x+=self.acc*self.u
 	self.y+=self.acc*self.v
 	
@@ -569,20 +587,23 @@ function update_saucer(self)
 end
 
 function make_saucer(x,y)
+	local angle=lerp(-0.05,0.05,rnd())
 	npc_count+=1
 	add(actors,{
-		side=1,
-		hp=hp or 3,
+		side=2,
+		hp=3,
 		x=x,
 		y=y,
 		acc=0.25+0.25*rnd(),
-		u=1,
-		v=0,
+		u=cos(angle),
+		v=-sin(angle),
 		a=0,
 		da=0,
 		r=8,
 		fire_t=0,
+		turn_t=0,
 		segments=saucer_pts,
+		details=saucer_details,
 		draw=draw_actor,
 		update=update_saucer,
 		die=die_saucer
@@ -592,6 +613,7 @@ end
 function rotate(x,y,c,s)
 	return x*c-y*s,x*s+y*c
 end
+
 function draw_actor(self)	
 	local u,v=cos(self.a),-sin(self.a)
 	local r=self.segments[1]
@@ -604,6 +626,14 @@ function draw_actor(self)
 		x1,y1=self.x+rx,self.y+ry
 		aaline(x0,y0,x1,y1)
 		x0,y0=x1,y1
+	end
+	
+	if self.details then
+		for _,d in pairs(self.details) do
+			local x0,y0=rotate(d[1].x,d[1].y,u,v)
+			local x1,y1=rotate(d[2].x,d[2].y,u,v)
+			aaline(self.x+x0,self.y+y0,self.x+x1,self.y+y1)			
+		end
 	end
 end
 function update_rock(self)
@@ -714,6 +744,7 @@ function resolve_collisions()
 			local dx,dy=a.x-plyr.x,a.y-plyr.y
 			local d=a.r+r
 			if dx*dx+dy*dy<d*d then
+				a:die()
 				plyr:die()
 				return
 			end
@@ -731,10 +762,12 @@ function crt_cls()
 		memset(mem,bor(shl(c,4),c),64)
 		mem+=64
 	end
+	-- beam effect
 	if crt_mode==0 then
  	if time_t%2==0 then
  		local mem=0x6000
  		local j=time_t
+ 		if(rnd()>0.9) j+=16
  		for i=0,64 do
  			memset(mem+64*(j%128),0xee,64)
  			j+=1
@@ -760,11 +793,10 @@ function start_screen:update()
 		sfx(0)
 		-- avoid start reentrancy
 		self.starting=true
+		-- init game
 		futures_add(function()
 			wait_async(30)
-			actors={}
-			npc_count=0
-			plyr=make_plyr(64,64)
+			game_screen:init()
 			cur_screen=game_screen
 			start_screen.starting=false
 		end)
@@ -791,10 +823,23 @@ function gameover_screen:draw()
 end
 
 -- play loop
+function game_screen:init()
+	actors={}
+	npc_count=0
+	saucer_t=time_t+90
+	plyr=make_plyr(64,64)
+end
+
 function game_screen:update()
-	if(not plyr) return
-	control_plyr(plyr)
-	resolve_collisions()
+	if saucer_t<time_t then
+		saucer_t=time_t+600
+		make_saucer(rnd()>0.5 and 24 or 96,lerp(32,110,rnd()))
+	end
+
+	if plyr then
+		control_plyr(plyr)
+		resolve_collisions()
+	end
 end
 function game_screen:draw()
 	if(not plyr) return
@@ -829,8 +874,6 @@ function _update60()
 				angle+=1/5
 			end
 		
-			make_saucer(100,0)
-
 			spawning_npc=false
 		end)
 	end
