@@ -325,8 +325,9 @@ function draw_char(c,x,y,scale)
 			moveto=true
 			goto continue
 		end
-		if moveto then
+		if moveto==true then
 			x0,y0=seg[1],12-seg[2]
+			moveto=false
 		else
 			local x1,y1=seg[1],12-seg[2]
 			aaline(
@@ -337,7 +338,6 @@ function draw_char(c,x,y,scale)
 			x0,y0=x1,y1
 		end
 		::continue::
-		moveto=false
 	end
 end
 function draw_text(s,x,y,scale)			
@@ -890,11 +890,11 @@ end
 function gameover_screen:draw()
 	draw_text("game over",38,60,6)
 
-	--if #scores>0 and scores[1].islast then
+	if #scores>0 and scores[1].islast then
 		if time_t%4<2 then
 			draw_text("new highscore!",24,72,6)
 		end
-	--end
+	end
 end
 
 -- play loop
@@ -947,7 +947,7 @@ function _update60()
 			wait_async(60)
 			sfx(3)
 			local angle=rnd()
-			for i=1,5 do
+			for i=1,4 do
 				local u,v=cos(angle),-sin(angle)
 				make_rock(64+60*u,64-60*v,-u,-v)
 				angle+=1/5
