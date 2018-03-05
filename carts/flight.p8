@@ -290,7 +290,6 @@ end
 -- calls 'fn' method on all elements of a[]
 -- pairs allows add/remove while iterating
 function filter(a,fn)
-	fn=fn or "update"
 	for _,v in pairs(a) do
 		if not v[fn](v) then
 			del(a,v)
@@ -576,7 +575,7 @@ _g.update_blt=function(self)
 end
 
 local all_weapons=json_parse('{"gun":{"sfx":63,"spread":0.01,"dmg":1,"v":0.4,"ttl":[32,48],"dly":5,"ammo":75,"shk_pow":2,"spr":2},"gun_turret":{"id":0,"sfx":63,"spread":0.04,"dmg":1,"v":0.4,"ttl":[32,48],"dly":10,"los":16,"los_angle":0.5,"draw":"draw_cached_rspr_part","rspr_mem":0,"spr":1}}')
-local all_parts=json_parse('{"flash":{"dly":8,"r":0.9,"c":7,"dr":-0.1,"draw":"draw_circ_part"},"part_cls":{"update":"update_part","draw":"draw_pixel_part","inertia":0.98,"r":1,"dr":0,"ttl":30},"trail":{"c":13,"rnd":{"ttl":[24,32]}},"smoke":{"draw":"draw_circ_part","c":0xd7,"rnd":{"dr":[0.002,0.005],"ttl":[30,60]},"dy":0.08},"blast":{"draw":"draw_circ_part","dr":-0.09,"r":1,"rnd":{"debris":[8,12]},"ttl":16,"c":0x77},"debris":{"g":true,"update":"update_emitter","rnd":{"emit_dly":[2,8]},"emit_t":0,"emit_cls":"smoke"},"thruster":{"rnd":{"r":[0.3,0.4],"dly":[8,12]},"c":0x77,"dr":-0.02,"draw":"draw_circ_part"}}')
+local all_parts=json_parse('{"flash":{"dly":8,"r":0.9,"c":7,"dr":-0.1,"draw":"draw_circ_part"},"part_cls":{"update":"update_part","draw":"draw_pixel_part","inertia":0.98,"r":1,"dr":0,"ttl":30},"trail":{"c":13,"rnd":{"ttl":[24,32]}},"smoke":{"draw":"draw_circ_part","c":0xd7,"rnd":{"dr":[0.002,0.005],"ttl":[30,60]},"dy":0.08},"blast":{"shk":5,"draw":"draw_circ_part","dr":-0.09,"r":1,"rnd":{"debris":[8,12]},"ttl":16,"c":0x77},"miniblast":{"shk":2,"draw":"draw_circ_part","dr":-0.09,"r":0.5,"rnd":{"debris":[1,2]},"ttl":16,"c":0x77},"debris":{"g":true,"update":"update_emitter","rnd":{"emit_dly":[2,8]},"emit_t":0,"emit_cls":"smoke"},"thruster":{"rnd":{"r":[0.3,0.4],"dly":[8,12]},"c":0x77,"dr":-0.02,"draw":"draw_circ_part"}}')
 function make_part(x,y,src,dx,dy)
 	src=all_parts[src]
 	local p=clone(all_parts[src.base_cls or "part_cls"],
@@ -643,8 +642,10 @@ end
 local plyr,lead
 local actors={}
 
-function make_blast(x,y,dx,dy)
-	local p=make_part(x,y,"blast")
+function make_blast(x,y,dx,dy,src)
+	dx=dx or 0
+	dy=dy or 0
+	local p=make_part(x,y,src or "blast")
 	for i=1,p.debris do
 		local angle=rnd()
 		local c,s=cos(angle),sin(angle)
@@ -656,7 +657,7 @@ function make_blast(x,y,dx,dy)
 		end
 		make_part(px,py,"debris",pdx,pdy)
 	end
-	cam_shake(rnd(),rnd(),5)
+	cam_shake(rnd(),rnd(),p.shk)
 end
 
 
@@ -703,7 +704,7 @@ function draw_ground(self,x,y,w)
 		x,y,w=cam_project(0,0,j)
 		local dx=w*(cam_x%16)
 		x=-dx
-		while x<127 do
+		while x<64 do
 			pset(64+x,y,colors[3])
 			pset(64-x-2*dx,y,colors[3])
 			x+=w*16
@@ -738,8 +739,8 @@ end
 
 function get_turn_rate(self,b)
 	local tr
-	if(b==2) tr=0.005
-	if(b==3) tr=-0.01
+	if(b==2) tr=0.002
+	if(b==3) tr=-0.005
 	if(self.inverted) tr=-tr
 	return tr
 end
@@ -957,32 +958,47 @@ _g.draw_map_actor=function(self,x,y,w)
 	y-=4*self.ch
 	map(self.cx,self.cy,x,y,self.cw,self.ch)
 
-	--[[
 	for _,anchor in pairs(self.anchors) do
 		local x,y=self.x+anchor.x,self.y+anchor.y
 		x,y=cam_project(x,y,0)
-		line(x,y,x+8*anchor.u,y-8*anchor.v,8)
+		--line(x,y,x+8*anchor.u,y-8*anchor.v,8)
+		print(anchor.hp,x+8*anchor.u,y-8*anchor.v,8)
 	end
-	]]
+
 end
 _g.hit_map_actor=function(self,blt)
-	for _,anchor in pairs(self.anchors) do
-		local x,y=self.x+anchor.x,self.y+anchor.y
+	for _,b in pairs(self.cmap) do
+		local x,y=self.x+b.x,self.y+b.y
 		if sqr_dist(x,y,blt.x,blt.y)<0.25 then
+			if b.hit then
+				b.hit(b,x,y,blt.wp.dmg)
+			end
 			return true
 		end
 	end
 end
 _g.update_b29=function(self)
-
+	-- destroyed?
+	if #self.anchors==0 then
+		futures_add(function()
+			self.dy=0.1
+			wait_async(90,function()
+				return self.y>1
+			end)
+			make_blast(self.x,self.y,self.dx,self.dy)
+			self.disable=true
+		end)
+	end
 	cmap_op(self,cmap_del)
+	if(self.disable) return false
+	
+	-- basic pos update
 	self.x+=self.dx
 	self.y+=self.dy
 	cmap_op(self,cmap_add)
 	
-	for _,anchor in pairs(self.anchors) do
-		update_anchor(anchor)
-	end
+	filter(self.anchors,"update")
+
 	zbuf_write(self)
 	return true
 end
@@ -996,21 +1012,61 @@ _g.hit_plane_actor=function(self,blt)
 		end
 	end
 end
-
-local all_actors=json_parse('{"b29":{"draw":"draw_map_actor","update":"update_b29","hit":"hit_map_actor","w":4.4,"h":1.4,"cx":0,"cy":0,"dx":0,"dy":0,"is_map":true},"f14":{"w":0.9,"h":0.4,"frames":[64,66,68,70,72,74,76],"frame":1,"df":0,"rolling":false,"inverted":false,"hit":"hit_plane_actor","wp":"gun","fire_t":0}}')
+_g.update_anchor=function(self)
+	if self.fire_t<time_t then
+		return true
+	end
+	local x,y=self.actor.x+self.x,self.actor.y+self.y
+	local dx,dy=plyr.x-x,plyr.y-y
+	local d=dx*dx+dy*dy
+	
+	-- todo: fix overflow risk
+	local wp=self.wp
+	if d<wp.los*wp.los then
+	
+		if(d>0.001) d=sqrt(d) dx/=d dy/=d
+		if dot(dx,dy,self.u,self.v)>wp.los_angle then
+			self.fire_t=time_t+self.wp.dly
+			local angle=atan2(dx,dy)
+			make_blt(self.actor,x,y,angle,wp)
+		end
+	end
+	return true
+end
+_g.hit_anchor=function(self,x,y,dmg)
+	if(self.disable) return
+	self.hp-=dmg
+	if self.hp<=0 then
+		self.disable=true
+		make_blast(x,y,0.1*self.u,0.1*self.v,"miniblast")
+		
+		del(self.actor.cmap,self)
+		del(self.actor.anchors,self)
+	end
+end
+local all_actors=json_parse('{"b29":{"draw":"draw_map_actor","update":"update_b29","hit":"hit_map_actor","w":4.4,"h":1.4,"cx":0,"cy":0,"dx":0,"dy":0,"is_map":true},"f14":{"w":0.9,"h":0.4,"frames":[64,66,68,70,72,74,76],"frame":1,"df":0,"rolling":false,"inverted":false,"hit":"hit_plane_actor","wp":"gun","fire_t":0},"anchor":{"update":"update_anchor","hit":"hit_anchor","hp":3}}')
 function make_actor(x,y,src)
 	src=all_actors[src]
 	local a=clone(actor_cls,clone(src,{x=x,y=y,f={}}))
 	-- scan map for anchors
 	if a.is_map then
 		a.anchors={}
+		a.cmap={}
 		a.cw,a.ch=max(1,flr(2*a.w+0.5)),max(1,flr(2*a.h+0.5))
 		for i=0,a.cw-1 do
 			for j=0,a.ch-1 do
 				local s=mget(a.cx+i,a.cy+j)
-				local anchor=make_anchor(a,i,j,s)
-				if anchor then
-				 add(a.anchors,anchor)
+				if s!=0 then
+					local anchor=make_anchor(a,i,j,s)
+					if anchor then
+						add(a.anchors,anchor)
+						add(a.cmap,anchor)
+					else
+						add(a.cmap,{
+							x=i-a.cw/2+0.5,
+							y=-j+a.ch/2-0.5,
+						})
+					end
 				end
 			end
 		end
@@ -1032,38 +1088,20 @@ function make_anchor(a,i,j,s)
 
 	for _,wp in pairs(all_weapons) do
 		if wp.id==flags then
-			return {
+			return clone(all_actors["anchor"],{
 				actor=a,
 				x=i-a.cw/2+0.5,
 				y=-j+a.ch/2-0.5,
-				base_angle=angle,
-				angle=0,
+				angle=angle,
 				u=cos(angle),
 				v=-sin(angle),
-				--angle=0,
-				fire_t=0,
+				-- fire delay after spawn
+				fire_t=time_t+90,
 				ammo=wp.ammo,-- can be nil
-				wp=wp}
+				wp=wp})
 		end
 	end
 	assert("unknown wp:"..flags)
-end
-function update_anchor(self)
-	local x,y=self.actor.x+self.x,self.actor.y+self.y
-	local dx,dy=plyr.x-x,plyr.y-y
-	local d=dx*dx+dy*dy
-	
-	-- todo: fix overflow risk
-	local wp=self.wp
-	if d<wp.los*wp.los and self.fire_t<time_t then
-	
-		if(d>0.001) d=sqrt(d) dx/=d dy/=d
-		if dot(dx,dy,self.u,self.v)>wp.los_angle then
-			self.fire_t=time_t+self.wp.dly
-			local angle=atan2(dx,dy)
-			make_blt(self.actor,x,y,angle,wp)
-		end
-	end
 end
 
 local game_screen={}
@@ -1074,9 +1112,8 @@ function game_screen:update()
 
 	cam_track(plyr.x+4*plyr.u,plyr.y+4*plyr.v)
 	
-	filter(actors)
-	filter(parts)
-	--filter(clouds)
+	filter(actors,"update")
+	filter(parts,"update")
 
 	cam_update()
 end
@@ -1181,12 +1218,12 @@ end
 
 __gfx__
 00000000eeeeeeeeeeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000eeeeeeeeeee00eee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00700700e66666eeee0770ee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00077000e777776ee077770e00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00077000e777776ee077770e00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00700700e66666eeee0770ee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000eeeeeeeeeee00eee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000eeeeeeeeeeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00700700e777777eeee77eee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00077000e777777eee7777ee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00077000e777777eee7777ee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00700700e777777eeee77eee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000eeeeeeeeeeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000eeeeeeeeeeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
