@@ -457,9 +457,8 @@ function zbuf_draw()
 	end
 end
 
-function rspr(s,x,y,a,w)
+function rspr(s,x,y,ca,sa,w)
 	local sx,sy=band(s*8,127),8*flr(s/16)
-	local ca,sa=cos(a),sin(a)
  local srcx,srcy
  local ddx0,ddy0=ca,sa
  local mask=shl(0xfff8,(w-1))
@@ -715,7 +714,7 @@ end
 -- actors
 function draw_actor(self,x,y)
 	local s=self.frames[flr(self.frame)]
-	rspr(s,32,16,self.angle,2)
+	rspr(s,32,16,self.u,self.v,2)
 	
 	palt(14,true)
 	palt(0,false)
@@ -1117,7 +1116,6 @@ function game_screen:draw()
 	fillp()
 	rectfill(0,0,127,8,1)
 	print((flr(1000*stat(1))/10).."%",2,2,7)
-	print(track_section,100,2,7)
 end
 
 function game_screen:init()
@@ -1165,8 +1163,8 @@ function _init()
   	wp.rspr_mem=dst
  		-- using spr 36
    local src=0x0+16+16*64
-   for i=0,31 do
-   	rspr(wp.spr,32,16,i/32,1)
+   for i=0,31 do	
+		rspr(wp.spr,32,16,cos(i/32),sin(i/32),1)
   		-- copy image to user data
   		for k=0,7 do
   			poke4(dst,peek4(src+k*64))

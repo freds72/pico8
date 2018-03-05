@@ -109,13 +109,12 @@ end
 -- credits: https://en.wikipedia.org/wiki/midpoint_circle_algorithm
 -- pixel shading is based on error ratio
 function aacircfill(x0,y0,r)
-	if(r==0) return
+	if(r<=0) return
  local x,y,dx,dy=flr(r),0,1,1
  r*=2
  local err=dx-r
 
-	local j=0
- while x>=y do
+ while x>=y do 	
 		local dist=1+err/r
 		rectfill(x0-x+1,y0+y,x0+x-1,y0+y,0)
 		rectfill(x0-x+1,y0-y,x0+x-1,y0-y,0)
