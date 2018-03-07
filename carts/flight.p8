@@ -88,91 +88,16 @@ function json_parse(str,pos,end_delim)
 	end
 end
 
--- simplex noise
--- simplex noise example
--- by anthony digirolamo
-
-local perms = json_parse('[151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23,190,6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,35,11,32,57,177,33,88,237,149,56,87,174,20,125,136,171,168,68,175,74,165,71,134,139,48,27,166,77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,55,46,245,40,244,102,143,54,65,25,63,161,1,216,80,73,209,76,132,187,208,89,18,169,200,196,135,130,116,188,159,86,164,100,109,198,173,186,3,64,52,217,226,250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,189,28,42,223,183,170,213,119,248,152,2,44,154,163,70,221,153,101,155,167,43,172,9,129,22,39,253,19,98,108,110,79,113,224,232,178,185,112,104,218,246,97,228,251,34,242,193,238,210,144,12,191,179,162,241,81,51,145,235,249,14,239,107,49,192,214,31,181,199,106,157,184,84,204,176,115,121,50,45,127,4,150,254,138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180]')
-
--- make perms 0 indexed
-for i = 0,255 do
-   perms[i]=perms[i+1]
-end
--- perms[256]=nil
-
--- the above,mod 12 for each element --
-local perms12 = {}
-
-for i = 0,255 do
-   local x = perms[i] % 12
-   perms[i + 256],perms12[i],perms12[i + 256] = perms[i],x,x
-end
-
--- gradients for 2d,3d case --
-local grads3 = {{1,1,0},{-1,1,0},{1,-1,0},{-1,-1,0},{1,0,1},{-1,0,1},{1,0,-1},{-1,0,-1},
-   {0,1,1},{0,-1,1},{0,1,-1},{0,-1,-1}}
-
-for row in all(grads3) do
-   for i=0,2 do
-      row[i]=row[i+1]
-   end
-   -- row[3]=nil
-end
-
-for i=0,11 do
-   grads3[i]=grads3[i+1]
-end
--- grads3[12]=nil
-
-function getn2d(bx,by,x,y)
-   local t = .5 - x * x - y * y
-   local index = perms12[bx + perms[by]]
-   return max(0,(t * t) * (t * t)) * (grads3[index][0] * x + grads3[index][1] * y)
-end
-
----
--- @param x
--- @param y
--- @return noise value in the range [-1,+1]
-function simplex2d (x,y)
-   -- 2d skew factors:
-   -- f = (math.sqrt(3) - 1) / 2
-   -- g = (3 - math.sqrt(3)) / 6
-   -- g2 = 2 * g - 1
-   -- skew the input space to determine which simplex cell we are in.
-   local s = (x + y) * 0.366025403 -- f
-   local ix,iy = flr(x + s),flr(y + s)
-   -- unskew the cell origin back to (x,y) space.
-   local t = (ix + iy) * 0.211324865 -- g
-   local x0 = x + t - ix
-   local y0 = y + t - iy
-   -- calculate the contribution from the two fixed corners.
-   -- a step of (1,0) in (i,j) means a step of (1-g,-g) in (x,y),and
-   -- a step of (0,1) in (i,j) means a step of (-g,1-g) in (x,y).
-   ix,iy = band(ix,255),band(iy,255)
-   local n0 = getn2d(ix,iy,x0,y0)
-   local n2 = getn2d(ix + 1,iy + 1,x0 - 0.577350270,y0 - 0.577350270) -- g2
-   -- determine other corner based on simplex (equilateral triangle) we are in:
-   -- if x0 > y0 then
-   --    ix,x1 = ix + 1,x1 - 1
-   -- else
-   --    iy,y1 = iy + 1,y1 - 1
-   -- end
-   -- local xi = shr(flr(y0 - x0),31) -- x0 >= y0
-   local xi = 0
-   if x0 >= y0 then xi = 1 end
-   local n1 = getn2d(ix + xi,iy + (1 - xi),x0 + 0.211324865 - xi,y0 - 0.788675135 + xi) -- x0 + g - xi,y0 + g - (1 - xi)
-   -- add contributions from each corner to get the final noise value.
-   -- the result is scaled to return values in the interval [-1,1].
-   return 70 * (n0 + n1 + n2)
-end
+-- cloud generator
 function noise_get(n,i,j)
 	-- wrap around
 	i%=128
 	j%=128
-	if(i<0) i+=128
-	if(j<0) j+=128
 	return n[i+128*j+1]>0.7 and 1 or 0
+end
+function noise_set(n,i,j)
+	i,j=(i%128+128)%128,(j%128+128)%128
+	n[i+j*128]+=0.5
 end
 
 function noise_flags(n,i,j)
@@ -184,30 +109,35 @@ function noise_flags(n,i,j)
 end
 
 function make_clouds()
-	local noisemap,clouds={},{}
-  local noisedx = rnd(32)
-  local noisedy = rnd(32)
-  for x=0,127 do
-    for y=0,127 do
-      local octaves = 1
-      local freq = .007
-      local max_amp = 0
-      local amp = 1
-      local value = 0
-      local persistance = .65
-      for n=1,octaves do
-
-        value = value + simplex2d(noisedx + freq * x,
-                                  noisedy + freq * y)
-        max_amp += amp
-        amp *= persistance
-        freq *= 2
-      end
-      value /= max_amp
-      value=mid(value+1,0,2)/2
-      add(noisemap,value)
-    end
+	local noisemap={}
+	for i=0,127 do
+		for j=0,127 do
+			add(noisemap,0)
+		end
+	end
+  for n=1,16 do
+  	local i0,j0=flr(rnd(128)),flr(rnd(128))
+  	-- mixes multiple clouds into one
+  	for k=1,1+rnd(3) do
+  		i0+=flr(rnd(4)-2)
+  		j0+=flr(rnd(4)-2)
+  		-- todo adjust cloud style per level
+	  	local sx,sy=24+8*flr(rnd(3)),0
+	  	for i=i0,i0+15 do
+	  		sy=0
+	  		for j=j0,j0+15 do
+	  			local s=sget(sx,7-sy)
+	  			if s!=0 then
+	  				noise_set(noisemap,j,i)
+	  			end
+	  			sy+=0.5
+	  		end
+	  		sx+=0.5
+	  	end
+	  end
   end
+  
+  local clouds={}
   for x=0,127 do
   	for y=0,127 do
   		add(clouds,noise_flags(noisemap,x,y))
@@ -411,7 +341,7 @@ function cmap_next()
 end
 
 -- camera
-local cam_x,cam_y=0,0
+local cam_x,cam_y,cam_z=0,0,0
 local shkx,shky=0,0
 function cam_shake(u,v,pow)
 	shkx=min(4,shkx+pow*u)
@@ -425,11 +355,11 @@ function cam_update()
 	end
 	camera(shkx,shky)
 end
-function cam_track(x,y)
-	cam_x,cam_y=8*x,8*y
+function cam_track(x,y,z)
+	cam_x,cam_y,cam_z=8*x,8*y,8*z
 end
 function cam_project(x,y,z)
-	local w=(1-z)
+	local w=32/(32+cam_z-8*z)
 	return 64-(cam_x-8*x)*w,64+(cam_y-8*y)*w,w
 end
 
@@ -447,12 +377,12 @@ end
 function zbuf_draw()
 	local xe,ye
 	for _,v in pairs(zbuf[1]) do
-		xe,ye,w=cam_project(v.obj.x,v.obj.y,8)
+		xe,ye,w=cam_project(v.obj.x,v.obj.y,1)
 		v.obj:draw(xe,ye,w)
 	end
 	for _,v in pairs(zbuf[2]) do
-		xe,ye=cam_project(v.obj.x,v.obj.y,0)
-		v.obj:draw(xe,ye,1)
+		xe,ye,w=cam_project(v.obj.x,v.obj.y,0)
+		v.obj:draw(xe,ye,w)
 	end
 end
 
@@ -574,7 +504,7 @@ _g.update_blt=function(self)
  return true
 end
 
-local all_weapons=json_parse('{"gun":{"sfx":63,"spread":0.01,"dmg":1,"v":0.4,"ttl":[32,48],"dly":5,"ammo":75,"shk_pow":2,"spr":2},"gun_turret":{"id":0,"sfx":63,"spread":0.04,"dmg":1,"v":0.4,"ttl":[32,48],"dly":10,"los":16,"los_angle":0.5,"draw":"draw_cached_rspr_part","rspr_mem":0,"spr":1}}')
+local all_weapons=json_parse('{"gun":{"sfx":63,"spread":0.01,"dmg":1,"v":0.4,"ttl":[32,48],"dly":5,"ammo":75,"shk_pow":2,"spr":2},"gun_turret":{"id":0,"sfx":63,"spread":0.04,"dmg":1,"v":0.4,"ttl":[32,48],"dly":10,"los":16,"los_angle":0.5,"draw":"draw_cached_rspr_part","rspr_mem":0,"spr":1,"ammo":5,"reload_dly":45}}')
 local all_parts=json_parse('{"flash":{"dly":8,"r":0.9,"c":7,"dr":-0.1,"draw":"draw_circ_part"},"part_cls":{"update":"update_part","draw":"draw_pixel_part","inertia":0.98,"r":1,"dr":0,"ttl":30},"trail":{"c":13,"rnd":{"ttl":[24,32]}},"smoke":{"draw":"draw_circ_part","c":0xd7,"rnd":{"dr":[0.002,0.005],"ttl":[30,60]},"dy":0.08},"blast":{"shk":5,"draw":"draw_circ_part","dr":-0.09,"r":1,"rnd":{"debris":[8,12]},"ttl":16,"c":0x77},"miniblast":{"shk":2,"draw":"draw_circ_part","dr":-0.09,"r":0.5,"rnd":{"debris":[1,2]},"ttl":16,"c":0x77},"debris":{"g":true,"update":"update_emitter","rnd":{"emit_dly":[2,8]},"emit_t":0,"emit_cls":"smoke"},"thruster":{"rnd":{"r":[0.3,0.4],"dly":[8,12]},"c":0x77,"dr":-0.02,"draw":"draw_circ_part"}}')
 function make_part(x,y,src,dx,dy)
 	src=all_parts[src]
@@ -678,7 +608,7 @@ function draw_clouds(x,y,fp,scale)
 			local f=clouds[cx+128*cy+1]
 			local sx,sy=128-x0,128-y0
 			if f==1 then
-				circfill(sx,sy,scale)
+				circfill(sx,sy+1,scale)
 			elseif f==2 then
 				circfill(sx,sy-scale,scale)
 			elseif f==4 then
@@ -713,7 +643,7 @@ function draw_ground(self,x,y,w)
 end
 
 -- actors
-function draw_actor(self,x,y)
+function draw_actor(self,x,y,w)
 	local s=self.frames[flr(self.frame)]
 	rspr(s,32,16,self.u,self.v,2)
 	
@@ -721,7 +651,8 @@ function draw_actor(self,x,y)
 	palt(0,false)
 	pal(6,self.in_sight and 8 or 0)
 	palt(14,true)
-	spr(36,x-8,y-8,2,2)
+	local we=16*w
+	sspr(32,16,16,16,x-we/2,y-we/2,we,we)
 
 --	circ(x,y,	sqrt(256),7)
 	for _,f in pairs(self.f) do
@@ -1013,7 +944,12 @@ _g.hit_plane_actor=function(self,blt)
 	end
 end
 _g.update_anchor=function(self)
-	if self.fire_t<time_t then
+	if(self.disable) return false
+	-- time to reload?
+	if self.reload_t<time_t then
+		self.ammo=self.wp.ammo
+	end
+	if self.ammo<=0 or self.fire_t>time_t then
 		return true
 	end
 	local x,y=self.actor.x+self.x,self.actor.y+self.y
@@ -1029,6 +965,10 @@ _g.update_anchor=function(self)
 			self.fire_t=time_t+self.wp.dly
 			local angle=atan2(dx,dy)
 			make_blt(self.actor,x,y,angle,wp)
+			self.ammo-=1
+			if self.ammo<=0 then
+				self.reload_t=time_t+self.wp.reload_dly
+			end
 		end
 	end
 	return true
@@ -1041,10 +981,9 @@ _g.hit_anchor=function(self,x,y,dmg)
 		make_blast(x,y,0.1*self.u,0.1*self.v,"miniblast")
 		
 		del(self.actor.cmap,self)
-		del(self.actor.anchors,self)
 	end
 end
-local all_actors=json_parse('{"b29":{"draw":"draw_map_actor","update":"update_b29","hit":"hit_map_actor","w":4.4,"h":1.4,"cx":0,"cy":0,"dx":0,"dy":0,"is_map":true},"f14":{"w":0.9,"h":0.4,"frames":[64,66,68,70,72,74,76],"frame":1,"df":0,"rolling":false,"inverted":false,"hit":"hit_plane_actor","wp":"gun","fire_t":0},"anchor":{"update":"update_anchor","hit":"hit_anchor","hp":3}}')
+local all_actors=json_parse('{"b29":{"draw":"draw_map_actor","update":"update_b29","hit":"hit_map_actor","w":4.4,"h":1.4,"cx":0,"cy":0,"dx":0,"dy":0,"is_map":true},"f14":{"w":0.9,"h":0.4,"frames":[64,66,68,70,72,74,76],"frame":1,"df":0,"rolling":false,"inverted":false,"hit":"hit_plane_actor","wp":"gun","fire_t":0},"anchor":{"update":"update_anchor","hit":"hit_anchor","hp":3,"reload_t":32000}}')
 function make_actor(x,y,src)
 	src=all_actors[src]
 	local a=clone(actor_cls,clone(src,{x=x,y=y,f={}}))
@@ -1110,7 +1049,7 @@ function game_screen:update()
 	
 	zbuf_clear()
 
-	cam_track(plyr.x+4*plyr.u,plyr.y+4*plyr.v)
+	cam_track(plyr.x+4*plyr.u,plyr.y+4*plyr.v,8*plyr.boost)
 	
 	filter(actors,"update")
 	filter(parts,"update")
@@ -1219,11 +1158,11 @@ end
 __gfx__
 00000000eeeeeeeeeeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000eeeeeeeeeeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00700700e777777eeee77eee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00077000e777777eee7777ee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00077000e777777eee7777ee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00700700e777777eeee77eee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000eeeeeeeeeeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00700700e777777eeee77eee00000000000000000000777000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00077000e777777eee7777ee07777000000000000077777000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00077000e777777eee7777ee77777777000777007777777700000000000000000000000000000000000000000000000000000000000000000000000000000000
+00700700e777777eeee77eee00000000007777700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000eeeeeeeeeeeeeeee00000000000077700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000eeeeeeeeeeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000

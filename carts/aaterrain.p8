@@ -281,7 +281,7 @@ function cam_track(x,y,z)
 	cam_x,cam_y,cam_z=x,y,z
 end
 
-local cam_cb,cam_sb=-1,0--cos(0.6),sin(0.6)
+local cam_cb,cam_sb=cos(0.62),sin(0.62)
 local cam_focal=128
 function cam_project(x,y,z)
 	local y=y-cam_y
@@ -298,24 +298,164 @@ function cam_project(x,y,z)
 	return 64+xe*w,64-ye*w,ze,w
 end
 
+function trifill(x1,y1,x2,y2,x3,y3,color1)
+
+          local min_x=min(x1,min(x2,x3))
+         if(min_x>127)return
+          local max_x=max(x1,max(x2,x3))
+         if(max_x<0)return
+          local min_y=min(y1,min(y2,y3))
+         if(min_y>127)return
+          local max_y=max(y1,max(y2,y3))
+         if(max_y<0)return
+
+          local x1=band(x1,0xffff)
+          local x2=band(x2,0xffff)
+          local y1=band(y1,0xffff)
+          local y2=band(y2,0xffff)
+          local x3=band(x3,0xffff)
+          local y3=band(y3,0xffff)
+
+     --wide triangle  
+          local nsx,nex
+          --sort y1,y2,y3
+          if(y1>y2)then
+            y1,y2=y2,y1
+            x1,x2=x2,x1
+          end
+
+          if(y1>y3)then
+            y1,y3=y3,y1
+            x1,x3=x3,x1
+          end
+
+          if(y2>y3)then
+            y2,y3=y3,y2
+            x2,x3=x3,x2          
+          end
+
+         if(y1!=y2)then  
+            local delta_sx=(x3-x1)/(y3-y1)
+            local delta_ex=(x2-x1)/(y2-y1)
+
+            if(y1>0)then
+                nsx=x1
+                nex=x1
+                min_y=y1
+            else --top edge clip
+                nsx=x1-delta_sx*y1
+                nex=x1-delta_ex*y1
+                min_y=0
+            end
+
+            max_y=min(y2,128)
+
+            for y=min_y,max_y-1 do
+
+            rectfill(nsx,y,nex,y,color1)
+            nsx+=delta_sx
+            nex+=delta_ex
+            end
+
+        else --where top edge is horizontal
+            nsx=x1
+            nex=x2
+        end
+
+        if(y3!=y2)then
+            local delta_sx=(x3-x1)/(y3-y1)
+            local delta_ex=(x3-x2)/(y3-y2)
+
+            min_y=y2
+            max_y=min(y3,128)
+            if(y2<0)then
+                nex=x2-delta_ex*y2
+                nsx=x1-delta_sx*y1
+                min_y=0
+            end
+
+             for y=min_y,max_y do
+                rectfill(nsx,y,nex,y,color1)
+                nex+=delta_ex
+                nsx+=delta_sx
+             end
+
+        else --where bottom edge is horizontal
+            rectfill(nsx,y3,nex,y3,color1)
+        end
+    
+    
+end
+
+function cross(u,v)
+	return 
+		u.y * v.z - u.z * v.y,
+		u.z * v.x - u.x * v.z,
+		u.x * v.y - u.y * v.x
+end
+function vec(u,v)
+	local dx,dy,dz=v.x-u.x,v.y-u.y,v.z-u.z
+	local d=dx*dx+dy*dy+dz*dz
+	d=sqrt(d)
+	return {
+		x=dx/d,
+		y=dy/d,
+		z=dz/d}
+end
+function shade(v0,v1,v2)
+	--[[
+	local nx,ny,nz=cross(vec(v0,v1),vec(v0,v2))
+	local c=15-15*max(0.5*ny+0.5*nz)
+	trifill(
+		v0[1],v0[2],
+		v1[1],v1[2],
+		v2[1],v2[2],c)
+	]]
+	color(0)
+	line(v0[1],v0[2],v1[1],v1[2])
+ line(v1[1],v1[2],v2[1],v2[2])
+	--aaline(v2[1],v2[2],v0[1],v0[2])
+	--[[
+	local x,y=cam_project(v0.x+nx,v0.y+ny,v0.z+nz)
+	line(v0[1],v0[2],x,y,7)
+	]]
+end
+
 function draw_ground(self)
-	color(7)
-	local scale=2
+	local v={}
+	local scale=4
 	local dx,dy=cam_x%scale,cam_y%scale
  local i0,j0=flr(cam_x/scale),flr(cam_y/scale)
-	local i=i0
-	for ii=-16,16,scale do
- 	local j=j0
- 	local cx=(i%128+128)%128
- 	for jj=-56,-24,scale do
- 		local cy=(j%128+128)%128
+	
+	local j,sz,sw=j0,1,0
+	for jj=-32,-1,scale do
+		local cy=(j%128+128)%128
+		local i=i0
+		sw=0
+		for ii=-16,16,scale do
+			local cx=(i%128+128)%128
 			local f=8*clouds[cx+128*cy+1]
-			local x,y=cam_project(ii-dx+cam_x,jj-dy+cam_y,f)
-			pset(x,y)
-			j+=1
+			local wx,wy=ii-dx+cam_x,jj-dy+cam_y
+			local x,y,z,w=cam_project(wx,wy,f)
+			add(v,{x,y,z,w,x=wx,y=wy,z=f})
+			i+=1
+			sw+=1
 		end
-		i+=1
- end
+		j+=1
+		sz+=1
+	end
+	
+	-- strip size
+	for j=0,sz-3 do
+		for i=0,sw-2 do
+			local k=i+sz*j+1
+			--shade(
+			--	v[k+sz+1],v[k+sz],v[k])
+			shade(
+				v[k],v[k+1],v[k+sz+1])
+		end
+	end
+	print("h:"..sz.."w:"..sw,2,12,7)
 end
 
 local time_t=0
@@ -327,7 +467,7 @@ function _update60()
 	if(btn(3)) plyr.y+=0.1
 	
 	--cam_cb,cam_sb=cos(plyr.y/10),sin(plyr.y/10)
-	cam_track(plyr.x,12+plyr.y,-8)
+	cam_track(plyr.x,plyr.y,-10)
 end
 
 function _draw()
@@ -349,7 +489,6 @@ function _draw()
 	
 	rectfill(0,0,127,8,1)
  print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)
-	print(plyr.x.."/"..plyr.y,2,12,7)
 end
 
 __gfx__
