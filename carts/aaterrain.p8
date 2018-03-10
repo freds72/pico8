@@ -1,6 +1,31 @@
 pico-8 cartridge // http://www.pico-8.com
 version 16
 __lua__
+
+local actors={}
+local models={
+	"plyr_model"={
+		v={
+		{-1,2,-1},
+		{1,2,-1},
+		{1,-2,-1},
+		{-1,-2,-1},
+		{-1,2,1},
+		{1,2,1},
+		{1,-2,1},
+		{-1,-2,1}},
+		f={0,1,2,3,4,0,8,7,6,5,0,4,8,5,1,0,7,3,2,6}
+	},
+ "plane_model"={
+		v={
+		{0,0,0},
+		{0,5,0},
+		{5,5,0},
+		{5,0,0}},
+		f={0,1,2,3,4}
+	}
+}
+
 -- simplex noise example
 -- by anthony digirolamo
 
@@ -108,13 +133,29 @@ end
 
 
 local isdirty=true
-local plyr={
-	x=0,
-	y=0}
+local plyr
 local clouds={}
 local cache={}
 function _init()
-		grayvid()
+	grayvid()
+
+	-- compute normals
+	for _,m in pairs(all_models) do
+ 	m.v.n={}
+ 	local i=1
+ 	while i<#self.model.f do
+ 		local ftype=self.model.f[i]
+ 		-- quad
+ 		if ftype==0 then
+ 			add(m.n,
+ 				cross(
+ 					vec(m.v[self.model.f[i+1]],m.v[self.model.f[i+1]]),
+ 					vec(m.v[self.model.f[i+1]],m.v[self.model.f[i+1]]))
+ 			i+=5
+ 		end
+ 	end
+	end
+	
   local noisedx = rnd(32)
   local noisedy = rnd(32)
   for x=0,127 do
@@ -144,6 +185,8 @@ function _init()
   	add(cache,flags(x,y))
   end
  end
+ 
+ plyr=make_plyr()
 end
 
 
@@ -281,7 +324,7 @@ function cam_track(x,y,z)
 	cam_x,cam_y,cam_z=x,y,z
 end
 
-local cam_cb,cam_sb=cos(0.62),sin(0.62)
+local cam_cb,cam_sb=cos(0.6),sin(0.60)
 local cam_focal=128
 function cam_project(x,y,z)
 	local y=y-cam_y
@@ -421,6 +464,31 @@ function shade(v0,v1,v2)
 	]]
 end
 
+function getwinding(v1,v2,v3)
+	local a={v2[1]-v1[1],v2[2]-v1[2]}
+	local b={v3[1]-v1[1],v3[2]-v1[2]}
+	--cross product
+	return a[1]*b[2]-a[2]*b[1]
+end
+
+function qline(v,i,j,k,l)
+	if getwinding(v[i],v[j],v[k])<0 then
+ 	color(7)
+ 	line(v[i][1],v[i][2],v[j][1],v[j][2])
+ 	line(v[j][1],v[j][2],v[k][1],v[k][2])
+ 	line(v[k][1],v[k][2],v[l][1],v[l][2])
+ 	line(v[i][1],v[i][2],v[l][1],v[l][2])
+	end
+end
+
+function qfill(v,i,j,k,l)
+	local n=getwinding(v[i],v[j],v[k])
+	if n<0 then
+ 	trifill(v[i][1],v[i][2],v[j][1],v[j][2],v[k][1],v[k][2],)
+ 	trifill(v[k][1],v[k][2],v[l][1],v[l][2],v[i][1],v[i][2],)
+	end
+end
+
 function draw_ground(self)
 	local v={}
 	local scale=4
@@ -458,33 +526,70 @@ function draw_ground(self)
 	print("h:"..sz.."w:"..sw,2,12,7)
 end
 
+function make_plyr()
+	return add(actors,{
+		x=0,y=0,z=5,
+		model=plyr_model,
+		angle=0,
+		dy=0,
+		draw=draw_actor,
+		update=update_actor})
+end
+
+function draw_actor(self)
+	local c,s=cos(self.angle),-sin(self.angle)
+	local p={}
+	for i=1,#self.model.v do
+		local v=self.model.v[i]
+		local x,y,z=v[1]*c-v[2]*s,v[1]*s+v[2]*c,v[3]
+		local xe,ye,ze,we=cam_project(x+self.x,y+self.y,z+self.z)
+		--local xe,ye,ze,we=cam_project(x,y,z)
+		add(p,{
+			xe,
+			ye,
+			ze,
+			we})
+	end
+	local i=1
+	while i<#self.model.f do
+		local ftype=self.model.f[i]
+		-- quad
+		if ftype==0 then
+			qfill(p,
+				self.model.f[i+1],
+				self.model.f[i+2],
+				self.model.f[i+3],
+				self.model.f[i+4])
+			i+=5
+		end
+	end
+end
+
+function update_actor(self)
+end
+
 local time_t=0
 function _update60()
 	time_t+=1
-	if(btn(0)) plyr.x-=0.1
-	if(btn(1)) plyr.x+=0.1
+	if(btn(0)) plyr.x-=0.1 plyr.angle-=0.01
+	if(btn(1)) plyr.x+=0.1 plyr.angle+=0.01
 	if(btn(2)) plyr.y-=0.1
 	if(btn(3)) plyr.y+=0.1
 	
 	--cam_cb,cam_sb=cos(plyr.y/10),sin(plyr.y/10)
-	cam_track(plyr.x,plyr.y,-10)
+	cam_track(plyr.x,plyr.y+12,-8)
+	
+	for _,a in pairs(actors) do
+		a:update()
+	end
 end
 
 function _draw()
 	cls(15)
-	draw_ground({})	
+	draw_ground({})
 	
-	local pts={
-		{0,0,0},
-		{0,5,0},
-		{5,5,0},
-		{5,0,0}}
-	local x0,y0=cam_project(pts[1][1],pts[1][2],pts[1][3])
-	for i=1,#pts do
-		local k=(i%#pts)+1
-		local x1,y1=cam_project(pts[k][1],pts[k][2],pts[k][3])
-		line(x0,y0,x1,y1,7)
-		x0,y0=x1,y1
+	for _,a in pairs(actors) do
+		a:draw()
 	end
 	
 	rectfill(0,0,127,8,1)
