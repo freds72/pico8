@@ -1096,7 +1096,7 @@ function _draw()
 
 	-- previous hiscore
 	if #scores>0 then
- 	draw_text("hi "..padding(scores[1].key,4),85,4,5)
+ 		draw_text("hi "..padding(scores[1].key,4),85,4,5)
 	end
 	
 	futures_update(after_draw)
@@ -1105,6 +1105,7 @@ function _draw()
 	time_dt=0
 end
 
+local show_cover=false
 function _init()
 	if cartdata("freds72_aasteroids") then
 		crt_mode=dget(0)
@@ -1126,6 +1127,18 @@ function _init()
 	end
 
 	cur_screen=start_screen
+
+	menuitem(1,"cover art on/off", function()
+		show_cover=not show_cover
+		futures_add(function()
+			while show_cover==true do
+				normvid()
+				spr(0,0,0,16,16)
+				yield()
+			end
+			grayvid()
+		end,after_draw)
+	end)
 end
 
 __gfx__
