@@ -1071,9 +1071,8 @@ function update_path_async(self)
 			x1,y1=plyr.x,plyr.y
 		end
 	
-		x1,y1=flr(x1),flr(y1)
-	 local x,y=flr(self.x),flr(self.y)
-		local k,pk=x+96*y,x1+96*y1
+	 local x,y=self.x,self.y
+		local k,pk=flr(x)+96*flr(y),flr(x1)+96*flr(y1)
 		local flood,flood_len={[k]={x=x,y=y,k=k}},1
 		local closedset,camefrom={},{}
 		local current
@@ -1082,20 +1081,19 @@ function update_path_async(self)
 		while flood_len>0 and flood_len<32 do
 			current=closest(x1,y1,flood)
 			
-			x,y,k=flr(current.x),flr(current.y),current.k
+			x,y,k=current.x,current.y,current.k
 			if (k==pk) break
 			flood[k],closedset[k]=nil,true
 			flood_len-=1
 	
 			for _,d in pairs(a_sides) do
-				local nx,ny=x+d[1],y+d[2]
-				if solid(nx,y) then
-					nx=x
+				local nx,ny
+				if solid_area({x=x,y=y,w=self.w,h=self.h},d[1],d[2]) then
+					nx,ny=x,y
+				else
+					nx,ny=x+d[1],y+d[2]
 				end
-				if solid(x,ny) then
-					ny=y
-				end
-				k=nx+96*ny
+				k=flr(nx)+96*flr(ny)
 				if not closedset[k] and not camefrom[k] then
 					flood[k],camefrom[k]={x=nx,y=ny,k=k},current
 					flood_len+=1
@@ -1105,8 +1103,7 @@ function update_path_async(self)
 	
 		local path,prev={},current
 		while current do
-			add(path,{x=current.x+0.4*rnd(),y=current.y-0.4*rnd()})
-			--add(path,current)
+			add(path,current)
 			prev=current
 			current=camefrom[current.k]
 		end
@@ -1185,12 +1182,12 @@ _g.npc_update=function(self)
  if(self.hit_t>time_t) return
 	if self.move_t<time_t and #self.path>0 then
 		local input=self.input
-		if not input or sqr_dist(flr(self.x),flr(self.y),input.x,input.y)<0.5 then
+		if not input or sqr_dist(self.x,self.y,input.x,input.y)<0.25 then
 			input=pop(self.path)
 			self.input=input
 		end
 		if input then
-			local u,v=normalize(input.x-flr(self.x),input.y-flr(self.y),self.acc)
+			local u,v=normalize(input.x-self.x,input.y-self.y,self.acc)
 			self.dx+=u
 			self.dy+=v
 		end
