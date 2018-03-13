@@ -30,8 +30,12 @@ end
 -- abs(dist) indicates how far
 -- we are from the exact
 -- line center
-function shadepix_xy(x,y,dist)
-	pset(x,y,abs(dist*(pget(x,y))))
+function shadepixpair(x,y,k,dx,dy)	
+	pset(x,   y,pget(x,y)*k)
+	pset(x+dx,y+dy,pget(x+dx,y+dy)*(1-k))
+end
+function shadepix(x,y,k)	
+	pset(x,   y,pget(x,y)*k)
 end
 
 -- algorithm credits: felice
@@ -109,32 +113,66 @@ end
 -- credits: https://en.wikipedia.org/wiki/midpoint_circle_algorithm
 -- pixel shading is based on error ratio
 function aacircfill(x0,y0,r)
-	if(r<=0) return
+	if(r==0) return
  local x,y,dx,dy=flr(r),0,1,1
  r*=2
  local err=dx-r
 
- while x>=y do 	
+ while x>=y do
 		local dist=1+err/r
+		
 		rectfill(x0-x+1,y0+y,x0+x-1,y0+y,0)
 		rectfill(x0-x+1,y0-y,x0+x-1,y0-y,0)
 		rectfill(x0-y,y0-x+1,x0+y,y0-x+1,0)
 		rectfill(x0-y,y0+x-1,x0+y,y0+x-1,0)
-	 shadepix_xy(x0+x,y0+y,dist)
-  shadepix_xy(x0+y,y0+x,dist)
-  shadepix_xy(x0-y,y0+x,dist)
-  shadepix_xy(x0-x,y0+y,dist)
-  shadepix_xy(x0-x,y0-y,dist)
-  shadepix_xy(x0-y,y0-x,dist)
-  shadepix_xy(x0+y,y0-x,dist)
-  shadepix_xy(x0+x,y0-y,dist)
- 
+		
+		shadepix(x0+x,y0+y,dist)
+  shadepix(x0+y,y0+x,dist)
+  shadepix(x0-y,y0+x,dist)
+  shadepix(x0+x,y0-y,dist)
+		
+  shadepix(x0-x,y0+y,dist)
+  shadepix(x0-y,y0-x,dist)
+  shadepix(x0+y,y0-x,dist)
+  shadepix(x0-x,y0-y,dist)
+		
 	 if err<=0 then
    y+=1
    err+=dy
    dy+=2
-		end  
-	 if err>0 then
+		end
+		if err>0 then
+   x-=1
+   dx+=2
+   err+=dx-r
+		end
+	end
+end
+
+function aacirc(x0,y0,r)
+	if(r==0) return
+ local x,y,dx,dy=flr(r),0,1,1
+ r*=2
+ local err=dx-r
+
+ while x>=y do
+		local dist=1+err/r
+		shadepixpair(x0+x,y0+y,dist,-1,0)
+  shadepixpair(x0+y,y0+x,dist,0,-1)
+  shadepixpair(x0-y,y0+x,dist,0,-1)  
+  shadepixpair(x0+x,y0-y,dist,-1,0)
+		
+  shadepixpair(x0-x,y0+y,dist,1,0)  
+  shadepixpair(x0-y,y0-x,dist,0,1)
+  shadepixpair(x0+y,y0-x,dist,0,1)
+  shadepixpair(x0-x,y0-y,dist,1,0)
+		
+	 if err<=0 then
+   y+=1
+   err+=dy
+   dy+=2
+		end
+		if err>0 then
    x-=1
    dx+=2
    err+=dx-r
@@ -144,6 +182,18 @@ end
 
 -- game globals
 local time_t,time_dt=0,1
+
+local actors={}
+local plyr
+local npc_count,saucer_count=0,0
+
+local plyr_r=4
+local plyr_segments={
+	{y=0,x=0.8*plyr_r},
+	{y=1.2*plyr_r*cos(1/3),x=plyr_r*sin(1/3)},
+	{y=0,x=-0.5*plyr_r},
+ {y=-1.2*plyr_r*cos(1/3),x=plyr_r*sin(1/3)}}
+
 local scores,last_score={},0
 local cur_screen
 local start_screen={
@@ -348,6 +398,9 @@ end
 
 local pixel_part=0
 local flash_part=1
+local tpin_part=2
+local tpout_part=3
+
 local parts={}
 function make_part(x,y,u,v,f,typ)
 	local ttl,draw,r,dr
@@ -356,6 +409,14 @@ function make_part(x,y,u,v,f,typ)
 		ttl=24
 		r=4
 		dr=-0.5
+	elseif typ==tpin_part then
+		ttl=45
+		r=48
+		dr=-1
+		draw=draw_circf_part
+	elseif typ==tpout_part then
+		ttl=8+rnd(8)
+		draw=draw_line_part		
 	else
 		ttl=24+rnd(4)-8
 		draw=draw_part
@@ -368,7 +429,7 @@ function make_part(x,y,u,v,f,typ)
 		f=f,
 		r=r,
 		dr=dr,
-		inertia=0.98,
+		inertia=0.96,
 		t=time_t+ttl,
 		ttl=ttl,
 		draw=draw,
@@ -417,6 +478,32 @@ function make_blast(x,y)
 	end
 	cam_shake(rnd(),rnd(),3)
 end
+function make_teleport()
+	local p=make_part(plyr.x,plyr.y,0,0,0,tpin_part)
+	sfx(7)
+	futures_add(function()
+		wait_async(45,
+			function()
+				if plyr then
+					p.x,p.y=plyr.x,plyr.y
+					p.dr*=1.1
+				end
+				return p.r>0
+			end)
+			-- still alive?
+			if plyr then
+				-- teleport point
+				local x,y=rnd(128),rnd(128)
+				plyr.x,plyr.y=x,y
+				plyr.safe_t=time_t+45
+				for i=1,24 do
+					local angle=rnd()
+					local u,v=cos(angle),sin(angle)
+					make_part(x+4*u,y+4*v,u,v,2*rnd(),tpout_part)
+				end
+			end
+		end)
+end
 
 function update_part(self)
 	if(self.t<time_t) return false
@@ -442,13 +529,21 @@ function draw_circ_part(self)
 	aacircfill(self.x,self.y,self.r)
 end
 
+function draw_line_part(self)
+	aaline(self.x,self.y,self.x+4*self.u,self.y+4*self.v)
+end
+
 function draw_part(self)
  pset(self.x,self.y,0)
  local d=1-0.75*self.f
- shadepix_xy(self.x+1,self.y,d)
- shadepix_xy(self.x,self.y+1,d)
- shadepix_xy(self.x-1,self.y,d)
- shadepix_xy(self.x,self.y-1,d)
+ shadepix(self.x+1,self.y,d)
+ shadepix(self.x,self.y+1,d)
+ shadepix(self.x-1,self.y,d)
+ shadepix(self.x,self.y-1,d)
+end
+
+function draw_circf_part(self)
+	aacirc(self.x,self.y,self.r)
 end
 
 function draw_blt(self)
@@ -456,23 +551,13 @@ function draw_blt(self)
 	pset(x,y,0)
 	local dx,dy=x-flr(x),y-flr(y)
 	-- kind of unit circle dithering
-	shadepix_xy(x+1,y,dx)
-	shadepix_xy(x-1,y,1-dx)
-	shadepix_xy(x,y-1,dx)
-	shadepix_xy(x,y+1,1-dx)
+	shadepix(x+1,y,dx)
+	shadepix(x-1,y,1-dx)
+	shadepix(x,y-1,dx)
+	shadepix(x,y+1,1-dx)
 end
 
-local actors={}
-local plyr
-local npc_count,saucer_count=0,0
-
-local plyr_r=4
-local plyr_segments={
-	{y=0,x=0.8*plyr_r},
-	{y=1.2*plyr_r*cos(1/3),x=plyr_r*sin(1/3)},
-	{y=0,x=-0.5*plyr_r},
- {y=-1.2*plyr_r*cos(1/3),x=plyr_r*sin(1/3)}}
-
+-- player functions
 function make_plyr(x,y)
 	return add(actors,{
 		side=0,
@@ -488,10 +573,13 @@ function make_plyr(x,y)
 		da=0,
 		u=0,
 		v=1,		
-		f=0,
+		fu=0,
+		fv=0,
 		acc=0.5,
 		emit_t=0,
 		fire_t=0,
+		tp_t=0,
+		tp=3,
 		segments=plyr_segments,
 		update=update_plyr,
 		draw=draw_plyr,
@@ -520,8 +608,8 @@ end
 
 local rock_stats={
 	{r=12,acc=0.1,n=11},
-	{r=8,acc=0.25,n=9},
-	{r=6,acc=0.5,n=7}}
+	{r=8,acc=0.2,n=9},
+	{r=6,acc=0.4,n=7}}
 	
 function make_rock(x,y,u,v,lvl)
 	lvl=lvl or 1
@@ -587,6 +675,7 @@ end
 function die_saucer(self)
 	die_actor(self)
 	saucer_count-=1
+	-- stop that sound now!!!
 	if saucer_count==0 then
 		sfx(-1,3)
 	end
@@ -702,11 +791,28 @@ function die_rock(self)
 	end
 end
 
+function clamp(u,v,scale)
+	local d=sqrt(u*u+v*v)
+	if (d>0) u=u*min(d,scale)/d v=v*min(d,scale)/d
+	return u,v
+end
+
 function control_plyr(self)
-	if(btn(0)) self.da=-0.01
-	if(btn(1)) self.da=0.01
+	if(btn(0)) self.da=-0.02
+	if(btn(1)) self.da=0.02
 	local thrust=false
-	if(btn(4) or btn(2)) self.f=self.acc thrust=true
+	if btn(2) then
+	 self.fu+=self.acc*self.u
+	 self.fv+=self.acc*self.v
+	 self.fu,self.fv=clamp(self.fu,self.fv,self.acc)
+	 thrust=true
+	end
+	-- teleport
+	if btnp(4) and self.tp_t<time_t and self.tp>0 then
+		self.tp_t=time_t+60
+		self.tp-=1
+		make_teleport()
+	end
 	local fire=false
 	if(btn(5)) fire=true
 	
@@ -726,18 +832,19 @@ end
 
 function update_plyr(self)
 	self.a+=self.da	
-	self.da*=0.90
+	self.da*=0.75
 	
 	self.u=cos(self.a)
 	self.v=-sin(self.a)
 	
-	self.x+=self.f*self.u
-	self.y+=self.f*self.v
+	self.x+=self.fu
+	self.y+=self.fv
 
 	self.x%=128
 	self.y%=128
 	
-	self.f*=0.96
+	self.fu*=0.98
+	self.fv*=0.98
 	
 	return true
 end
@@ -786,7 +893,7 @@ function die_plyr(self)
 	else
 		plyr.x,plyr.y,plyr.a,plyr.da=64,64,0,0
 		plyr.u,plyr.v=0,1
-		plyr.safe_t=time_t+45
+		plyr.safe_t=time_t+120
 	end
 end
 
@@ -898,6 +1005,8 @@ end
 
 -- play loop
 function game_screen:init()
+	time_t=0
+	parts={}
 	actors={}
 	npc_count=0
 	saucer_count=0
@@ -921,7 +1030,7 @@ function game_screen:update()
 end
 function game_screen:draw()
 	if(not plyr) return
-	local x=8
+	local x=5
 	for i=1,plyr.live do
 		draw_plyr({
 			safe_t=0,
@@ -931,6 +1040,11 @@ function game_screen:draw()
 			segments=plyr_segments,
 			a=0.75,
 			u=0,v=-1})
+		x+=8
+	end
+	x=5
+	for i=1,plyr.tp do
+		aacirc(x,28,3)
 		x+=8
 	end
 end
@@ -982,7 +1096,7 @@ function _draw()
 
 	-- previous hiscore
 	if #scores>0 then
- 	draw_text("hi "..padding(scores[1].key,4),85,4,5)
+ 		draw_text("hi "..padding(scores[1].key,4),85,4,5)
 	end
 	
 	futures_update(after_draw)
@@ -991,6 +1105,7 @@ function _draw()
 	time_dt=0
 end
 
+local show_cover=false
 function _init()
 	if cartdata("freds72_aasteroids") then
 		crt_mode=dget(0)
@@ -1012,6 +1127,18 @@ function _init()
 	end
 
 	cur_screen=start_screen
+
+	menuitem(1,"cover art on/off", function()
+		show_cover=not show_cover
+		futures_add(function()
+			while show_cover==true do
+				normvid()
+				spr(0,0,0,16,16)
+				yield()
+			end
+			grayvid()
+		end,after_draw)
+	end)
 end
 
 __gfx__
@@ -1275,3 +1402,5 @@ __sfx__
 000200003d2503826035260322602c2502a2502924027240262302522024200232002320022200222002220022200222002220022200222002320023200232002320022200222000000000000000000000000000
 000300001064015740116200961000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 000500201c7501f75020750217502375023750247502475024750237502375022750207501f7501d7501b750197501875017750177501675016750157501575015750167501775018750197501a7501b7501e750
+00020000140701a1601c0601e1601e0601e0601d0601b0501a04016040130300f0300b0300603002030010300203006040090500c0500d0600f060110701307015070190701c0701f070250702b0703106038040
+000100003100036000370003500038000380003700036000370003600034000310002e0002a00027000230001e0001b0001800015000140001300012000120001200000000000000000000000000000000000000
