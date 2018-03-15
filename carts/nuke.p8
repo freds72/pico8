@@ -1126,7 +1126,8 @@ function warp_draw_async(r0,r1)
 		local r=lerp(r0,r1,1-smoothstep(i/90))
 		local r2=r*r
 		for j=0,127 do
-			local x,y=sqrt(max(r2-y*y)),64-j
+			local y=64-j
+			local x=sqrt(max(r2-y*y))
 			rectfill(0,j,64-x,j,0)
 			rectfill(64+x,j,127,j,0)
 		end
@@ -1569,7 +1570,7 @@ start_screen.update=function()
 			end,after_draw)
 		futures_add(function()
 			wait_async(90)
-			lvl_i,cur_loop=0,1
+			lvl_i,cur_loop=4,1
 			plyr_hpmax=8
 			plyr=make_plyr()
 			next_level()

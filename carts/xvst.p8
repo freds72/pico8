@@ -112,13 +112,33 @@ function make_m_from_q(q)
 
 		return te
 end
-function make_m_inv(m)
-	-- todo
+function m_clone(m)
+	local c={}
+	for i=1,16 do
+		c[i]=m[i]
+	end
+	return c
+end
+
+function m_inv(m)
+	for i=1,4 do
+		for j=i,4 do
+			m[i+j*4],m[j+i*4]=m[j+i*4],m[i+j*4]
+		end
+	end
+end
+function m_print(m)
+	local s=""
+	for i=1,16 do
+		
+		if (i-1)%4==0 then
+			printh(s)
+			
+	end
 end
 
 function make_plyr()
 	local p={
-		model=make_plane(),
 		pos=make_vec(0,0,0),
 		q=make_quat(fwd,0)
 	}
@@ -131,7 +151,12 @@ function _init()
 end
 
 function control_plyr()
-	v_move(plyr.pos,0.05,0,-0.01)
 	q_x_q(plyr.q,make_quat(fwd,0.01))
+end
+
+function _update60()
+end
+
+function _draw()
 end
 
