@@ -122,7 +122,7 @@ end
 _g.draw_txt_part=function(self,x,y)
 	local l=1.5*#self.txt
 	print(self.txt,x-l+1,y-2,0)
-	print(self.txt,x-l,y-2,lvl.txt_col or 7)
+	print(self.txt,x-l,y-2,7)
 end
 _g.draw_blast_part=function(self,x,y)
 	local s=self.frames[flr(self.frame)+1]
@@ -285,7 +285,7 @@ _g.darken=function()
 end
 -- levels
 local active_actors
-local levels=json_parse('[{"n":"desert","floors":[68,64,65,67,111],"walls":[66],"shadow":110,"bkg_col":1,"w":[8,12],"h":[6,8],"paths":[1,3],"path":{"w":[3,4],"len":[8,12]},"spawn":[[8,12,"bandit_cls"],[5,8,"worm_cls"],[-5,-3,"scorpion_cls"],[2,3,"cactus"],[-9,-5,"cop_box_cls"]]},{"n":"sewers","shader":"darken","floors":[86,87,87,88],"walls":[90,89,91],"shadow":94,"borders":[10,11,3],"bkg_col":3,"w":[2,3],"h":[2,3],"paths":[2,4],"path":{"w":[1,2],"len":[10,12]},"spawn":[[10,15,"slime_cls"],[5,10,"barrel_cls"],[-4,-2,"frog_cls"]]},{"n":"snow plains","cursor":93,"floors":[70,71,72],"walls":[74],"shadow":95,"borders":[5,1,7],"bkg_col":7,"w":[6,8],"h":[5,6],"paths":[2,3],"path":{"w":[3,5],"len":[10,12]},"spawn":[[8,10,"dog_cls"],[5,8,"bear_cls"],[-2,-1,"turret_cls"]]},{"n":"lab","floors":[102,105],"walls":[103,104,106],"shadow":107,"borders":[6,7,5],"bkg_col":5,"shader":"darken","w":[4,6],"h":[3,5],"paths":[1,4],"path":{"w":[1,2],"len":[8,12]},"spawn":[[3,4,"cop_cls"],[5,8,"fireimp_cls"],[5,8,"barrel_cls"]]},{"n":"palace","floors":[96,100],"walls":[97,98,99,108],"shadow":101,"borders":[7,0,5],"bkg_col":5,"w":[8,10],"h":[8,10],"paths":[1,3],"path":{"w":[2,3],"len":[10,12]},"spawn":[[4,8,"horror_cls"],[4,4,"horror_spwnr_cls"],[-4,-2,"slime_cls"],[2,3,"candle_cls"]]},{"n":"throne","music":0,"builtin":true,"bkg_col":0,"borders":[7,0,5],"cx":103,"cy":0,"cw":13,"ch":31,"plyr_pos":[110,28],"spawn":[{"a":"throne_cls","x":112,"y":6},{"a":"ammo_cls","x":106,"y":27},{"a":"ammo_cls","x":107,"y":27},{"a":"ammo_cls","x":106,"y":28},{"a":"ammo_cls","x":107,"y":28},{"a":"health_cls","x":114,"y":27},{"a":"health_cls","x":115,"y":27},{"a":"health_cls","x":114,"y":28},{"a":"health_cls","x":115,"y":28}]}]')
+local levels=json_parse('[{"n":"desert","floors":[68,64,65,67,111],"walls":[66],"shadow":110,"bkg_col":1,"w":[8,12],"h":[6,8],"paths":[1,3],"path":{"w":[3,4],"len":[8,12]},"spawn":[[8,12,"bandit_cls"],[5,8,"worm_cls"],[-5,-3,"scorpion_cls"],[2,3,"cactus"],[-9,-5,"cop_box_cls"]]},{"n":"sewers","shader":"darken","floors":[86,87,87,88],"walls":[90,89,91],"shadow":94,"borders":[10,11,3],"bkg_col":3,"w":[2,3],"h":[2,3],"paths":[2,4],"path":{"w":[1,2],"len":[10,12]},"spawn":[[10,15,"slime_cls"],[5,10,"barrel_cls"],[-4,-2,"frog_cls"]]},{"n":"snow plains","cursor":93,"floors":[70,71,72,75],"walls":[74],"shadow":95,"borders":[5,1,7],"bkg_col":7,"w":[6,8],"h":[5,6],"paths":[2,3],"path":{"w":[3,5],"len":[10,12]},"spawn":[[8,10,"dog_cls"],[5,8,"bear_cls"],[-2,-1,"turret_cls"]]},{"n":"lab","floors":[102,105],"walls":[103,104,106],"shadow":107,"borders":[6,7,5],"bkg_col":5,"shader":"darken","w":[4,6],"h":[3,5],"paths":[1,4],"path":{"w":[1,2],"len":[8,12]},"spawn":[[3,4,"cop_cls"],[5,8,"fireimp_cls"],[5,8,"barrel_cls"]]},{"n":"palace","floors":[96,100],"walls":[97,98,99,108],"shadow":101,"borders":[7,0,5],"bkg_col":5,"w":[8,10],"h":[8,10],"paths":[1,3],"path":{"w":[2,3],"len":[10,12]},"spawn":[[4,8,"horror_cls"],[4,4,"horror_spwnr_cls"],[-4,-2,"slime_cls"],[2,3,"candle_cls"]]},{"n":"throne","music":0,"builtin":true,"bkg_col":0,"borders":[7,0,5],"cx":103,"cy":0,"cw":13,"ch":31,"plyr_pos":[110,28],"spawn":[{"a":"throne_cls","x":112,"y":6},{"a":"ammo_cls","x":106,"y":27},{"a":"ammo_cls","x":107,"y":27},{"a":"ammo_cls","x":106,"y":28},{"a":"ammo_cls","x":107,"y":28},{"a":"health_cls","x":114,"y":27},{"a":"health_cls","x":115,"y":27},{"a":"health_cls","x":114,"y":28},{"a":"health_cls","x":115,"y":28}]}]')
 
 local face1strip=json_parse('[false,false,false,true,true,true,false,false]')
 
@@ -1142,9 +1142,8 @@ _g.warp_update=function(self)
 	if d<4 then
 		self.captured=true
 		futures_add(function()
-			warp_draw_async(0,48)
-			wait_async(90)
-			warp_draw_async(96,48)
+			warp_draw_async(16,96)
+			warp_draw_async(96,16)
 		end,after_draw)
 		futures_add(function()
 			plyr_playing,d,a=false,sqrt(d),atan2(dx,dy)
@@ -1570,7 +1569,7 @@ start_screen.update=function()
 			end,after_draw)
 		futures_add(function()
 			wait_async(90)
-			lvl_i,cur_loop=4,1
+			lvl_i,cur_loop=0,1
 			plyr_hpmax=8
 			plyr=make_plyr()
 			next_level()
@@ -1581,18 +1580,16 @@ start_screen.update=function()
 	end
 end
 start_screen.draw=function()
- cls(2)
+	cls(2)
 	fillp(0xa5a5)
-	camera(-64,-64)
 	local a,r,x,y=time_t/32,0
 	for i=1,196 do
 		x,y=r*cos(a),r*sin(a)
-		circfill(x,-y,r/8,0x1e)
+		circfill(64+x,64-y,r/8,0x10)
 		a+=0.02
 		r+=0.5
 	end
 	fillp()
-	camera()
 	
 	x,y=cos(time_t/64),sin(-time_t/64)
 	rspr(8,8,64+12*x,64+12*y,atan2(x,y))
@@ -1609,7 +1606,7 @@ start_screen.draw=function()
 	txt_print(use_mouse==1 and "[keyb.+mouse]" or "[keyboard]",64,116,7)
 	
 	txt_options(true,0,true)
-	txt_print("freds72 presents",64,2,6)
+	txt_print("freds72 presents",64,3,6)
 end
 
 -- game screen
@@ -1676,7 +1673,7 @@ game_screen.draw=function()
 		palt(14,true)
 		palt(0,false)
 		spr(plyr.wp.icon,2,10)
-		txt_print(plyr.ammo,14,12,lvl.txt_col or 7)
+		txt_print(plyr.ammo,14,12,7)
 	end
 end
 --local perf_update,perf_draw=0,0
@@ -1750,14 +1747,14 @@ e0d888d00ffff8f00fffff800ffffff0e055000ee700777e0453b000700007770f2ffff0022ffff0
 e0d686d0055555500555555005555550e050eeeee707eeee04400eee70077eee0ffff8f00ffff8f0e000000e51d156d6eee55eee044444400447070eee3bbb3e
 e0dd6dd0070000703070060330067003ee0eeeeeee7eeeeee00e0eeee77e7eee0555555005555550ee88eeee65e267efeeeeeeee0404004004044440eee333ee
 e0000000303333033303303333300333eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee3000000330000003eeeeeeee76fd77f7eeeeeeeee0e0ee0ee0e0000eeeeeeeee
-4444444444444444040404044444444444444444eee222ee666666666666666666666166666166665c775c5c76666667d1dddddddddddddd121212eed2dddddd
-4444444444994444404040404444444444444444ee21112e66666666666666666116666666156666ccc7c7c565151516d01dddddd1eddddd21ee21de20ddd2ed
-44b4b44445495444040404044944444444444444e2122212666666666611116665566666615666661cc7c77c71515177d00dddddd11ddddd11dde212ddd0d02d
-435b5344445544444040404045444494444444442121122166666666615555666666666165166666c111ccc565151777ddddd11ddddddddd21dde121dd02dd0d
-453535444444444404040404444444544444444421212121666666666555551666666666665166665c5cc77c51515667ddd11001ddddeedd12111212d02d0ddd
-44555444444444444040404044494444444444442122212166666666665555566666166666156666c5c5c1c7751515571dd00000ddd12e1d2121de21dd0dd0dd
-4444444444444444040404044445444444444444e211122166666666666655566666666666566666515c7ccc775157170dd0000ddddd11dd12121d12d2dd02d0
-4444444444444444404040404444444444444444ee22221e66666666666666666666666666666666c115c7c577777777dddd00dddddddddd2121212100dd2ddd
+4444444444444444040404044444444444444444eee222ee666666666666666666666166666166665c775c5c66666666d1dddddddddddddd121212eed2dddddd
+4444444444994444404040404444444444444444ee21112e66666666666666666116666666156666ccc7c7c561111116d01dddddd1eddddd21ee21de20ddd2ed
+44b4b44445495444040404044944444444444444e2122212666666666666666665566666615666661cc7c77c15d5d5d1d00dddddd11ddddd11dde212ddd0d02d
+435b5344445544444040404045444494444444442121122166666666611116666666666165166666c111ccc56d5d5d66ddddd11ddddddddd21dde121dd02dd0d
+4535354444444444040404044444445444444444212121216666666615d5d66666666666665166665c5cc77c15d5d666ddd11001ddddeedd12111212d02d0ddd
+445554444444444440404040444944444444444421222121666666665d5d51666666166666156666c5c5c1c75d5d51161dd00000ddd12e1d2121de21dd0dd0dd
+4444444444444444040404044445444444444444e21112216666666665d5d5666666666666566666515c7ccc65d5d5560dd0000ddddd11dd12121d12d2dd02d0
+4444444444444444404040404444444444444444ee22221e66666666666d5d666666666666666666c115c7c5665d56d6dddd00dddddddddd2121212100dd2ddd
 ee222eeee12222eeeee1111eeee00eeeeee00eee66666666555555555555555555dddd5536111161313131313535353555555155110110001111111111111111
 e21112ee1221112eee122221e00bb0eee00bb00e6666656655555555555555455d5555d515666653131313135377775355151055100010005151515161616161
 2122212e12122212e12211220b05300ee07bb70e666666665555555555555555d55dd55d31555511313131313700007551000015001000001515151516161616
@@ -1804,15 +1801,15 @@ e00b00b0e000b00ee0b00b0eeeee00666600eeeeeeeeeeeeeeeeeeee777777777777775005777777
 0bbbbbb00bbbbbb00bbbbbb0eee0666666660eeeeeeeeeeeeeeeeeee111111111111111551111111111111100111111111152222222251111111111000000000
 0bbb33300bbbb3300bbbbb30ee056666666650eeeeeeeeeeeeeee55e111111111111111111111111111111100111111111152222222251111111111000000000
 0bbbbbb00bbbbbb00bbbbbb0e06577666677560ee0eeeeeeeeee000e000000000000000000000000000000000000000000055555555550000000000000000000
-0b0000b0e0b0030e000b3000056055777755065005e00e5e66eeee50cccccccccccccc0000ccccccccccccc00cccccccccc7eeeeeeee7ccccccccccc00000000
-00eeee00ee0ee0eeeee00eee0560005555000650eee6ee5e6000eeeeccccccccccccccccccccccccccccccc00cccccccccc7eeeeeeee7ccccccccccc00000000
+0b0000b0e0b0030e000b3000056055777755065005e00e5eddeeee50cccccccccccccc0000ccccccccccccc00cccccccccc7eeeeeeee7ccccccccccc00000000
+00eeee00ee0ee0eeeee00eee0560005555000650eeedee5ed000eeeeccccccccccccccccccccccccccccccc00cccccccccc7eeeeeeee7ccccccccccc00000000
 eeeeeeeeeeeeeeeeeeeeeeee0556000000006550eeee00ee0500eeeeccccccccccccccccffffffffccccccc00cccccccccc7eeeeeeee7ccc6667eeeeeeee7666
 eeeeeeeeeeeeeeeeeeeaeeee0555660000665550eee1051e1111eeee7777777777777777ffffffff777777700777777777777777777777776617eeeeeeee7666
 0eeeeeeee0eeeeeeee070eee055555666655555005ee11eeeeeeeeee1111111111000111ffffffff111111100111111111152222222251116157eeeeeeee7166
-e0eee0ee0eeee0eee06760ee055555555555555006ee5ee5eeeeeeee1111111110567011ffffffff111111100111111111152222222251111557eeeeeeee7516
-0ee00f0ee0e00f0eee060eeee05550505055550ee06eee11eeeeee0e1111111110567011ffffffff111111100111111111152222222251116557eeeeeeee7566
-0e05580e0e05580eee050eeeee055151515550ee500eeeeeee5e655e0000000000576000ffffffff000000000000000000000000000000006657eeeeeeee7666
-e0555550e0555550e05050eeeee0055555500eee555ee556eeeee50efffffffff00650ffffffffffffffffffffffffffffffffffffffffff6667eeeeeeee7666
+e0eee0ee0eeee0eee06760ee05555555555555500dee5ee5eeeeeeee1111111110567011ffffffff111111100111111111152222222251111557eeeeeeee7516
+0ee00f0ee0e00f0eee060eeee05550505055550ee0deee11eeeeee0e1111111110567011ffffffff111111100111111111152222222251116557eeeeeeee7566
+0e05580e0e05580eee050eeeee055151515550ee500eeeeeee5ed55e0000000000576000ffffffff000000000000000000000000000000006657eeeeeeee7666
+e0555550e0555550e05050eeeee0055555500eee555ee55deeeee50efffffffff00650ffffffffffffffffffffffffffffffffffffffffff6667eeeeeeee7666
 ee00000eee00000ee00e00eeeeeee000000eeeeeeeeee0000eeee00effffffffff000fffffffffffffffffffffffffffffffffffffffffff6667eeeeeeee7666
 eeeee777eeeeeeeeeeeee111eeeeee1eeee8eeeeeee8eeeeeee8eeeeeee0eeeeeeeeeeeeeee000eeeeeeeeeeeeeeeeeeeeeeeeee000000000000000000000000
 eee77777eeeeeeeeeee11111eee1e1e1eeee8eeeeeee8eeeeeee8eeeee0b0eeeeee000eeee07770eeeeee0eeee0e0eeeeee00eee000000000000000000000000
