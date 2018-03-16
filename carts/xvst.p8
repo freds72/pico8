@@ -1,8 +1,36 @@
 pico-8 cartridge // http://www.pico-8.com
 version 16
 __lua__
-local cam_x,cam_y,cam_z
-function cam_track(x,y,z)
+local all_models={
+	cube={
+		v={
+		{-1,2,-1},
+		{1,2,-1},
+		{1,-2,-1},
+		{-1,-2,-1},
+		{-1,2,1},
+		{1,2,1},
+		{1,-2,1},
+		{-1,-2,1}},
+		f={0,1,2,3,4,0,8,7,6,5,0,4,8,5,1,0,7,3,2,6}
+	},
+ plane={
+		v={
+		{0,0,0},
+		{0,5,0},
+		{5,5,0},
+		{5,0,0}},
+		f={0,1,2,3,4}
+	}
+}
+
+local cam
+function cam_project(x,y,z)
+ local d=z-cam[3]
+ local w=cam[4]/d
+ local px=64+(x-cam[1])*w
+ local py=64-(y-cam[2])*w
+ return px,py,d,w
 end
 
 function make_matrix4(x,y,z)
@@ -41,6 +69,12 @@ function m_x_v(m,v)
 	v[2]=e[2]*x+e[6]*y+e[10]*z+m[14]
 	v[3]=e[3]*x+e[7]*y+e[11]*z+m[15]
 end
+function m_x_xyz(m,x,y,z)
+	return {
+		e[1]*x+e[5]*y+e[9]*z+m[13],
+		e[2]*x+e[6]*y+e[10]*z+m[14],
+		e[3]*x+e[7]*y+e[11]*z+m[15]}
+end
 -- quaternion
 function make_quat(v,angle)
 	angle/=2
@@ -73,19 +107,20 @@ function v_x_q(v,q)
 	local iw=-qx*x-qy*y-qz*z
 	
 	-- calculate result*inverse quat	
-	v[1]=ix*qw+iw*-qx+iy*-qz-iz*-qy
-	v[2]=iy*qw+iw*-qy+iz*-qx-ix*-qz
-	v[3]=iz*qw+iw*-qz+ix*-qy-iy*-qx
+	return {
+		ix*qw+iw*-qx+iy*-qz-iz*-qy,
+		iy*qw+iw*-qy+iz*-qx-ix*-qz,
+		iz*qw+iw*-qz+ix*-qy-iy*-qx}
 end
-function make_m_from_q(q)
+function m_from_q(q)
 
 		local te={}
 
-		local x = q[1], y = q[2], z = q[3], w = q[4]
-		local x2 = x + x, y2 = y + y, z2 = z + z
-		local xx = x * x2, xy = x * y2, xz = x * z2
-		local yy = y * y2, yz = y * z2, zz = z * z2
-		local wx = w * x2, wy = w * y2, wz = w * z2
+		local x,y,z,w = q[1],q[2], q[3], q[4]
+		local x2,y2,z2 = x + x, y + y, z + z
+		local xx,xy,xz = x * x2, x * y2, x * z2
+		local yy,yz,zz = y * y2, y * z2, z * z2
+		local wx,wy,wz = w * x2, w * y2, w * z2
 
 		te[ 1 ] = 1 - ( yy + zz )
 		te[ 5 ] = xy - wz
@@ -133,21 +168,78 @@ function m_print(m)
 		
 		if (i-1)%4==0 then
 			printh(s)
-			
+		end
 	end
 end
 
+-- drawing helpers
+function qline(v,i,j,k,l)
+	
+ 	color(7)
+ 	line(v[i][1],v[i][2],v[j][1],v[j][2])
+ 	line(v[j][1],v[j][2],v[k][1],v[k][2])
+ 	line(v[k][1],v[k][2],v[l][1],v[l][2])
+ 	line(v[i][1],v[i][2],v[l][1],v[l][2])
+	
+end
+
+function draw_actor(self)
+	local p={}
+	for i=1,#self.model.v do
+		local v=self.model.v[i]
+		v=v_x_q(v,self.q)
+		local xe,ye,ze,we=cam_project(v[1]+self.pos[1],v[2]+self.pos[2],v[3]+self.pos[3])
+		--local xe,ye,ze,we=cam_project(x,y,z)
+		add(p,{
+			xe,
+			ye,
+			ze,
+			we})
+	end
+	local i=1
+	while i<#self.model.f do
+		local ftype=self.model.f[i]
+		-- quad
+		if ftype==0 then
+			qline(p,
+				self.model.f[i+1],
+				self.model.f[i+2],
+				self.model.f[i+3],
+				self.model.f[i+4])
+			i+=5
+		end
+	end
+end
 function make_plyr()
 	local p={
+		model=all_models.cube,
 		pos=make_vec(0,0,0),
-		q=make_quat(fwd,0)
+		q=make_quat(fwd,0),
+		draw=draw_actor
 	}
 	add(actors,p)
 	return p
 end
 
+function make_cam(f)
+	return {
+		pos=make_vec(0,0,-8,f),
+		q=make_quat(fwd,0),
+		update=function()
+			self.m=m_inv(m_from_q(self.q))
+		end,
+		project=function(x,y,z)
+			x-=self.pos[1]
+			y-=self.pos[2]
+			z-=self.pos[3]
+			local v=m_x_xyz(self.m,x,y,z)
+		end
+	}
+end
+
 function _init()
 	plyr=make_plyr()
+	cam=make_cam(64)
 end
 
 function control_plyr()
@@ -155,8 +247,13 @@ function control_plyr()
 end
 
 function _update60()
+	control_plyr()
+
+	cam[3]=-8.5
 end
 
 function _draw()
+	cls()
+	plyr:draw()
 end
 
