@@ -225,6 +225,10 @@ function draw_ground(self)
 	end
 end
 
+local hist,hist_i={},0
+for i=1,64 do
+	add(hist,0)
+end
 function draw_actor(self)
 	-- 
 	if self==plyr and chase_cam==false then
@@ -274,6 +278,13 @@ function draw_actor(self)
 	if self.target then
 		rect(2,9,2+16,9+16,8)
 	 line(2+8,9+8,2+8+self.target[1],9+8-self.target[2],8)
+	
+		--print("roll:"..self.roll,20,9,7)
+		--print("pitch:"..self.pitch,20,18,7)
+		line(19,20,127,20,1)
+		for i=0,63 do
+			pset(19+i,20-8*hist[(i+time_t)%64+1],8)
+		end
 	end
 end
 
@@ -301,8 +312,8 @@ function make_plyr(x,y,z)
 	return p
 end
 
-local kp = 3
-local ki = 0.2
+local kp = 1
+local ki = 0
 local kd = 0
 
 function make_pid()
@@ -328,6 +339,8 @@ function make_npc(x,y,z)
 		q=make_quat({0,0,1},0),
 		pid_roll=make_pid(),
 		pid_pitch=make_pid(),
+		pitch=0,
+		roll=0,
 		draw=draw_actor,
 		update=function(self)
 			local target=follow(self,plyr,{0,0,10})
@@ -336,20 +349,27 @@ function make_npc(x,y,z)
 			m_inv(m)
 			m_x_v(m,target)
 			self.target=v_clone(target)
-					
+			
+			local angle=0		
 			if abs(self.target[1])>0.1 then
- 			local angle=(self.pid_roll):update(self.target[1])
+ 			angle=(self.pid_roll):update(self.target[1])
+			 hist[time_t%64+1]=angle
 				if angle!=0 then
+	 			self.roll=angle
 	 			local q=make_quat({0,0,1},-angle/128)
  				q_x_q(self.q,q)
  			end
- 		elseif abs(self.target[2])>0.1 then
- 			local angle=(self.pid_pitch):update(self.target[2])
+ 		--elseif abs(self.target[2])>0.1 hen
+ 		else
+ 			angle=(self.pid_pitch):update(self.target[2])
  			if angle!=0 then
+ 				self.pitch=angle
  				local q=make_quat({1,0,0},-angle/128)
  				q_x_q(self.q,q)
  			end
-			end
+		 end
+
+		 hist[time_t%64+1]=angle
 			
 			local m=m_from_q(self.q)		
 			v_plus_v(self.pos,{0.1*m[9],0.1*m[10],0.1*m[11]})
