@@ -277,7 +277,7 @@ function draw_actor(self)
 	
 	if self.target then
 		rect(2,9,2+16,9+16,8)
-	 line(2+8,9+8,2+8+self.target[1],9+8-self.target[2],8)
+	 line(2+8,9+8,2+8+8*self.target[1],9+8-8*self.target[2],8)
 	
 		--print("roll:"..self.roll,20,9,7)
 		--print("pitch:"..self.pitch,20,18,7)
@@ -343,37 +343,33 @@ function make_npc(x,y,z)
 		roll=0,
 		draw=draw_actor,
 		update=function(self)
-			local target=follow(self,plyr,{0,0,10})
+			local target=follow(self,plyr,{3,3,10})
 			-- convert target to self space
 			local m=m_from_q(self.q)
 			m_inv(m)
 			m_x_v(m,target)
 			self.target=v_clone(target)
-			
-			local angle=0		
+			local angle=0
 			if abs(self.target[1])>0.1 then
- 			angle=(self.pid_roll):update(self.target[1])
-			 hist[time_t%64+1]=angle
+ 			angle=mid(self.target[1],-1,1) -- (self.pid_roll):update(self.target[1])
 				if angle!=0 then
 	 			self.roll=angle
 	 			local q=make_quat({0,0,1},-angle/128)
  				q_x_q(self.q,q)
  			end
- 		--elseif abs(self.target[2])>0.1 hen
- 		else
- 			angle=(self.pid_pitch):update(self.target[2])
- 			if angle!=0 then
- 				self.pitch=angle
- 				local q=make_quat({1,0,0},-angle/128)
- 				q_x_q(self.q,q)
- 			end
-		 end
+			elseif abs(self.target[2])>0.1 then
+				angle=mid(self.target[2],-1,1)-- (self.pid_pitch):update(self.target[2])
+				if angle!=0 then
+					self.pitch=angle
+					local q=make_quat({1,0,0},-angle/128)
+					q_x_q(self.q,q)
+				end
+			end
 
-		 hist[time_t%64+1]=angle
-			
+			hist[time_t%64+1]=angle
+				
 			local m=m_from_q(self.q)		
 			v_plus_v(self.pos,{0.1*m[9],0.1*m[10],0.1*m[11]})
-
 		end
 	}
 	add(actors,p)
