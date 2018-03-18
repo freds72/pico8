@@ -1,6 +1,10 @@
 pico-8 cartridge // http://www.pico-8.com
 version 16
 __lua__
+local time_t=0
+local chase_cam=true
+local actors={}
+local parts={}
 local all_models={
 	cube={
 		v={
@@ -12,26 +16,24 @@ local all_models={
 		{1,2,1},
 		{1,-2,1},
 		{-1,-2,1}},
-		f={0,1,2,3,4,0,8,7,6,5,0,4,8,5,1,0,7,3,2,6}
+		f={4,4,3,2,1,4,5,6,7,8,4,1,5,8,4,4,6,7,3,2},
+		e={}
 	},
- plane={
+ 	plane={
 		v={
 		{0,0,0},
 		{0,5,0},
 		{5,5,0},
 		{5,0,0}},
-		f={0,1,2,3,4}
+		f={0,1,2,3,4},
+		e={}
+	},
+	xwing={
+		v={{-0.4,-0.35,-1.28},{-0.4,0.47,-1.28},{-0.4,-0.35,0.4},{-0.4,0.47,0.4},{0.4,-0.35,-1.28},{0.4,0.47,-1.28},{0.4,-0.35,0.4},{0.4,0.47,0.4},{-0.2,-0.19,3.15},{-0.2,0.21,3.15},{0.2,-0.19,3.15},{0.2,0.21,3.15},{-0.11,-0.09,3.89},{-0.11,0.08,3.89},{0.11,-0.09,3.89},{0.11,0.08,3.89},{-0.89,0.43,-1.14},{-0.89,0.43,0.01},{-2.21,0.91,-0.73},{-2.21,0.91,0.01},{-2.21,0.91,1.61},{-0.73,0.07,-1.14},{-0.89,0.43,-1.14},{-0.73,0.07,0.2},{-0.89,0.43,0.2},{-0.36,0.24,-1.14},{-0.53,0.6,-1.14},{-0.36,0.24,0.2},{-0.53,0.6,0.2},{0.84,0.41,-1.14},{0.84,0.41,0.01},{2.2,0.77,-0.73},{2.2,0.77,0.01},{2.2,0.77,1.61},{0.5,0.61,-1.14},{0.84,0.41,-1.14},{0.5,0.61,0.2},{0.84,0.41,0.2},{0.3,0.26,-1.14},{0.64,0.06,-1.14},{0.3,0.26,0.2},{0.64,0.06,0.2},{-0.89,-0.37,-1.14},{-0.89,-0.37,0.01},{-2.21,-0.85,-0.73},{-2.21,-0.85,0.01},{-2.21,-0.85,1.61},{-0.53,-0.54,-1.14},{-0.89,-0.37,-1.14},{-0.53,-0.54,0.2},{-0.89,-0.37,0.2},{-0.36,-0.18,-1.14},{-0.73,-0.01,-1.14},{-0.36,-0.18,0.2},{-0.73,-0.01,0.2},{0.84,-0.35,-1.14},{0.84,-0.35,0.01},{2.2,-0.71,-0.73},{2.2,-0.71,0.01},{2.2,-0.71,1.61},{0.64,-0.0,-1.14},{0.84,-0.35,-1.14},{0.64,-0.0,0.2},{0.84,-0.35,0.2},{0.3,-0.2,-1.14},{0.5,-0.55,-1.14},{0.3,-0.2,0.2},{0.5,-0.55,0.2}},
+		f={4,1,2,4,3,4,8,7,11,12,4,7,8,6,5,4,5,6,2,1,4,3,7,5,1,4,8,4,2,6,4,12,11,15,16,4,7,3,9,11,4,4,8,12,10,4,3,4,10,9,4,13,14,16,15,4,11,9,13,15,4,10,12,16,14,4,9,10,14,13,4,22,23,25,24,4,24,25,29,28,4,28,29,27,26,4,26,27,23,22,4,24,28,26,22,4,29,25,23,27,4,35,36,38,37,4,37,38,42,41,4,41,42,40,39,4,39,40,36,35,4,37,41,39,35,4,42,38,36,40,4,48,49,51,50,4,50,51,55,54,4,54,55,53,52,4,52,53,49,48,4,50,54,52,48,4,55,51,49,53,4,61,62,64,63,4,63,64,68,67,4,67,68,66,65,4,65,66,62,61,4,63,67,65,61,4,68,64,62,66},
+		e={16,17,18,19,17,19,18,16,19,20,29,30,31,32,30,32,31,29,32,33,42,43,44,45,43,45,44,42,45,46,55,56,57,58,56,58,57,55,58,59}
 	}
 }
-
-local cam
-function cam_project(x,y,z)
- local d=z-cam[3]
- local w=cam[4]/d
- local px=64+(x-cam[1])*w
- local py=64-(y-cam[2])*w
- return px,py,d,w
-end
 
 function make_matrix4(x,y,z)
 	return {
@@ -50,30 +52,34 @@ function make_vec(x,y,z,w)
 end
 local fwd,right=make_vec(0,0,1),make_vec(1,0,0)
 
-function vec_clone(v)
+function v_clone(v)
 	return {v[1],v[2],v[3]}
 end
-function v_move(v,dx,dy,dz)
-	v[1]+=dx
-	v[2]+=dy
-	v[3]+=dz
+function v_normz(v)
+	local d=v[1]*v[1]+v[2]*v[2]+v[3]*v[3]
+	d=sqrt(d)
+	v[1]/=d	
+	v[2]/=d
+	v[3]/=d
 end
-function v_plus_v(v,dv)
-	v[1]+=dv[1]
-	v[2]+=dv[2]
-	v[3]+=dv[3]
+
+function v_plus_v(v,dv,scale)
+	scale=scale or 1
+	v[1]+=scale*dv[1]
+	v[2]+=scale*dv[2]
+	v[3]+=scale*dv[3]
 end
 function m_x_v(m,v)
 	local x,y,z=v[1],v[2],v[3];
-	v[1]=e[1]*x+e[5]*y+e[9]*z+m[13]
-	v[2]=e[2]*x+e[6]*y+e[10]*z+m[14]
-	v[3]=e[3]*x+e[7]*y+e[11]*z+m[15]
+	v[1]=m[1]*x+m[5]*y+m[9]*z+m[13]
+	v[2]=m[2]*x+m[6]*y+m[10]*z+m[14]
+	v[3]=m[3]*x+m[7]*y+m[11]*z+m[15]
 end
 function m_x_xyz(m,x,y,z)
 	return {
-		e[1]*x+e[5]*y+e[9]*z+m[13],
-		e[2]*x+e[6]*y+e[10]*z+m[14],
-		e[3]*x+e[7]*y+e[11]*z+m[15]}
+		m[1]*x+m[5]*y+m[9]*z+m[13],
+		m[2]*x+m[6]*y+m[10]*z+m[14],
+		m[3]*x+m[7]*y+m[11]*z+m[15]}
 end
 -- quaternion
 function make_quat(v,angle)
@@ -155,105 +161,519 @@ function m_clone(m)
 	return c
 end
 
+-- only invert 3x3 part
 function m_inv(m)
-	for i=1,4 do
-		for j=i,4 do
-			m[i+j*4],m[j+i*4]=m[j+i*4],m[i+j*4]
-		end
-	end
+	m[2],m[5]=	m[5],m[2]
+	m[3],m[9]=	m[9],m[3]
+	m[7],m[10]=	m[10],m[7]
 end
-function m_print(m)
+
+function printm(m)
 	local s=""
-	for i=1,16 do
-		
+	for i=1,16 do				
 		if (i-1)%4==0 then
 			printh(s)
+			s=""
 		end
+		s=s.." "..tostr(m[i])
 	end
+	printh(s)
 end
 
 -- drawing helpers
+function getwinding(v1,v2,v3)
+	local a={v2[1]-v1[1],v2[2]-v1[2]}
+	local b={v3[1]-v1[1],v3[2]-v1[2]}
+	--cross product
+	return a[1]*b[2]-a[2]*b[1]
+end
+
 function qline(v,i,j,k,l)
-	
+	if getwinding(v[i],v[j],v[k])<0 then
  	color(7)
  	line(v[i][1],v[i][2],v[j][1],v[j][2])
  	line(v[j][1],v[j][2],v[k][1],v[k][2])
  	line(v[k][1],v[k][2],v[l][1],v[l][2])
  	line(v[i][1],v[i][2],v[l][1],v[l][2])
+	end
+end
+function triline(v,i,j,k)
+	if getwinding(v[i],v[j],v[k])<0 then
+ 	color(7)
+ 	line(v[i][1],v[i][2],v[j][1],v[j][2])
+ 	line(v[j][1],v[j][2],v[k][1],v[k][2])
+ 	line(v[k][1],v[k][2],v[i][1],v[i][2])
+	end
+end
+
+local ground_colors={5,1}
+function draw_ground(self)
+	local v={}
+	local scale=4
+	local dx,dy=cam.pos[1]%scale,cam.pos[3]%scale
 	
+	local c=1
+	for j=0,32,scale do
+		for i=-16,16,scale do
+			local ii,jj=i-dx+cam.pos[1],j-dy+cam.pos[3]
+			local x,y,z=cam:project(ii,0,jj)
+			if z>0 then
+				pset(x,y,ground_colors[c%2+1])
+			end
+			c+=1
+		end
+	end
 end
 
 function draw_actor(self)
+	-- 
+	if self==plyr and chase_cam==false then
+		return
+	end
+	
 	local p={}
 	for i=1,#self.model.v do
 		local v=self.model.v[i]
 		v=v_x_q(v,self.q)
-		local xe,ye,ze,we=cam_project(v[1]+self.pos[1],v[2]+self.pos[2],v[3]+self.pos[3])
-		--local xe,ye,ze,we=cam_project(x,y,z)
+		local xe,ye,ze,we=cam:project(v[1]+self.pos[1],v[2]+self.pos[2],v[3]+self.pos[3])
 		add(p,{
 			xe,
 			ye,
 			ze,
 			we})
 	end
+	-- faces
 	local i=1
 	while i<#self.model.f do
 		local ftype=self.model.f[i]
 		-- quad
-		if ftype==0 then
+		if ftype==4 then
 			qline(p,
 				self.model.f[i+1],
 				self.model.f[i+2],
 				self.model.f[i+3],
 				self.model.f[i+4])
-			i+=5
+		elseif ftype==3 then
+			triline(p,
+				self.model.f[i+1],
+				self.model.f[i+2],
+				self.model.f[i+3])
 		end
+		i+=ftype+1
+	end
+	-- edges
+	color(7)
+	for i=1,#self.model.e,2 do
+		line(
+			p[self.model.e[i]+1][1],
+			p[self.model.e[i]+1][2],
+			p[self.model.e[i+1]+1][1],
+			p[self.model.e[i+1]+1][2])
+	end
+	
+	if self.target then
+		rect(2,9,2+16,9+16,8)
+	 line(2+8,9+8,2+8+self.target[1],9+8-self.target[2],8)
 	end
 end
-function make_plyr()
+
+-- offset: position relative to other pos
+function follow(self,other,offset)
+	local m=m_from_q(other.q)
+	-- offset into world position
+	local v=v_clone(offset)
+	v_x_q(v,other.q)
+	v_plus_v(v,other.pos)
+	-- line to target
+	v_plus_v(v,self.pos,-1)
+	return v
+end
+
+function make_plyr(x,y,z)
 	local p={
-		model=all_models.cube,
-		pos=make_vec(0,0,0),
-		q=make_quat(fwd,0),
-		draw=draw_actor
+		model=all_models.xwing,
+		pos=make_vec(x,y,z),
+		q=make_quat({0,0,1},0),
+		draw=draw_actor,
+		update=function() end
 	}
 	add(actors,p)
 	return p
 end
 
+local kp = 3
+local ki = 0.2
+local kd = 0
+
+function make_pid()
+	return {
+		error=0,
+		errorlast=0,
+		errointe=0,
+		update=function(self,input)
+   self.error = self.error * 0.7 + input * 0.3
+   local errordiff = self.error - self.errorlast
+   self.errointe = mid(self.errointe + self.error, -1, 1)
+   local output = kp * self.error + ki * self.errointe + kd * errordiff
+   self.errorlast = self.error
+   return output
+  end
+	}
+end
+ 
+function make_npc(x,y,z)
+	local p={
+		model=all_models.xwing,
+		pos=make_vec(x,y,z),
+		q=make_quat({0,0,1},0),
+		pid_roll=make_pid(),
+		pid_pitch=make_pid(),
+		draw=draw_actor,
+		update=function(self)
+			local target=follow(self,plyr,{0,0,10})
+			-- convert target to self space
+			local m=m_from_q(self.q)
+			m_inv(m)
+			m_x_v(m,target)
+			self.target=v_clone(target)
+					
+			if abs(self.target[1])>0.1 then
+ 			local angle=(self.pid_roll):update(self.target[1])
+				if angle!=0 then
+	 			local q=make_quat({0,0,1},-angle/128)
+ 				q_x_q(self.q,q)
+ 			end
+ 		elseif abs(self.target[2])>0.1 then
+ 			local angle=(self.pid_pitch):update(self.target[2])
+ 			if angle!=0 then
+ 				local q=make_quat({1,0,0},-angle/128)
+ 				q_x_q(self.q,q)
+ 			end
+			end
+			
+			local m=m_from_q(self.q)		
+			v_plus_v(self.pos,{0.1*m[9],0.1*m[10],0.1*m[11]})
+
+		end
+	}
+	add(actors,p)
+	return p
+end
+
+
 function make_cam(f)
 	return {
-		pos=make_vec(0,0,-8,f),
+		pos=make_vec(0,0,3,f),
 		q=make_quat(fwd,0),
-		update=function()
-			self.m=m_inv(m_from_q(self.q))
+		update=function(self)
+			self.m=m_from_q(self.q)
+			m_inv(self.m)
 		end,
-		project=function(x,y,z)
+		project=function(self,x,y,z)
+			-- world to view
 			x-=self.pos[1]
 			y-=self.pos[2]
 			z-=self.pos[3]
 			local v=m_x_xyz(self.m,x,y,z)
+			-- distance to camera plane
+			v[3]-=1
+			-- view to screen
+ 			local w=self.pos[4]/v[3]
+ 			return 64+v[1]*w,64-v[2]*w,v[3],w
 		end
 	}
 end
 
+function make_blt(x,y,z,dx,dy,dz,side)
+	return add(parts,{
+		t=time_t+90,
+		acc=0.5,
+		pos={x,y,z},	
+		u={dx,dy,dz},
+		side=side,
+		update=update_blt,
+		draw=draw_line_part})
+end
+function make_flash(x,y,z)
+	return add(parts,{
+		t=time_t+8,
+		r=0.4,
+		dr=-0.05,
+		pos={x,y,z},
+		update=update_part,
+		draw=draw_circ_part
+	})
+end
+
+function update_part(self)
+	if(self.t<time_t) return false
+	if(self.r<0) return false
+	self.r+=self.dr	
+	return true
+end
+
+function update_blt(self)
+	if(self.t<time_t) return false
+	if self.pos[2]<0 then
+		make_flash(self.pos[1],0,self.pos[3])
+		return false
+	end
+	v_plus_v(self.pos,self.u,self.acc)
+	return true
+end
+
+function draw_line_part(self)
+	local x0,y0,z0,w0=cam:project(self.pos[1],self.pos[2],self.pos[3])
+	local x1,y1,z1,w1=cam:project(self.pos[1]+self.u[1],self.pos[2]+self.u[2],self.pos[3]+self.u[3])
+	line(x0,y0,x1,y1,11)
+end
+
+function draw_circ_part(self)
+	local x0,y0,z0,w0=cam:project(self.pos[1],self.pos[2],self.pos[3])
+	circfill(x0,y0,self.r*w0,11)
+end
+
 function _init()
-	plyr=make_plyr()
+	plyr=make_plyr(0,0,0)
+	make_npc(0,0,8)
+	
 	cam=make_cam(64)
 end
 
-function control_plyr()
-	q_x_q(plyr.q,make_quat(fwd,0.01))
+local laser_idx=0
+local laser_dir={
+	{2,1,1.6},{2,-1,1.6},{-2,-1,1.6},{-2,1,1.6}}
+	
+local turn_t=0
+function control_plyr(self)
+	local pitch,roll=0,0
+	if(btn(0)) roll=-1 turn_t+=1
+	if(btn(1)) roll=1 turn_t+=1
+	if(btn(2)) pitch=-1
+	if(btn(3)) pitch=1
+
+	turn_t=min(turn_t,8)
+	if roll!=0 then
+		local r=turn_t/8
+		local q=make_quat({0,1,0},(1-r)*roll/128)
+		q_x_q(plyr.q,q)
+		local q=make_quat({0,0,1},-r*roll/128)
+		q_x_q(plyr.q,q)
+	else
+		turn_t=0
+	end
+	
+	if pitch!=0 then
+		local q=make_quat({1,0,0},-pitch/128)
+		q_x_q(plyr.q,q)
+	end
+
+	local m=m_from_q(plyr.q)		
+	v_plus_v(plyr.pos,{0.1*m[9],0.1*m[10],0.1*m[11]})
+
+	--[[
+	if btn(4) then
+		local m=m_from_q(plyr.q)		
+		v_plus_v(plyr.pos,{0.1*m[9],0.1*m[10],0.1*m[11]})
+	end
+	]]
+	-- chase cam
+	if btnp(4) then
+		chase_cam=not chase_cam
+	end
+	
+	if chase_cam then
+		local m=m_from_q(plyr.q)
+		cam.pos=m_x_xyz(m,0,2,-8)
+		cam.pos[4]=64
+		v_plus_v(cam.pos,plyr.pos)
+		cam.q=q_clone(plyr.q)
+	else
+		cam.pos=v_clone(plyr.pos)
+		cam.pos[4]=64		
+		cam.q=q_clone(plyr.q)
+	end
+	
+	if btnp(5) then
+		local m=m_from_q(plyr.q)
+		local v=laser_dir[laser_idx%4+1]
+		local p=m_x_xyz(m,v[1],v[2],v[3])
+		v_plus_v(p,plyr.pos)
+		v={-v[1],-v[2],64-v[3]}
+		v_normz(v)
+		m_x_v(m,v)
+		make_blt(p[1],p[2],p[3],v[1],v[2],v[3],true)
+		make_flash(p[1],p[2],p[3])
+		laser_idx+=1
+	end
 end
 
 function _update60()
+	time_t+=1
 	control_plyr()
+	
+	for _,a in pairs(actors) do
+		a:update()
+	end
+	
+	for _,a in pairs(parts) do
+		if a:update()==false then
+			del(parts,a)
+		end
+	end
 
-	cam[3]=-8.5
+	cam:update()
 end
 
 function _draw()
 	cls()
-	plyr:draw()
+
+	draw_ground()
+	
+	for _,a in pairs(actors) do
+		a:draw()
+	end
+	for _,a in pairs(parts) do
+		a:draw()
+	end
+	
+	if chase_cam==false then
+		palt(0,false)
+		palt(14,true)
+		spr(0,0,0,8,16)
+		spr(0,64,0,8,16,true)
+	end
+	
+	rectfill(0,0,127,8,1)
+	print(stat(1),2,2,7)
 end
 
+__gfx__
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+1eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+01eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+0001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+00001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+0000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+00000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+0000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+00000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+0000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+00000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+0000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+00000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee111111e0000000000000000000000000000000000000000000000000000000000000000
+000000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1eeeee1e0000000000000000000000000000000000000000000000000000000000000000
+0000000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1eeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+00000000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1eeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+000000000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1eeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee11eeeeeee0000000000000000000000000000000000000000000000000000000000000000
+10000000000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+e11000000000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eee1000000000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeee11eeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeee1100000000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeee1eeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeee110000000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeee1eeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeee10000000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeee1eeeeee1e0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeee11000000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeee1eeeee1e0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeee1100000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeee111111e0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeee110000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeee10000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeee11000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeee1100000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeee110000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeee10000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeee11000000000001eeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeee1100000000001eeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeee110000000001eeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeee10000000001eeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeee11000000001eeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1100000001eeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee100000001eeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee110000001eeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1100000111111111111111111110000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee10000001111111111111111111111110000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee100000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1000000100111111111111111111111110000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeee10000001001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeee100000010010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeee1000000100100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeee10000001001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeee1100000010010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeee110000000100100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeee1000000001001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeee110000000010010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeee11000000000100100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeee100000000001001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeee11000000000010010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeee1100000000000100100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeeee110000000000001001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+eeeeeeeeee1000000000000010010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+eeeeeeee110000000000000100100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+eeeeee11000000000000001001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+eeee1100000000000000010010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+eee10000000000000000100100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+e1100000000000000001001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+10000000000000000010010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000100100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000001001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000010010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000100100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000001001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000010010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000100100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000001001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000010010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000100100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000001001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000010010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
