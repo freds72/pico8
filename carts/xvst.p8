@@ -83,7 +83,7 @@ function v_plus_v(v,dv,scale)
 	v[3]+=scale*dv[3]
 end
 function m_x_v(m,v)
-	local x,y,z=v[1],v[2],v[3];
+	local x,y,z=v[1],v[2],v[3]
 	v[1]=m[1]*x+m[5]*y+m[9]*z+m[13]
 	v[2]=m[2]*x+m[6]*y+m[10]*z+m[14]
 	v[3]=m[3]*x+m[7]*y+m[11]*z+m[15]
@@ -194,12 +194,12 @@ function q_slerp(qa, qb, t)
 		end
 
 		local halftheta = atan2( sinhalftheta, coshalftheta )
-		local ratioa,ratiob = sin( ( 1 - t ) * halftheta ) / sinhalftheta,sin( t * halftheta ) / sinhalftheta;
+		local ratioa,ratiob = sin( ( 1 - t ) * halftheta ) / sinhalftheta,sin( t * halftheta ) / sinhalftheta
 
-		qa[4] = ( w * ratioa + qa[4] * ratiob );
-		qa[1] = ( x * ratioa + qa[1] * ratiob );
-		qa[2] = ( y * ratioa + qa[2] * ratiob );
-		qa[3] = ( z * ratioa + qa[3] * ratiob );
+		qa[4] = ( w * ratioa + qa[4] * ratiob )
+		qa[1] = ( x * ratioa + qa[1] * ratiob )
+		qa[2] = ( y * ratioa + qa[2] * ratiob )
+		qa[3] = ( z * ratioa + qa[3] * ratiob )
 end
 
 function m_clone(m)
