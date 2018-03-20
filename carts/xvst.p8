@@ -66,6 +66,15 @@ function v_normz(v)
 	v[2]/=d
 	v[3]/=d
 end
+function v_clamp(v,l)
+	local d=v[1]*v[1]+v[2]*v[2]+v[3]*v[3]
+	if d>l*l then
+		d=sqrt(d)
+		for i=1,3 do
+			v[i]=l*v[i]/d
+		end
+	end
+end
 
 function v_plus_v(v,dv,scale)
 	scale=scale or 1
@@ -272,8 +281,9 @@ end
 function draw_actor(self)
 	local p={}
 	for i=1,#self.model.v do
-		local v=v_x_q(self.model.v[i],self.q)
-		local xe,ye,ze,we=cam:project(v[1]+self.pos[1],v[2]+self.pos[2],v[3]+self.pos[3])
+		local v=self.model.v[i]
+		v=m_x_xyz(self.m,v[1],v[2],v[3])
+		local xe,ye,ze,we=cam:project(v[1],v[2],v[3])
 		add(p,{
 			xe,
 			ye,
@@ -354,7 +364,14 @@ function make_plyr(x,y,z)
 			end
 			draw_actor(self)
 		end,
-		update=function() end
+		update=function(self) 
+			local m=m_from_q(self.q)
+			m[13]=self.pos[1]
+			m[14]=self.pos[2]
+			m[15]=self.pos[3]
+			v_plus_v(self.pos,{m[9],m[10],m[11]},self.acc)
+			self.m=m
+		end
 	}
 	add(actors,p)
 	return p
@@ -393,9 +410,11 @@ function make_npc(x,y,z)
 		pid_pitch=make_pid(),
 		pitch=0,
 		roll=0,
+		die=die_actor,
 		hit=function(self,dmg)
 			self.hp-=dmg
 			if self.hp<=0 then
+				self:die()
 			end
 		end,
 		draw=draw_actor,
@@ -424,9 +443,13 @@ function make_npc(x,y,z)
 			end
 
 			hist[time_t%64+1]=angle
-				
+
 			local m=m_from_q(self.q)
+			m[13]=self.pos[1]
+			m[14]=self.pos[2]
+			m[15]=self.pos[3]
 			v_plus_v(self.pos,{m[9],m[10],m[11]},self.acc)
+			self.m=m
 		end
 	}
 	add(actors,p)
@@ -518,7 +541,7 @@ end
 function draw_line_part(self)
 	local x0,y0,z0,w0=cam:project(self.pos[1],self.pos[2],self.pos[3])
 	local x1,y1,z1,w1=cam:project(self.pos[1]+self.u[1],self.pos[2]+self.u[2],self.pos[3]+self.u[3])
-	line(x0,y0,x1,y1,11)
+	line(x0,y0,x1,y1,time_t%2==0 and 7 or 11)
 end
 
 function draw_circ_part(self)
@@ -534,7 +557,8 @@ end
 
 function _init()
 	plyr=make_plyr(0,0,0)
-	make_npc(0,0,8)
+	make_npc(-4,0,8)
+	make_npc(4,0,8)
 	
 	cam=make_cam(64)
 end
@@ -567,15 +591,6 @@ function control_plyr(self)
 		q_x_q(plyr.q,q)
 	end
 
-	local m=m_from_q(plyr.q)
-	v_plus_v(plyr.pos,{m[9],m[10],m[11]},plyr.acc)
-
-	--[[
-	if btn(4) then
-		local m=m_from_q(plyr.q)		
-		v_plus_v(plyr.pos,{0.1*m[9],0.1*m[10],0.1*m[11]})
-	end
-	]]
 	-- chase cam
 	if btnp(4) then
 		chase_cam=not chase_cam
@@ -605,6 +620,23 @@ function control_plyr(self)
 		make_blt(p,v,good_side)
 		make_flash(p)
 		laser_idx+=1
+	end
+end
+
+function draw_radar(x,y,r,rng)
+	circ(x,y,r,3)
+	pset(x,y,3)
+	local m=m_clone(plyr.m)
+	m_inv(m)
+	m[13],m[14],m[15]=0,0,0
+	for _,a in pairs(actors) do
+		if a!=plyr then
+			local p=v_clone(a.pos)
+			v_plus_v(p,plyr.pos,-1)
+			m_x_v(m,p)
+			v_clamp(p,rng)
+			pset(x+r*p[1]/rng,y-r*p[3]/rng,p[2]>0 and 8 or 2)
+		end
 	end
 end
 
@@ -642,6 +674,8 @@ function _draw()
 		palt(14,true)
 		spr(0,0,0,8,16)
 		spr(0,64,0,8,16,true)
+		-- radar
+		draw_radar(64,112,12,10)
 	end
 	
 	rectfill(0,0,127,8,1)
