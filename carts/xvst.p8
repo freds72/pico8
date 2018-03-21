@@ -33,7 +33,12 @@ local all_models={
 		r=1.6,
 		v={{-0.4,-0.35,-1.28},{-0.4,0.47,-1.28},{-0.4,-0.35,0.4},{-0.4,0.47,0.4},{0.4,-0.35,-1.28},{0.4,0.47,-1.28},{0.4,-0.35,0.4},{0.4,0.47,0.4},{-0.2,-0.19,3.15},{-0.2,0.21,3.15},{0.2,-0.19,3.15},{0.2,0.21,3.15},{-0.11,-0.09,3.89},{-0.11,0.08,3.89},{0.11,-0.09,3.89},{0.11,0.08,3.89},{-0.89,0.43,-1.14},{-0.89,0.43,0.01},{-2.21,0.91,-0.73},{-2.21,0.91,0.01},{-2.21,0.91,1.61},{-0.73,0.07,-1.14},{-0.89,0.43,-1.14},{-0.73,0.07,0.2},{-0.89,0.43,0.2},{-0.36,0.24,-1.14},{-0.53,0.6,-1.14},{-0.36,0.24,0.2},{-0.53,0.6,0.2},{0.84,0.41,-1.14},{0.84,0.41,0.01},{2.2,0.77,-0.73},{2.2,0.77,0.01},{2.2,0.77,1.61},{0.5,0.61,-1.14},{0.84,0.41,-1.14},{0.5,0.61,0.2},{0.84,0.41,0.2},{0.3,0.26,-1.14},{0.64,0.06,-1.14},{0.3,0.26,0.2},{0.64,0.06,0.2},{-0.89,-0.37,-1.14},{-0.89,-0.37,0.01},{-2.21,-0.85,-0.73},{-2.21,-0.85,0.01},{-2.21,-0.85,1.61},{-0.53,-0.54,-1.14},{-0.89,-0.37,-1.14},{-0.53,-0.54,0.2},{-0.89,-0.37,0.2},{-0.36,-0.18,-1.14},{-0.73,-0.01,-1.14},{-0.36,-0.18,0.2},{-0.73,-0.01,0.2},{0.84,-0.35,-1.14},{0.84,-0.35,0.01},{2.2,-0.71,-0.73},{2.2,-0.71,0.01},{2.2,-0.71,1.61},{0.64,-0.0,-1.14},{0.84,-0.35,-1.14},{0.64,-0.0,0.2},{0.84,-0.35,0.2},{0.3,-0.2,-1.14},{0.5,-0.55,-1.14},{0.3,-0.2,0.2},{0.5,-0.55,0.2}},
 		f={4,1,2,4,3,4,8,7,11,12,4,7,8,6,5,4,5,6,2,1,4,3,7,5,1,4,8,4,2,6,4,12,11,15,16,4,7,3,9,11,4,4,8,12,10,4,3,4,10,9,4,13,14,16,15,4,11,9,13,15,4,10,12,16,14,4,9,10,14,13,4,22,23,25,24,4,24,25,29,28,4,28,29,27,26,4,26,27,23,22,4,24,28,26,22,4,29,25,23,27,4,35,36,38,37,4,37,38,42,41,4,41,42,40,39,4,39,40,36,35,4,37,41,39,35,4,42,38,36,40,4,48,49,51,50,4,50,51,55,54,4,54,55,53,52,4,52,53,49,48,4,50,54,52,48,4,55,51,49,53,4,61,62,64,63,4,63,64,68,67,4,67,68,66,65,4,65,66,62,61,4,63,67,65,61,4,68,64,62,66},
-		e={16,17,18,19,17,19,18,16,19,20,29,30,31,32,30,32,31,29,32,33,42,43,44,45,43,45,44,42,45,46,55,56,57,58,56,58,57,55,58,59}
+		e={16,17,18,19,17,19,18,16,19,20,29,30,31,32,30,32,31,29,32,33,42,43,44,45,43,45,44,42,45,46,55,56,57,58,56,58,57,55,58,59},
+		wp={
+			dly=8,
+			pos={{2,1,1.6},{2,-1,1.6},{-2,-1,1.6},{-2,1,1.6}},
+			n={}
+		}
 	},
 	tie={
 		r=1.6,
@@ -87,6 +92,13 @@ function m_x_v(m,v)
 	v[1]=m[1]*x+m[5]*y+m[9]*z+m[13]
 	v[2]=m[2]*x+m[6]*y+m[10]*z+m[14]
 	v[3]=m[3]*x+m[7]*y+m[11]*z+m[15]
+end
+-- 3x3 matrix mul (orientation only)
+function o_x_v(m,v)
+	local x,y,z=v[1],v[2],v[3]
+	v[1]=m[1]*x+m[5]*y+m[9]*z
+	v[2]=m[2]*x+m[6]*y+m[10]*z
+	v[3]=m[3]*x+m[7]*y+m[11]*z
 end
 function m_x_xyz(m,x,y,z)
 	return {
@@ -344,8 +356,7 @@ end
 function follow(self,other,offset)
 	-- offset into world position
 	local v=v_clone(offset)
-	v_x_q(v,other.q)
-	v_plus_v(v,other.pos)
+	m_x_v(other.m,v)
 	-- line to target
 	v_plus_v(v,self.pos,-1)
 	return v
@@ -358,19 +369,17 @@ function make_plyr(x,y,z)
 		model=all_models.xwing,
 		pos=make_vec(x,y,z),
 		q=make_quat({0,0,1},0),
+		laser_i=0,
+		fire_t=0,
+		side=good_side,
+		fire=make_laser,
 		draw=function(self)
 			if chase_cam==false then
 				return
 			end
 			draw_actor(self)
 		end,
-		update=function(self) 
-			local m=m_from_q(self.q)
-			m[13]=self.pos[1]
-			m[14]=self.pos[2]
-			m[15]=self.pos[3]
-			v_plus_v(self.pos,{m[9],m[10],m[11]},self.acc)
-			self.m=m
+		update=function(self)
 		end
 	}
 	add(actors,p)
@@ -410,6 +419,9 @@ function make_npc(x,y,z)
 		pid_pitch=make_pid(),
 		pitch=0,
 		roll=0,
+		fire_t=0,
+		laser_i=0,
+		fire=make_laser,
 		die=die_actor,
 		hit=function(self,dmg)
 			self.hp-=dmg
@@ -428,16 +440,16 @@ function make_npc(x,y,z)
 			local angle=0
 			if abs(target[1])>0.1 then
  			angle=mid(target[1],-1,1) -- (self.pid_roll):update(self.target[1])
-				if angle!=0 then
+				if abs(angle)>0.5 then
 	 			self.roll=angle
-	 			local q=make_quat({0,0,1},-angle/128)
+	 			local q=make_quat({0,0,1},angle/128)
  				q_x_q(self.q,q)
  			end
 			elseif abs(target[2])>0.1 then
 				angle=mid(target[2],-1,1)-- (self.pid_pitch):update(self.target[2])
-				if angle!=0 then
+				if abs(angle)>0.5 then
 					self.pitch=angle
-					local q=make_quat({1,0,0},-angle/128)
+					local q=make_quat({1,0,0},angle/128)
 					q_x_q(self.q,q)
 				end
 			end
@@ -455,7 +467,6 @@ function make_npc(x,y,z)
 	add(actors,p)
 	return p
 end
-
 
 function make_cam(f)
 	return {
@@ -480,13 +491,21 @@ function make_cam(f)
 	}
 end
 
-function make_blt(p,u,side)
-	return add(parts,{
+function make_laser(self)
+	local wp=self.model.wp
+	local i=self.laser_i%#wp.pos+1
+	local p=v_clone(wp.pos[i])
+	m_x_v(self.m,p)
+	local v=v_clone(wp.n[i])
+	o_x_v(self.m,v)
+	make_flash(p)
+	self.laser_i+=1
+	add(parts,{
 		t=time_t+90,
 		acc=0.5,
-		pos=v_clone(p),
-		u=v_clone(u),
-		side=side,
+		pos=p,
+		u=v,
+		side=self.side,
 		dmg=1,
 		update=update_blt,
 		draw=draw_line_part})
@@ -555,18 +574,6 @@ function draw_blast_part(self)
 	circfill(x0,y0,self.r*w0,7)
 end
 
-function _init()
-	plyr=make_plyr(0,0,0)
-	make_npc(-4,0,8)
-	make_npc(4,0,8)
-	
-	cam=make_cam(64)
-end
-
-local laser_idx=0
-local laser_dir={
-	{2,1,1.6},{2,-1,1.6},{-2,-1,1.6},{-2,1,1.6}}
-	
 local turn_t=0
 function control_plyr(self)
 	local pitch,roll=0,0
@@ -591,6 +598,14 @@ function control_plyr(self)
 		q_x_q(plyr.q,q)
 	end
 
+	-- update pos
+	local m=m_from_q(plyr.q)
+	m[13]=plyr.pos[1]
+	m[14]=plyr.pos[2]
+	m[15]=plyr.pos[3]
+	v_plus_v(plyr.pos,{m[9],m[10],m[11]},plyr.acc)
+	plyr.m=m
+			
 	-- chase cam
 	if btnp(4) then
 		chase_cam=not chase_cam
@@ -604,22 +619,26 @@ function control_plyr(self)
 		cam.q=q_clone(plyr.q)
 	else
 		cam.pos=v_clone(plyr.pos)
-		cam.pos[4]=64		
+		cam.pos[4]=64
 		cam.q=q_clone(plyr.q)
 	end
 	
 	if btnp(5) then
-		local m=m_from_q(plyr.q)
-		-- todo: static data
-		local v=laser_dir[laser_idx%4+1]
-		local p=m_x_xyz(m,v[1],v[2],v[3])
-		v_plus_v(p,plyr.pos)
-		v={-v[1],-v[2],64-v[3]}
-		v_normz(v)
-		m_x_v(m,v)
-		make_blt(p,v,good_side)
-		make_flash(p)
-		laser_idx+=1
+		plyr:fire()
+	end
+end
+
+local stars={}
+function draw_stars()
+ for i=1,#stars do
+		local v=stars[i]
+		for k=1,3 do
+			v[k]+=cam.pos[k]
+		end
+		local x,y,z,w=cam:project(v[1],v[2],v[3])
+		if z>0 then
+			pset(x,y,7)
+		end
 	end
 end
 
@@ -660,7 +679,8 @@ end
 function _draw()
 	cls()
 
-	draw_ground()
+	--draw_ground()
+	draw_stars()
 	
 	for _,a in pairs(actors) do
 		a:draw()
@@ -680,6 +700,33 @@ function _draw()
 	
 	rectfill(0,0,127,8,1)
 	print(stat(1),2,2,7)
+end
+
+function _init()
+	-- compute xwing laser aim
+	local wp=all_models.xwing.wp
+	for i=1,#wp.pos do
+		local v=v_clone(wp.pos[i])
+		v={-v[1],-v[2],64-v[3]}
+		v_normz(v)
+		add(wp.n,v)
+	end
+	
+	-- stars
+	for i=1,32 do
+		local v={rnd(),rnd(),rnd()}
+		v_normz(v)
+		v[1]*=32
+		v[2]*=32
+		v[3]*=32
+		add(stars,v)
+	end
+	
+	plyr=make_plyr(0,0,0)
+	make_npc(-4,0,8)
+	make_npc(4,0,8)
+	
+	cam=make_cam(64)
 end
 
 __gfx__
