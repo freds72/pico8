@@ -1,11 +1,107 @@
 pico-8 cartridge // http://www.pico-8.com
 version 16
 __lua__
-local time_t=0
+-- xwing vs. tie figther
+-- by freds72
+
+-- game globals
+local time_t,time_dt=0,0
 local good_side,bad_side,any_side=0x1,0x2,0x0
+local before_update,after_draw={},{}
+
 local chase_cam=true
 local actors,npc_count={},0
 local parts={}
+local scores,last_score={},0
+local cur_screen
+local start_screen={
+	starting=false
+}
+local game_screen={
+	starting=false
+}
+local gameover_screen={}
+
+-- futures
+function futures_update(futures)
+	futures=futures or before_update
+	for _,f in pairs(futures) do
+		if not coresume(f) then
+			del(futures,f)
+		end
+	end
+end
+function futures_add(fn,futures)
+	return add(futures or before_update,cocreate(fn))
+end
+function wait_async(t,fn)
+	local i=1
+	while i<=t do
+		if fn then
+			if not fn(i) then
+				return
+			end
+		end
+		i+=time_dt
+		yield()
+	end
+end
+local shkx,shky=0,0
+function screen_shake(u,v,pow)
+	shkx=min(4,shkx+pow*u)
+	shky=min(4,shky+pow*v)
+end
+function screen_update()
+	shkx*=-0.7-rnd(0.2)
+	shky*=-0.7-rnd(0.2)
+	if abs(shkx)<0.5 and abs(shky)<0.5 then
+		shkx,shky=0,0
+	end
+	camera(shkx,shky)
+end
+
+function filter(array,fn)
+	for _,a in pairs(array) do
+		if not a[fn](a) then
+			del(array,a)
+		end
+	end
+end
+function forall(array,fn)
+	for _,a in pairs(array) do
+		a[fn](a)
+	end
+end
+
+function lerp(a,b,t)
+	return a*(1-t)+b*t
+end
+
+function padding(i,n)
+	local txt=tostr(i)
+ -- padding
+ for i=1,n-#txt do
+ 	txt="0"..txt
+ end
+ return txt
+end
+
+-- https://github.com/morgan3d/misc/tree/master/p8sort
+function sort(data)
+ for num_sorted=1,#data-1 do 
+  local new_val=data[num_sorted+1]
+  local new_val_key=new_val.key
+  local i=num_sorted+1
+
+  while i>1 and new_val_key>data[i-1].key do
+   data[i]=data[i-1]   
+   i-=1
+  end
+  data[i]=new_val
+ end
+end
+
+-- models
 local all_models={
 	cube={
 		v={
@@ -373,6 +469,40 @@ function draw_model(model,m)
 	]]
 end
 
+function die_plyr(self)
+	make_blast(plyr.pos)
+	-- clear
+	for s in all(scores) do
+		s.islast=false
+	end
+	add(scores,{key=plyr.score,islast=true})
+	sort(scores)
+	if #scores>5 then
+		scores[6]=nil
+	end
+	-- save scores
+	dset(0,#scores)
+	for i=1,#scores do
+		dset(i,scores[i].key)
+	end
+	last_score=plyr.score
+	-- 
+	del(actors,plyr)
+	plyr=nil
+	cur_screen=gameover_screen
+	futures_add(function()
+		wait_async(240,function()
+			if btnp(4) or btnp(5) then
+				return false
+			end
+			return true
+		end)
+		-- "eat" btnp
+		yield()
+		cur_screen=start_screen
+	end)
+end
+
 function die_actor(self)
 	make_blast(self.pos)
 	
@@ -392,6 +522,7 @@ end
 
 function make_plyr(x,y,z)
 	local p={
+		score=0,
 		hp=8,
 		acc=0.1,
 		model=all_models.xwing,
@@ -401,6 +532,7 @@ function make_plyr(x,y,z)
 		fire_t=0,
 		side=good_side,
 		fire=make_laser,
+		die=die_plyr,
 		draw=function(self)
 			if chase_cam==false then
 				return
@@ -408,6 +540,7 @@ function make_plyr(x,y,z)
 			draw_actor(self)
 		end,
 		update=function(self)
+			return true
 		end
 	}
 	add(actors,p)
@@ -490,6 +623,8 @@ function make_npc(x,y,z)
 			m[15]=self.pos[3]
 			v_plus_v(self.pos,{m[9],m[10],m[11]},self.acc)
 			self.m=m
+
+			return true
 		end
 	}
 	add(actors,p)
@@ -656,12 +791,10 @@ function control_plyr(self)
 	end
 end
 
-local deathstar_m=make_m()
+local ds_m=make_m()
 function draw_deathstar()
-	deathstar_m[13]=cam.pos[1]
-	deathstar_m[14]=cam.pos[2]
-	deathstar_m[15]=8+cam.pos[3]
-	draw_model(all_models.deathstar,deathstar_m)
+	ds_m[13],ds_m[14],ds_m[15]=cam.pos[1],cam.pos[2],6+cam.pos[3]
+	draw_model(all_models.deathstar,ds_m)
 end
 
 local stars={}
@@ -702,37 +835,78 @@ function draw_radar(x,y,r,rng)
 	end
 end
 
-function _update60()
-	time_t+=1
-	control_plyr()
-	
-	for _,a in pairs(actors) do
-		a:update()
-	end
-	
-	for _,a in pairs(parts) do
-		if a:update()==false then
-			del(parts,a)
-		end
-	end
-
-	cam:update()
+function draw_text(s,x,y)
+	print(s,x,y,7)
 end
 
-function _draw()
-	cls()
+-- wait loop
+function start_screen:update()
+	if not self.starting and (btnp(4) or btnp(5)) then
+		sfx(0)
+		-- avoid start reentrancy
+		self.starting=true
+		-- init game
+		futures_add(function()
+			wait_async(30)
+			game_screen:init()
+			cur_screen=game_screen
+			start_screen.starting=false
+		end)
+	end
+end
+function start_screen:draw()
+	if time_t%600>300 then
+ 	local y=32
+ 	draw_text("highscores",32,y,6)
+ 	y+=12
+ 	for i=1,#scores do
+  	if scores[i].islast==false or time_t%4<2 then
+ 			draw_text(padding(scores[i].key,4),32,y,6)	
+ 		end		
+ 		y+=10
+ 	end
+	end
+	if (starting and time_t%2==0) or time_t%24<12 then	
+		draw_text("press start",32,110,5)
+	end
+end
 
-	--draw_ground()
+function gameover_screen:update()
+end
+
+function gameover_screen:draw()
+	draw_text("game over",38,60,6)
+
+	if #scores>0 and scores[1].islast then
+		if time_t%4<2 then
+			draw_text("new highscore!",24,72,6)
+		end
+	end
+end
+
+-- play loop
+function game_screen:init()
+	time_t=0
+	parts={}
+	actors={}
+	npc_count=0
+	plyr=make_plyr(0,0,0)
+	make_npc(-4,0,8)
+	make_npc(4,0,8)
+end
+
+function game_screen:update()
+	if plyr then
+		control_plyr(plyr)
+	end
+end
+function game_screen:draw()
 	draw_deathstar()
 	draw_stars()
-	
-	for _,a in pairs(actors) do
-		a:draw()
-	end
-	for _,a in pairs(parts) do
-		a:draw()
-	end
-	
+
+	forall(actors,"draw")
+	forall(parts,"draw")
+		
 	if chase_cam==false then
 		palt(0,false)
 		palt(14,true)
@@ -741,12 +915,47 @@ function _draw()
 		-- radar
 		draw_radar(64,112,12,10)
 	end
+
+end
+
+function _update60()
+	time_t+=1
+	time_dt+=1
+	futures_update(before_update)
 	
+	cur_screen:update()
+	
+	filter(actors,"update")
+	filter(parts,"update")	
+		
+	cam:update()
+	screen_update()
+end
+
+function _draw()
+	cls()
+				
+	cur_screen:draw()
+	
+	futures_update(after_draw)
+
+	time_dt=0
+
 	rectfill(0,0,127,8,1)
 	print(stat(1),2,2,7)
 end
 
+
 function _init()
+	if cartdata("freds72_xvst") then
+		n=dget(0)
+		for i=1,n do
+			add(scores,{key=dget(i),islast=false})
+		end
+		-- in case...
+		sort(scores)
+	end
+	
 	-- compute xwing laser aim
 	local wp=all_models.xwing.wp
 	for i=1,#wp.pos do
@@ -765,12 +974,10 @@ function _init()
 		v[3]*=32
 		add(stars,v)
 	end
-	
-	plyr=make_plyr(0,0,0)
-	make_npc(-4,0,8)
-	make_npc(4,0,8)
-	
+		
 	cam=make_cam(64)
+
+	cur_screen=start_screen	
 end
 
 __gfx__
