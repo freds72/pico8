@@ -9,14 +9,10 @@ first=True
 for v in obdata.vertices:
     if first==False:
         print(',',end='')
-    print('{{{},{},{}}}'.format(round(v.co.x,2), round(v.co.y,2), round(v.co.z,2)),end='')
+    print('{{{},{},{}}}'.format(round(v.co.x,2), round(v.co.z,2), round(v.co.y,2)),end='')
     first=False
 
 print('},')
-
-#edges
-#for e in obdata.edges:
-#    print('{}. {} {}'.format(e.index, e.vertices[0], e.vertices[1]))
 
 #faces
 print('\"f\"={')
