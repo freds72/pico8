@@ -161,10 +161,16 @@ function sqr_dist(a,b)
 	return dx*dx+dy*dy+dz*dz
 end
 
-function make_vec(x,y,z,w)
+function make_v(x,y,z,w)
 	return {x,y,z,w or 1}
 end
-local fwd,right=make_vec(0,0,1),make_vec(1,0,0)
+function make_rnd_v(scale)
+	local v={rnd()-0.5,rnd()-0.5,rnd()-0.5}
+	v_normz(v)
+	return {scale*v[1],scale*v[2],scale*v[3]}
+end
+
+local fwd,right=make_v(0,0,1),make_v(1,0,0)
 
 function v_clone(v)
 	return {v[1],v[2],v[3]}
@@ -404,22 +410,39 @@ for i=1,64 do
 end
 function draw_actor(self)
 	draw_model(self.model,self.m)
+	if self.target then
+		rect(2,9,2+16,9+16,8)
+	 line(2+8,9+8,2+8+8*self.target[1],9+8-8*self.target[2],8)
+
+		local m=self.m	
+		local x0,y0,z0,w=cam:project(m[13],m[14],m[15])
+		local x1,y1,z1,w=cam:project(m[13]+self.target[1],m[14]+self.target[2],m[15]+self.target[3])
+		line(x0,y0,x1,y1,8)
+	end
+	
 end
 function draw_model(model,m)
+	local xe,ye,ze,w=cam:project(m[13],m[14],m[15])
+	if(ze<1) return 
+
+	color(model.c)
+	-- bounding radius
+	if model.show then
+		circ(xe,ye,model.r*w)
+	end
+
 	local p={}
 	for i=1,#model.v do
 		local v=model.v[i]
 		v=m_x_xyz(m,v[1],v[2],v[3])
-		local xe,ye,ze,we=cam:project(v[1],v[2],v[3])
+		xe,ye,ze,w=cam:project(v[1],v[2],v[3])
 		add(p,{
 			xe,
 			ye,
 			ze,
-			we})
+			w})
 	end
 	
-	color(model.c)
-
 	-- faces
 	local i=1
 	while i<#model.f do
@@ -448,25 +471,6 @@ function draw_model(model,m)
 			p[model.e[i+1]+1][1],
 			p[model.e[i+1]+1][2])
 	end
-	
-	-- bounding radius
-	if model.show then
-		local xe,ye,ze,w=cam:project(m[13],m[14],m[15])
-		circ(xe,ye,model.r*w)
-	end
-	--[[
-	if self.target then
-		rect(2,9,2+16,9+16,8)
-	 line(2+8,9+8,2+8+8*self.target[1],9+8-8*self.target[2],8)
-	
-		--print("roll:"..self.roll,20,9,7)
-		--print("pitch:"..self.pitch,20,18,7)
-		line(19,20,127,20,1)
-		for i=0,63 do
-			pset(19+i,20-8*hist[(i+time_t)%64+1],8)
-		end
-	end
-	]]
 end
 
 function die_plyr(self)
@@ -520,13 +524,46 @@ function follow(self,other,offset)
 	return v
 end
 
+function update_tie(self)
+	-- if npc still in range
+	if sqr_dist(self.pos,plyr.pos)>16*16 then
+		npc_count-=1
+		return false
+	end
+	local force=follow(self,plyr,{0,0,10})
+	v_clamp(force,1)
+	-- force application point 
+	local pos=make_v(0,0,4)
+	local m=self.m
+	-- cg in global space
+	m_x_v(m,pos)
+	-- offset by force
+	v_plus_v(pos,force)
+	-- vector to cg
+	v_plus_v(pos,self.pos,-1)
+	v_normz(pos)
+	self.target=pos
+	
+	-- update orientation
+	self.q=make_quat(pos,0)
+	m=m_from_q(self.q)
+	v_plus_v(self.pos,{m[9],m[10],m[11]},self.acc)
+	v_plus_v(self.pos,force,0.2)
+	m[13]=self.pos[1]
+	m[14]=self.pos[2]
+	m[15]=self.pos[3]
+	self.m=m
+
+	return true
+end
+
 function make_plyr(x,y,z)
 	local p={
 		score=0,
 		hp=8,
 		acc=0.1,
 		model=all_models.xwing,
-		pos=make_vec(x,y,z),
+		pos=make_v(x,y,z),
 		q=make_quat({0,0,1},0),
 		laser_i=0,
 		fire_t=0,
@@ -567,15 +604,15 @@ function make_pid()
 	}
 end
 
-function make_npc(x,y,z)
+function make_npc(p,v)
 	npc_count+=1
-	local p={
+	local a={
 		hp=4,
 		acc=0.1,
 		side=bad_side,
 		model=all_models.tie,
-		pos=make_vec(x,y,z),
-		q=make_quat({0,0,1},0),
+		pos=p,
+		q=make_quat(v,0),
 		pid_roll=make_pid(),
 		pid_pitch=make_pid(),
 		pitch=0,
@@ -591,49 +628,19 @@ function make_npc(x,y,z)
 			end
 		end,
 		draw=draw_actor,
-		update=function(self)
-			local target=follow(self,plyr,{3,3,10})
-			-- convert target to self space
-			local m=m_from_q(self.q)
-			m_inv(m)
-			m_x_v(m,target)
-			self.target=target
-			local angle=0
-			if abs(target[1])>0.1 then
- 			angle=mid(target[1],-1,1) -- (self.pid_roll):update(self.target[1])
-				if abs(angle)>0.5 then
-	 			self.roll=angle
-	 			local q=make_quat({0,0,1},angle/128)
- 				q_x_q(self.q,q)
- 			end
-			elseif abs(target[2])>0.1 then
-				angle=mid(target[2],-1,1)-- (self.pid_pitch):update(self.target[2])
-				if abs(angle)>0.5 then
-					self.pitch=angle
-					local q=make_quat({1,0,0},angle/128)
-					q_x_q(self.q,q)
-				end
-			end
-
-			hist[time_t%64+1]=angle
-
-			local m=m_from_q(self.q)
-			m[13]=self.pos[1]
-			m[14]=self.pos[2]
-			m[15]=self.pos[3]
-			v_plus_v(self.pos,{m[9],m[10],m[11]},self.acc)
-			self.m=m
-
-			return true
-		end
+		update=update_tie
 	}
-	add(actors,p)
-	return p
+	local m=m_from_q(a.q)
+	m[13]=p[1]
+	m[14]=p[2]
+	m[15]=p[3]
+	a.m=m
+	return add(actors,a)
 end
 
 function make_cam(f)
 	return {
-		pos=make_vec(0,0,3,f),
+		pos=make_v(0,0,3,f),
 		q=make_quat(fwd,0),
 		update=function(self)
 			self.m=m_from_q(self.q)
@@ -798,21 +805,18 @@ function draw_deathstar()
 end
 
 local stars={}
-local cs={1,5,6,7}
+local stars_ramp={1,5,6,7}
 function draw_stars()
  for i=1,#stars do
 		local v=stars[i]
-		--v_plus_v(v,cam.pos)
 		local x,y,z,w=cam:project(v[1],v[2],v[3])
 		if z>0 then
 			w=flr(4*w/12)
-			pset(x,y,cs[min(w+1,#cs)])
+			pset(x,y,stars_ramp[min(w+1,#stars_ramp)])
 		else
-			local star={rnd()-0.5,rnd()-0.5,rnd()-0.5}
-			v_normz(star)
-			v[1]=32*star[1]
-			v[2]=32*star[2]
-			v[3]=32*star[3]
+			-- reset pos
+			local star=make_rnd_v(32)
+			v[1],v[2],v[3]=star[1],star[2],star[3]
 			v_plus_v(v,cam.pos)
 		end
 	end
@@ -891,14 +895,27 @@ function game_screen:init()
 	actors={}
 	npc_count=0
 	plyr=make_plyr(0,0,0)
-	make_npc(-4,0,8)
-	make_npc(4,0,8)
 end
 
 function game_screen:update()
 	if plyr then
 		control_plyr(plyr)
 	end
+	cam:update()
+
+	if npc_count<=0 then
+		-- spawn new enemy
+		local p=make_rnd_v(12)
+		local v=make_rnd_v(4)
+		v_plus_v(v,p,-1)
+		v_normz(v)
+		v_plus_v(p,plyr.pos)
+		v_plus_v(p,{plyr.m[9],plyr.m[10],plyr.m[11]},12)
+		make_npc(p,{0,1,0})
+	end
+
+	filter(actors,"update")
+	filter(parts,"update")	
 end
 function game_screen:draw()
 	draw_deathstar()
@@ -925,10 +942,6 @@ function _update60()
 	
 	cur_screen:update()
 	
-	filter(actors,"update")
-	filter(parts,"update")	
-		
-	cam:update()
 	screen_update()
 end
 
@@ -967,12 +980,7 @@ function _init()
 	
 	-- stars
 	for i=1,32 do
-		local v={rnd()-0.5,rnd()-0.5,rnd()-0.5}
-		v_normz(v)
-		v[1]*=32
-		v[2]*=32
-		v[3]*=32
-		add(stars,v)
+		add(stars,make_rnd_v(32))
 	end
 		
 	cam=make_cam(64)
