@@ -471,34 +471,19 @@ local hist,hist_i={},0
 for i=1,64 do
 	add(hist,0)
 end
-local debug_vectors=false
+local debug_vectors=true
 function draw_actor(self)
 	draw_model(self.model,self.m)
 	-- debug
 	if debug_vectors then
- 	if self.target then
- 		rect(2,9,2+16,9+16,8)
- 	 	line(2+8,9+8,2+8+8*self.target[1],9+8-8*self.target[2],8)
- 
- 		print("dist:"..self.dist,20,9,7)
- 
- 		local m=self.m
- 		local pos=make_v(0,0,4)
- 		o_x_v(m,pos)
- 		draw_vector(m,self.pos,pos,5)
- 
- 		v_plus_v(pos,self.pos)
- 		draw_vector(m,pos,self.target,12,"f")
- 	
- 		local v=make_v_cross(self.target,{m[9],m[10],m[11]})
- 		v_normz(v)		
- 		draw_vector(m,pos,v,8,"q")
- 
- 		draw_vector(m,pos,{m[9],m[10],m[11]},11,"z")
+ 	if self.target then 
+ 		local c=12
+ 		if band(self.side,self.target.side)==0 then
+	 		c=8
+ 		end
+	 	draw_vector(self.m,self.pos,self.target.pos,c) 
  	end
- 	if self.avoid then
- 		print("avoid:"..sqrt(v_dot(self.avoid,self.avoid)),20,18,7)
- 		
+ 	if self.avoid then		
  		local m=self.m
  		local pos=v_clone(self.avoid)
  		o_x_v(m,pos)
@@ -618,12 +603,12 @@ function follow(pos,other,offset)
 	v_plus_v(v,pos,-1)
 	return v
 end
-function avoid(self,dist)
-	local v=make_v(0,0,0)
+function avoid(self,pos,dist)
+	local v={0,0,0}
 	for _,a in pairs(actors) do
 		if a!=self then
 			local p=v_clone(a.pos)
-			v_plus_v(p,self.pos,-1)
+			v_plus_v(p,pos,-1)
 			local d=v_dot(p,p)
 			d=smoothstep(d/(dist*dist))
 			v_plus_v(v,p,d-1)
@@ -631,8 +616,31 @@ function avoid(self,dist)
 	end
 	return v
 end
+function seek(self)
+	for _,a in pairs(actors) do
+		if band(a.side,self.side)==0 then
+			local p=v_clone(a.pos)
+			v_plus_v(p,self.pos,-1)
+			-- within range?
+			if v_dot(p,p)<16*16 then
+				v_normz(p)
+				-- within cone?
+				if v_dot(fwd,p)>0.5 then
+					return a					
+				end
+			end
+		end
+	end
+end
 
-function update_tie(self)
+-- return a pos in self space
+function wander(self)
+	local p=make_rnd_v(5)
+	p[3]+=15
+	return p
+end
+
+function update_npc(self)
 	-- if npc still in range
 	--[[
 	if sqr_dist(self.pos,plyr.pos)>16*16 then
@@ -642,19 +650,40 @@ function update_tie(self)
 	]]
 	-- force application point 
 	local acc=self.acc
-	local pos=make_v(0,0,4)
+	local pos={0,0,4}
 	local m=self.m
 	m_x_v(m,pos)
 	-- forces
-	local force=follow(pos,plyr,{4*(self.id%5)-10,0,-10})
-	local avoid=avoid(self,8)
-	v_plus_v(force,avoid)
+	local force={0,0,0}
+	local can_fire=false
+
+	if self.target then
+		-- enemy: get in sight
+		local target_pos={0,-4,-10}
+		if band(self.target.side,self.side)==0 then
+			target_pos={0,0,-10}
+			can_fire=true
+		end
+		v_plus_v(force,follow(pos,self.target,target_pos))
+	else
+		-- seek target
+		self.target=seek(self)
+	end
+	-- nothing to track?
+	if not self.target then
+		if self.wander_t<time_t then
+			-- pick a random location
+			v_plus_v(force,follow(pos,self,wander(self)))
+			self.wander_t=time_t+60
+		end
+	end
+	local avf=avoid(self,pos,8)
+	v_plus_v(force,avf)
 	
 	local d=v_dot(force,force)
 	-- debug
 	self.dist=sqrt(d)
-	self.target=nil
-	self.avoid=avoid
+	self.avoid=avf
 	-- too close/no force?
 	if d>0.25 then
 		-- ease in
@@ -663,7 +692,6 @@ function update_tie(self)
 		v_plus_v(pos,force)
 		v_plus_v(pos,self.pos,-1)
 		v_normz(pos)
-		self.target=force
 		
 		-- update orientation
 		local q=make_q_from_v({m[9],m[10],m[11]},pos)
@@ -678,25 +706,24 @@ function update_tie(self)
 	self.m=m
 
 	-- fire solution?
-	if self.fire_t<time_t then
- 	local p=v_clone(plyr.pos)
- 	v_plus_v(p,self.pos,-1)
- 	v_normz(p)
- 	if v_dot(fwd,p)>0.95 then
- 	 -- must be in sight for some time
- 		if self.lock_t>45 then
- 			self.lock_t=45
-	 		self.fire_t=time_t+self.model.wp.dly
- 			self:fire()
- 		end
- 		self.lock_t+=1
+	if can_fire and self.fire_t<time_t then
+		local p=v_clone(self.target.pos)
+		v_plus_v(p,self.pos,-1)
+		v_normz(p)
+		if v_dot(fwd,p)>0.95 then
+		-- must be in sight for some time
+			if self.lock_t>45 then
+				self.lock_t=45
+				self.fire_t=time_t+self.model.wp.dly
+				self:fire()
+			end
+			self.lock_t+=1
 		else
 			-- target memory
-		 self.lock_t-=4
-		 self.lock_t=max(self.lock_t)
+			self.lock_t-=4
+			self.lock_t=max(self.lock_t)
 		end
 	end
-	
 	return true
 end
 
@@ -706,7 +733,7 @@ function make_plyr(x,y,z)
 		hp=8,
 		acc=0.1,
 		model=all_models.xwing,
-		pos=make_v(x,y,z),
+		pos={x,y,z},
 		q=make_q({0,0,1},0),
 		laser_i=0,
 		fire_t=0,
@@ -730,40 +757,18 @@ function make_plyr(x,y,z)
 	return p
 end
 
-local kp=1
-local ki=0
-local kd=0
-
-function make_pid()
-	return {
-		error=0,
-		errorlast=0,
-		errointe=0,
-		update=function(self,input)
-   self.error=self.error*0.7+input*0.3
-   local errordiff=self.error-self.errorlast
-   self.errointe=mid(self.errointe+self.error,-1,1)
-   local output=kp*self.error+ki*self.errointe+kd*errordiff
-   self.errorlast=self.error
-   return output
-  end
-	}
-end
-
 local _id=0
 local npc_xwing={
 	hp=8,
 	acc=0.1,
 	model=all_models.xwing,
-	side=good_side,
-	update=update_npc
+	side=good_side
 }
 local npc_tie={
 	hp=4,
-	acc=0.15,
+	acc=0.1,
 	model=all_models.tie,
-	side=bad_side,
-	update=update_tie
+	side=bad_side
 }
 function make_npc(p,v,src)
 	npc_count+=1
@@ -774,7 +779,8 @@ function make_npc(p,v,src)
 		q=make_q(v,0),
 		pitch=0,
 		roll=0,
-		lock_t=0,
+		wander_t=0,
+		lock_t=0,		
 		fire_t=0,
 		laser_i=0,
 		fire=make_laser,
@@ -785,7 +791,8 @@ function make_npc(p,v,src)
 				self:die()
 			end
 		end,
-		draw=draw_actor
+		draw=draw_actor,
+		update=update_npc
 	}
 	-- instance
 	clone(src,a)
@@ -800,7 +807,8 @@ end
 
 function make_cam(f)
 	return {
-		pos=make_v(0,0,3,f),
+		pos={0,0,3},
+		focal=f,
 		q=make_q(fwd,0),
 		update=function(self)
 			self.m=m_from_q(self.q)
@@ -815,7 +823,7 @@ function make_cam(f)
 			-- distance to camera plane
 			v[3]-=1
 			-- view to screen
- 			local w=self.pos[4]/v[3]
+ 			local w=self.focal/v[3]
  			return 64+v[1]*w,64-v[2]*w,v[3],w
 		end
 	}
@@ -958,12 +966,10 @@ function control_plyr(self)
 	if cam_mode==0 then
 		local m=m_from_q(plyr.q)
 		cam.pos=m_x_xyz(m,0,2,-8)
-		cam.pos[4]=64
 		v_plus_v(cam.pos,plyr.pos)
 		cam.q=q_clone(plyr.q)
 	elseif cam_mode==1 then
 		cam.pos=v_clone(plyr.pos)
-		cam.pos[4]=64
 		cam.q=q_clone(plyr.q)
 	else
 		local x,y=stat(32),stat(33)
@@ -976,7 +982,6 @@ function control_plyr(self)
 		dist+=dy/2
 		dist=min(dist,-2)
 		cam.pos=m_x_xyz(m,0,2,dist)
-		cam.pos[4]=64
 		if stat(34)==1 and sel_t<time_t then
 			sel_actor+=1
 			sel_t=time_t+8
@@ -1090,6 +1095,15 @@ function game_screen:init()
 	plyr=make_plyr(0,0,0)
 end
 
+function make_rnd_pos_v(a)
+	local p=make_rnd_v(12)
+	local v=make_rnd_v(4)
+	v_plus_v(v,p,-1)
+	v_normz(v)
+	m_x_v(a.m,p)
+	return p,v
+end
+
 function game_screen:update()
 	if plyr then
 		control_plyr(plyr)
@@ -1097,15 +1111,18 @@ function game_screen:update()
 	cam:update()
 
 	if npc_count<=0 then
+		local p,v,target
+		-- friendly npc?
+		if rnd()>0 then
+			p,v=make_rnd_pos_v(plyr)
+			target=make_npc(p,v,npc_xwing)
+		end
 		-- spawn new enemy
-		for i=1,5 do
- 		local p=make_rnd_v(12)
- 		local v=make_rnd_v(4)
- 		v_plus_v(v,p,-1)
- 		v_normz(v)
- 		
- 		m_x_v(plyr.m,p)
- 		make_npc(p,v,npc_tie)
+		for i=1,flr(1+rnd(2)) do
+			p,v=make_rnd_pos_v(plyr)
+			local a=make_npc(p,v,npc_tie)
+			a.target=target
+			target=a
 		end
 	end
 
