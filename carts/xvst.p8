@@ -75,6 +75,25 @@ function forall(array,fn)
 		a[fn](a)
 	end
 end
+function clone(src,dst)
+	-- safety checks
+	if(src==dst) assert()
+	if(type(src)!="table") assert()
+	dst=dst or {}
+	for k,v in pairs(src) do
+		if(not dst[k]) dst[k]=v
+	end
+	-- randomize selected values
+	if src.rnd then
+		for k,v in pairs(src.rnd) do
+			-- don't overwrite values
+			if not dst[k] then
+				dst[k]=v[3] and rndarray(v) or rndlerp(v[1],v[2])
+			end
+		end
+	end
+	return dst
+end
 
 function lerp(a,b,t)
 	return a*(1-t)+b*t
@@ -732,19 +751,27 @@ function make_pid()
 end
 
 local _id=0
-function make_npc(p,v)
+local npc_xwing={
+	hp=8,
+	acc=0.1,
+	model=all_models.xwing,
+	side=good_side,
+	update=update_npc
+}
+local npc_tie={
+	hp=4,
+	acc=0.15,
+	model=all_models.tie,
+	side=bad_side,
+	update=update_tie
+}
+function make_npc(p,v,src)
 	npc_count+=1
 	_id+=1
 	local a={
 		id=_id,
-		hp=4,
-		acc=0.1,
-		side=bad_side,
-		model=all_models.tie,
 		pos=p,
 		q=make_q(v,0),
-		pid_roll=make_pid(),
-		pid_pitch=make_pid(),
 		pitch=0,
 		roll=0,
 		lock_t=0,
@@ -758,9 +785,11 @@ function make_npc(p,v)
 				self:die()
 			end
 		end,
-		draw=draw_actor,
-		update=update_tie
+		draw=draw_actor
 	}
+	-- instance
+	clone(src,a)
+	-- init orientation
 	local m=m_from_q(a.q)
 	m[13]=p[1]
 	m[14]=p[2]
@@ -1075,7 +1104,8 @@ function game_screen:update()
  		v_plus_v(v,p,-1)
  		v_normz(v)
  		
- 		make_npc(p,v)
+ 		m_x_v(plyr.m,p)
+ 		make_npc(p,v,npc_tie)
 		end
 	end
 
