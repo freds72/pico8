@@ -6,7 +6,7 @@ __lua__
 
 -- game globals
 local time_t,time_dt=0,0
-local good_side,bad_side,any_side=0x1,0x2,0x0
+local good_side,bad_side,any_side,no_side=0x1,0x2,0x0,0x3
 local before_update,after_draw={},{}
 
 -- 0: chase
@@ -205,7 +205,7 @@ function make_v_cross(a,b)
 	local bx,by,bz=b[1],b[2],b[3]
 	return {ay*bz-az*by,az*bx-ax*bz,ax*by-ay*bx}
 end
-local fwd,right=make_v(0,0,1),make_v(1,0,0)
+local  v_fwd,v_right,v_up={0,0,1},{1,0,0},{0,1,0}
 
 function v_clone(v)
 	return {v[1],v[2],v[3]}
@@ -483,7 +483,7 @@ function draw_actor(self)
  		end
 	 	draw_vector(self.m,self.pos,self.target.pos,c) 
  	end
- 	if self.avoid then		
+ 	if self.avoid then
  		local m=self.m
  		local pos=v_clone(self.avoid)
  		o_x_v(m,pos)
@@ -626,7 +626,7 @@ function seek(self)
 				v_normz(p)
 				-- within cone?
 				if v_dot(fwd,p)>0.5 then
-					return a					
+					return a
 				end
 			end
 		end
@@ -640,7 +640,7 @@ function wander(self)
 	return p
 end
 
-function update_npc(self)
+function update_flying_npc(self)
 	-- if npc still in range
 	--[[
 	if sqr_dist(self.pos,plyr.pos)>16*16 then
@@ -696,7 +696,7 @@ function update_npc(self)
 		-- update orientation
 		local q=make_q_from_v({m[9],m[10],m[11]},pos)
 		q_x_q(self.q,q)
-		m=m_from_q(self.q)
+		--m=m_from_q(self.q)
 	end
 	-- move actor
 	local fwd={m[9],m[10],m[11]}
@@ -731,7 +731,7 @@ function make_plyr(x,y,z)
 	local p={
 		score=0,
 		hp=8,
-		acc=0.1,
+		acc=0,--0.1,
 		model=all_models.xwing,
 		pos={x,y,z},
 		q=make_q({0,0,1},0),
@@ -762,13 +762,29 @@ local npc_xwing={
 	hp=8,
 	acc=0.1,
 	model=all_models.xwing,
-	side=good_side
+	side=good_side,
+	update=update_flying_npc
 }
 local npc_tie={
 	hp=4,
 	acc=0.1,
 	model=all_models.tie,
-	side=bad_side
+	side=bad_side,
+	update=update_flying_npc
+}
+local npc_turret={
+	hp=2,
+	model=all_models.turret,
+	side=bad_side,
+	update=update_ground_npc
+}
+local npc_junk={
+	hp=1,
+	rnd={model={
+		all_models.junk1,
+		all_models.junk2,
+		all_models.junk3}},
+	side=any_side
 }
 function make_npc(p,v,src)
 	npc_count+=1
@@ -776,11 +792,11 @@ function make_npc(p,v,src)
 	local a={
 		id=_id,
 		pos=p,
-		q=make_q(v,0),
+		q=make_q_from_v(v,v_up),
 		pitch=0,
 		roll=0,
 		wander_t=0,
-		lock_t=0,		
+		lock_t=0,
 		fire_t=0,
 		laser_i=0,
 		fire=make_laser,
@@ -791,16 +807,13 @@ function make_npc(p,v,src)
 				self:die()
 			end
 		end,
-		draw=draw_actor,
-		update=update_npc
+		draw=draw_actor
 	}
 	-- instance
 	clone(src,a)
 	-- init orientation
 	local m=m_from_q(a.q)
-	m[13]=p[1]
-	m[14]=p[2]
-	m[15]=p[3]
+	m[13],m[14],m[15]=p[1],p[2],p[3]
 	a.m=m
 	return add(actors,a)
 end
@@ -928,6 +941,7 @@ local dist=0
 local sel_actor,sel_t=1,0
 function control_plyr(self)
 	local pitch,roll=0,0
+	
 	if(btn(0)) roll=-1 turn_t+=1
 	if(btn(1)) roll=1 turn_t+=1
 	if(btn(2)) pitch=-1
@@ -1096,10 +1110,10 @@ function game_screen:init()
 end
 
 function make_rnd_pos_v(a)
-	local p=make_rnd_v(12)
-	local v=make_rnd_v(4)
-	v_plus_v(v,p,-1)
-	v_normz(v)
+	local p={0,0,0} --make_rnd_v(12)
+	local v={1,0,0} --make_rnd_v(4)
+	--v_plus_v(v,p,-1)
+	--v_normz(v)
 	m_x_v(a.m,p)
 	return p,v
 end
@@ -1111,18 +1125,18 @@ function game_screen:update()
 	cam:update()
 
 	if npc_count<=0 then
-		local p,v,target
+		local p,v,target=make_rnd_pos_v(plyr)
 		-- friendly npc?
 		if rnd()>0 then
-			p,v=make_rnd_pos_v(plyr)
 			target=make_npc(p,v,npc_xwing)
+			v_plus_v(p,v,8)
 		end
 		-- spawn new enemy
 		for i=1,flr(1+rnd(2)) do
-			p,v=make_rnd_pos_v(plyr)
 			local a=make_npc(p,v,npc_tie)
 			a.target=target
 			target=a
+			v_plus_v(p,v,8)
 		end
 	end
 
