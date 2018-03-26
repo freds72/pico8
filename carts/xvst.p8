@@ -192,9 +192,6 @@ function sqr_dist(a,b)
 	return dx*dx+dy*dy+dz*dz
 end
 
-function make_v(x,y,z,w)
-	return {x,y,z,w or 1}
-end
 function make_rnd_v(scale)
 	local v={rnd()-0.5,rnd()-0.5,rnd()-0.5}
 	v_normz(v)
@@ -205,7 +202,7 @@ function make_v_cross(a,b)
 	local bx,by,bz=b[1],b[2],b[3]
 	return {ay*bz-az*by,az*bx-ax*bz,ax*by-ay*bx}
 end
-local  v_fwd,v_right,v_up={0,0,1},{1,0,0},{0,1,0}
+local v_fwd,v_right,v_up={0,0,1},{1,0,0},{0,1,0}
 
 function v_clone(v)
 	return {v[1],v[2],v[3]}
@@ -471,7 +468,7 @@ local hist,hist_i={},0
 for i=1,64 do
 	add(hist,0)
 end
-local debug_vectors=true
+local debug_vectors=false
 function draw_actor(self)
 	draw_model(self.model,self.m)
 	-- debug
@@ -481,13 +478,21 @@ function draw_actor(self)
  		if band(self.side,self.target.side)==0 then
 	 		c=8
  		end
-	 	draw_vector(self.m,self.pos,self.target.pos,c) 
+ 		local pos=v_clone(self.target.pos)
+ 		v_plus_v(pos,self.pos,-1)
+	 	draw_vector(self.m,self.pos,pos,c)
  	end
  	if self.avoid then
  		local m=self.m
  		local pos=v_clone(self.avoid)
  		o_x_v(m,pos)
  		draw_vector(m,self.pos,pos,1,"a")
+ 	end
+ 	if self.wander then
+ 		local m=self.m
+ 		local pos=v_clone(self.wander)
+ 		o_x_v(m,pos)
+ 		draw_vector(m,self.pos,pos,2,"w")
  	end
  end
 end
@@ -617,6 +622,7 @@ function avoid(self,pos,dist)
 	return v
 end
 function seek(self)
+	local fwd={self.m[9],self.m[10],self.m[11]}
 	for _,a in pairs(actors) do
 		if band(a.side,self.side)==0 then
 			local p=v_clone(a.pos)
@@ -658,8 +664,9 @@ function update_flying_npc(self)
 	local can_fire=false
 
 	if self.target then
-		-- enemy: get in sight
+		-- friendly: formation flight
 		local target_pos={0,-4,-10}
+		-- enemy: get in sight
 		if band(self.target.side,self.side)==0 then
 			target_pos={0,0,-10}
 			can_fire=true
@@ -671,11 +678,15 @@ function update_flying_npc(self)
 	end
 	-- nothing to track?
 	if not self.target then
-		if self.wander_t<time_t then
+		if not self.wander or self.wander_t<time_t then
 			-- pick a random location
-			v_plus_v(force,follow(pos,self,wander(self)))
-			self.wander_t=time_t+60
+			self.wander=wander(self)			
+			self.wander_t=time_t+120+rnd(60)
 		end
+		v_plus_v(force,follow(pos,self,self.wander))
+	else
+		-- debug
+		self.wander=nil
 	end
 	local avf=avoid(self,pos,8)
 	v_plus_v(force,avf)
@@ -696,7 +707,7 @@ function update_flying_npc(self)
 		-- update orientation
 		local q=make_q_from_v({m[9],m[10],m[11]},pos)
 		q_x_q(self.q,q)
-		--m=m_from_q(self.q)
+		m=m_from_q(self.q)
 	end
 	-- move actor
 	local fwd={m[9],m[10],m[11]}
@@ -791,8 +802,8 @@ function make_npc(p,v,src)
 	_id+=1
 	local a={
 		id=_id,
-		pos=p,
-		q=make_q_from_v(v,v_up),
+		pos=v_clone(p),
+		q=make_q(v,0),
 		pitch=0,
 		roll=0,
 		wander_t=0,
@@ -802,7 +813,7 @@ function make_npc(p,v,src)
 		fire=make_laser,
 		die=die_actor,
 		hit=function(self,dmg)
-			self.hp-=dmg
+			--self.hp-=dmg
 			if self.hp<=0 then
 				self:die()
 			end
@@ -822,7 +833,7 @@ function make_cam(f)
 	return {
 		pos={0,0,3},
 		focal=f,
-		q=make_q(fwd,0),
+		q=make_q(v_fwd,0),
 		update=function(self)
 			self.m=m_from_q(self.q)
 			m_inv(self.m)
@@ -1110,10 +1121,10 @@ function game_screen:init()
 end
 
 function make_rnd_pos_v(a)
-	local p={0,0,0} --make_rnd_v(12)
-	local v={1,0,0} --make_rnd_v(4)
-	--v_plus_v(v,p,-1)
-	--v_normz(v)
+	local p=make_rnd_v(12)
+	local v=make_rnd_v(4)
+	v_plus_v(v,p,-1)
+	v_normz(v)
 	m_x_v(a.m,p)
 	return p,v
 end
@@ -1125,18 +1136,19 @@ function game_screen:update()
 	cam:update()
 
 	if npc_count<=0 then
-		local p,v,target=make_rnd_pos_v(plyr)
+		local p,v=make_rnd_pos_v(plyr)
+		local target
 		-- friendly npc?
 		if rnd()>0 then
 			target=make_npc(p,v,npc_xwing)
-			v_plus_v(p,v,8)
+			v_plus_v(p,v,-10)
 		end
 		-- spawn new enemy
 		for i=1,flr(1+rnd(2)) do
 			local a=make_npc(p,v,npc_tie)
 			a.target=target
 			target=a
-			v_plus_v(p,v,8)
+			v_plus_v(p,v,-10)
 		end
 	end
 
