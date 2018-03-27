@@ -12,11 +12,15 @@ local before_update,after_draw={},{}
 -- 0: chase
 -- 1: cockpit
 -- 2: orbit
-local cam_mode=0
+local cam_mode,cam=0
 local actors,npc_count={},0
 local parts={}
 local scores,last_score={},0
 local cur_screen
+-- 0: space
+-- 1: surface
+-- 2: trenches
+local game_mode=1
 local start_screen={
 	starting=false
 }
@@ -62,19 +66,38 @@ function screen_update()
 	end
 	camera(shkx,shky)
 end
-
-function filter(array,fn)
+-- zbuffer (kind of)
+local drawables={}
+function zbuf_clear()
+	drawables={}
+end
+function zbuf_draw()
+	local objs={}
+	for _,d in pairs(drawables) do
+		local p=d.pos
+		local x,y,z,w=cam:project(p[1],p[2],p[3])
+		if z>0 then
+			add(objs,{obj=d,key=-w,x=x,y=y,z=z})
+		end
+	end
+	-- z-sorting
+	sort(objs)
+	-- actual draw
+	for i=1,#objs do
+		local d=objs[i]
+		d.obj:draw(d.x,d.y,d.z,-d.key)
+	end
+end
+function zbuf_filter(array)
 	for _,a in pairs(array) do
-		if not a[fn](a) then
+		if not a:update() then
 			del(array,a)
+		else
+			add(drawables,a)
 		end
 	end
 end
-function forall(array,fn)
-	for _,a in pairs(array) do
-		a[fn](a)
-	end
-end
+
 function clone(src,dst)
 	-- safety checks
 	if(src==dst) assert()
@@ -423,14 +446,15 @@ end
 
 -- drawing helpers
 function getwinding(v1,v2,v3)
+	if(v1[3]<0 or v2[3]<0 or v3[3]<0) return false
 	local a={v2[1]-v1[1],v2[2]-v1[2]}
 	local b={v3[1]-v1[1],v3[2]-v1[2]}
 	--cross product
-	return a[1]*b[2]-a[2]*b[1]
+	return a[1]*b[2]-a[2]*b[1]<0
 end
 
 function qline(v,i,j,k,l)
-	if getwinding(v[i],v[j],v[k])<0 then
+	if getwinding(v[i],v[j],v[k]) then
 		if(v[i][3]>0 and v[j][3]>0) line(v[i][1],v[i][2],v[j][1],v[j][2])
  	if(v[j][3]>0 and v[k][3]>0) line(v[j][1],v[j][2],v[k][1],v[k][2])
  	if(v[k][3]>0 and v[l][3]>0) line(v[k][1],v[k][2],v[l][1],v[l][2])
@@ -438,7 +462,7 @@ function qline(v,i,j,k,l)
 	end
 end
 function triline(v,i,j,k)
-	if getwinding(v[i],v[j],v[k])<0 then
+	if getwinding(v[i],v[j],v[k]) then
  	if(v[i][3]>0 and v[j][3]>0) line(v[i][1],v[i][2],v[j][1],v[j][2])
  	if(v[j][3]>0 and v[k][3]>0) line(v[j][1],v[j][2],v[k][1],v[k][2])
  	if(v[k][3]>0 and v[i][3]>0) line(v[k][1],v[k][2],v[i][1],v[i][2])
@@ -449,12 +473,12 @@ local ground_colors={5,1}
 function draw_ground(self)
 	local v={}
 	local scale=4
-	local dx,dy=cam.pos[1]%scale,cam.pos[3]%scale
+	local dx,dy=plyr.pos[1]%scale,plyr.pos[3]%scale
 	
 	local c=1
 	for j=0,32,scale do
 		for i=-16,16,scale do
-			local ii,jj=i-dx+cam.pos[1],j-dy+cam.pos[3]
+			local ii,jj=i-dx+plyr.pos[1],j-dy+plyr.pos[3]
 			local x,y,z=cam:project(ii,0,jj)
 			if z>0 then
 				pset(x,y,ground_colors[c%2+1])
@@ -464,10 +488,20 @@ function draw_ground(self)
 	end
 end
 
-local hist,hist_i={},0
-for i=1,64 do
-	add(hist,0)
+function update_ground(self)
+	local i0,j0=flr(plyr.pos[1]/scale),flr(plyr.pos[3]/scale)
+	for i=i0,i0+8 do
+		local cx=(i%128+128)%128
+		for j=j0,j0+8 do
+			local cy=(j%128+128)%128
+			local t=turrets[cx+cy*128]
+			if band(0x1,t)==1 then
+				update_turret(t,cx,cy)
+			end
+		end
+	end
 end
+
 local debug_vectors=false
 function draw_actor(self)
 	draw_model(self.model,self.m)
@@ -496,16 +530,18 @@ function draw_actor(self)
  	end
  end
 end
-function draw_vector(m,pos,v,c,s)	
+function draw_vector(m,pos,v,c,s)
 	local x0,y0,z0,w=cam:project(pos[1],pos[2],pos[3])
 	local x1,y1,z1,w=cam:project(pos[1]+v[1],pos[2]+v[2],pos[3]+v[3])
-	line(x0,y0,x1,y1,c)
-	if s then
-		local dx,dy=x1-x0,y1-y0
-		local d=sqrt(dx*dx+dy*dy)
-		dx/=d
-		dy/=d
-		print(s,x1+4*dx,y1-4*dy,c)
+	if z0>0 and z1>0 then
+ 	line(x0,y0,x1,y1,c)
+ 	if s then
+ 		local dx,dy=x1-x0,y1-y0
+ 		local d=sqrt(dx*dx+dy*dy)
+ 		dx/=d
+ 		dy/=d
+ 		print(s,x1+4*dx,y1-4*dy,c)
+ 	end
 	end
 end
 
@@ -731,8 +767,7 @@ function update_flying_npc(self)
 			self.lock_t+=1
 		else
 			-- target memory
-			self.lock_t-=4
-			self.lock_t=max(self.lock_t)
+			self.lock_t=max(self.lock_t-4)
 		end
 	end
 	return true
@@ -846,6 +881,7 @@ function make_cam(f)
 			local v=m_x_xyz(self.m,x,y,z)
 			-- distance to camera plane
 			v[3]-=1
+			if(v[3]<0.001) return nil,nil,-1,nil
 			-- view to screen
  			local w=self.focal/v[3]
  			return 64+v[1]*w,64-v[2]*w,v[3],w
@@ -925,25 +961,19 @@ function update_blt(self)
 	return true
 end
 
-function draw_line_part(self)
-	local x0,y0,z0,w0=cam:project(self.pos[1],self.pos[2],self.pos[3])
+function draw_line_part(self,x0,y0,z0,w0)
 	local x1,y1,z1,w1=cam:project(self.pos[1]+self.u[1],self.pos[2]+self.u[2],self.pos[3]+self.u[3])
-	if z0>0 and z1>0 then
+	if z1>0 then
 		line(x0,y0,x1,y1,time_t%2==0 and 7 or self.c)
 	end
 end
 
-function draw_circ_part(self)
-	local x0,y0,z0,w0=cam:project(self.pos[1],self.pos[2],self.pos[3])
-	if z0>0 then
-		circfill(x0,y0,self.r*w0,self.c)
-	end
+function draw_circ_part(self,x,y,z,w)
+	circfill(x,y,self.r*w,self.c)
 end
 
-function draw_blast_part(self)
-	local x0,y0,z0,w0=cam:project(self.pos[1],self.pos[2],self.pos[3])
-	
-	circfill(x0,y0,self.r*w0,7)
+function draw_blast_part(self,x,y,z,w)
+	circfill(x,y,self.r*w,7)
 end
 
 local turn_t=0
@@ -1023,7 +1053,7 @@ end
 
 local ds_m=make_m()
 function draw_deathstar()
-	ds_m[13],ds_m[14],ds_m[15]=cam.pos[1],cam.pos[2],6+cam.pos[3]
+	ds_m[13],ds_m[14],ds_m[15]=cam.pos[1],cam.pos[2],6+cam.pos[3]	
 	draw_model(all_models.deathstar,ds_m)
 end
 
@@ -1131,6 +1161,8 @@ function make_rnd_pos_v(a,rng)
 end
 
 function game_screen:update()
+	zbuf_clear()
+	
 	if plyr then
 		control_plyr(plyr)
 	end
@@ -1153,15 +1185,15 @@ function game_screen:update()
 		end
 	end
 
-	filter(actors,"update")
-	filter(parts,"update")	
+	zbuf_filter(actors)
+	zbuf_filter(parts)
+
 end
 function game_screen:draw()
 	draw_deathstar()
 	draw_stars()
 
-	forall(actors,"draw")
-	forall(parts,"draw")
+	zbuf_draw()
 		
 	-- cockpit
 	if cam_mode==1 then
@@ -1197,7 +1229,7 @@ end
 
 function _draw()
 	cls()
-				
+
 	cur_screen:draw()
 	
 	futures_update(after_draw)
