@@ -29,6 +29,8 @@ local game_screen={
 }
 local gameover_screen={}
 
+function nop() end
+
 -- futures
 function futures_update(futures)
 	futures=futures or before_update
@@ -152,24 +154,28 @@ end
 
 -- models
 local all_models={
-	cube={
+	turret={
 		c=12,
-		v={
-		{-1,2,-1},
-		{1,2,-1},
-		{1,-2,-1},
-		{-1,-2,-1},
-		{-1,2,1},
-		{1,2,1},
-		{1,-2,1},
-		{-1,-2,1}},
-		f={4,4,3,2,1,4,5,6,7,8,4,1,5,8,4,4,6,7,3,2},
-		e={},
+		v={{0.2,0.7,0.57},{0.2,0.7,0.37},{-0.2,0.7,0.37},{-0.2,0.7,0.57},{0.5,0.0,0.5},{0.5,0.0,-0.5},{-0.5,0.0,-0.5},{-0.5,0.0,0.5},{0.4,1.0,0.4},{0.4,1.0,-0.4},{-0.4,1.0,-0.4},{-0.4,1.0,0.4}},
+		f={4,9,12,11,10,4,5,9,10,6,4,6,10,11,7,4,7,11,12,8,4,9,5,8,12},
+		e={2,3,1,0},
 		wp={
 			dly=12,
-			pos={{0.7,0.7,1},{-0.7,0.7,1}},
+			pos={{0.1,0.7,0.57},{-0.1,0.7,0.57}},
 			n={{0,0,1},{0,0,1}}
 		}
+	},
+	junk1={
+		c=1,
+		v={{0.0,0.0,1.0},{-0.71,0.0,0.71},{-1.0,0.0,-0.0},{-0.71,0.0,-0.71},{0.0,0.0,-1.0},{0.71,0.0,-0.71},{1.0,0.0,0.0},{0.71,0.0,0.71},{0.0,1.0,1.0},{-0.71,1.0,0.71},{-1.0,1.0,-0.0},{-0.71,1.0,-0.71},{0.0,1.0,-1.0},{0.71,1.0,-0.71},{1.0,1.0,0.0},{0.71,1.0,0.71},{0.0,1.5,0.6},{-0.42,1.5,0.42},{-0.6,1.5,-0.0},{-0.42,1.5,-0.42},{0.0,1.5,-0.6},{0.42,1.5,-0.42},{0.6,1.5,0.0},{0.42,1.5,0.42}},
+		f={4,8,16,15,7,4,6,14,13,5,4,4,12,11,3,4,2,10,9,1,4,1,9,16,8,4,7,15,14,6,4,5,13,12,4,4,3,11,10,2,4,12,20,19,11,4,10,18,17,9,4,9,17,24,16,4,15,23,22,14,4,13,21,20,12,4,11,19,18,10,4,16,24,23,15,4,14,22,21,13,8,18,19,20,21,22,23,24,17},
+		e={}
+	},
+	junk2={
+		c=5,
+		v={{1.0,-1.0,1.0},{1.0,-1.0,-1.0},{-1.0,-1.0,-1.0},{-1.0,-1.0,1.0},{0.7,0.0,0.7},{0.7,0.0,-0.7},{-0.7,0.0,-0.7},{-0.7,0.0,0.7}},
+		f={4,1,2,3,4,4,5,8,7,6,4,1,5,6,2,4,2,6,7,3,4,3,7,8,4,4,5,1,4,8},
+		e={}
 	},
  	plane={
 		v={
@@ -498,7 +504,7 @@ function draw_ground(self)
 	local dx,dy=x%ground_scale,z%ground_scale
 	
 	local c=1
-	for j=0,32,ground_scale do
+	for j=-16,16,ground_scale do
 		for i=-16,16,ground_scale do
 			local ii,jj=i-dx+x,j-dy+z
 			local x,y,z=cam:project(ii,0,jj)
@@ -515,19 +521,37 @@ function make_turret(i,j)
 	local t={
 		pos={x,y,z},
 		m=make_m(x,y,z),
-		model=all_models.cube,
+		model=all_models.turret,
+		fire_t=0,
+		laser_i=0,
+		fire=make_laser,
 		update=update_turret,
 		draw=draw_actor
 	}
 	turrets[i+j*128]=t
 end
+function make_junk(i,j,model)
+	local x,y,z=i*ground_scale,0,j*ground_scale
+	local t={
+		pos={x,y,z},
+		m=make_m(x,y,z),
+		model=model,
+		update=nop,
+		draw=draw_actor
+	}
+	turrets[i+j*128]=t
+end
+
 function init_ground()
 	for i=0,127 do
 		for j=0,127 do
 			local r=rnd()
-			if r>0.9 then
+			if r>0.99 then
 				make_turret(i,j)
-			elseif r>0.7 then
+			elseif r>0.95 then
+				make_junk(i,j,all_models.junk1)
+			elseif r>0.9 then
+				make_junk(i,j,all_models.junk2)
 			end
 		end
 	end
@@ -550,11 +574,17 @@ end
 
 function update_turret(self)
 	local dx,dy=self.pos[1]-plyr.pos[1],self.pos[3]-plyr.pos[3]
-	local angle=atan2(dx,dy)
+	local angle=atan2(dx,dy)-0.25
 	local q=make_q(v_up,angle)
 	local m=m_from_q(q)
 	m[13],m[14],m[15]=self.pos[1],0,self.pos[3]
 	self.m=m
+	
+	if abs(angle)<0.2 and self.fire_t<time_t then
+		self:fire()
+		self.fire_t=time_t+self.model.wp.dly
+	end
+	
 	return true
 end
 
