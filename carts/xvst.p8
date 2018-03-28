@@ -20,7 +20,7 @@ local cur_screen
 -- 0: space
 -- 1: surface
 -- 2: trenches
-local game_mode=1
+local game_mode=0
 local start_screen={
 	starting=false
 }
@@ -153,6 +153,7 @@ end
 -- models
 local all_models={
 	cube={
+		c=12,
 		v={
 		{-1,2,-1},
 		{1,2,-1},
@@ -163,7 +164,12 @@ local all_models={
 		{1,-2,1},
 		{-1,-2,1}},
 		f={4,4,3,2,1,4,5,6,7,8,4,1,5,8,4,4,6,7,3,2},
-		e={}
+		e={},
+		wp={
+			dly=12,
+			pos={{0.7,0.7,1},{-0.7,0.7,1}},
+			n={{0,0,1},{0,0,1}}
+		}
 	},
  	plane={
 		v={
@@ -220,6 +226,19 @@ function make_rnd_v(scale)
 	v_normz(v)
 	return {scale*v[1],scale*v[2],scale*v[3]}
 end
+function make_rnd_pos_v(a,rng)
+	local p=make_rnd_v(8)
+	p[3]+=rng
+	local d=0
+	while d==0 do
+		local v=make_rnd_v(4)
+		v_plus_v(v,p,-1)
+		d=v_normz(v)
+	end
+	m_x_v(a.m,p)
+	return p,v
+end
+
 function make_v_cross(a,b)
 	local ax,ay,az=a[1],a[2],a[3]
 	local bx,by,bz=b[1],b[2],b[3]
@@ -241,6 +260,7 @@ function v_normz(v)
 		v[2]/=d
 		v[3]/=d
 	end
+	return d
 end
 function v_clamp(v,l)
 	local d=v[1]*v[1]+v[2]*v[2]+v[3]*v[3]
@@ -277,12 +297,13 @@ function m_x_xyz(m,x,y,z)
 		m[2]*x+m[6]*y+m[10]*z+m[14],
 		m[3]*x+m[7]*y+m[11]*z+m[15]}
 end
-function make_m()
+function make_m(x,y,z)
 	local m={}
 	for i=1,16 do
 		m[i]=0
 	end
 	m[1],m[6],m[11],m[16]=1,1,1,1
+	m[13],m[14],m[15]=x or 0,y or 0,z or 0
 	return m
 end
 
@@ -470,15 +491,16 @@ function triline(v,i,j,k)
 end
 
 local ground_colors={5,1}
+local ground_scale=4
 function draw_ground(self)
 	local v={}
-	local scale=4
-	local dx,dy=plyr.pos[1]%scale,plyr.pos[3]%scale
+	local x,z=plyr.pos[1],plyr.pos[3]
+	local dx,dy=x%ground_scale,z%ground_scale
 	
 	local c=1
-	for j=0,32,scale do
-		for i=-16,16,scale do
-			local ii,jj=i-dx+plyr.pos[1],j-dy+plyr.pos[3]
+	for j=0,32,ground_scale do
+		for i=-16,16,ground_scale do
+			local ii,jj=i-dx+x,j-dy+z
 			local x,y,z=cam:project(ii,0,jj)
 			if z>0 then
 				pset(x,y,ground_colors[c%2+1])
@@ -487,19 +509,53 @@ function draw_ground(self)
 		end
 	end
 end
-
-function update_ground(self)
-	local i0,j0=flr(plyr.pos[1]/scale),flr(plyr.pos[3]/scale)
-	for i=i0,i0+8 do
-		local cx=(i%128+128)%128
-		for j=j0,j0+8 do
-			local cy=(j%128+128)%128
-			local t=turrets[cx+cy*128]
-			if band(0x1,t)==1 then
-				update_turret(t,cx,cy)
+local turrets={}
+function make_turret(i,j)
+	local x,y,z=i*ground_scale,0,j*ground_scale
+	local t={
+		pos={x,y,z},
+		m=make_m(x,y,z),
+		model=all_models.cube,
+		update=update_turret,
+		draw=draw_actor
+	}
+	turrets[i+j*128]=t
+end
+function init_ground()
+	for i=0,127 do
+		for j=0,127 do
+			local r=rnd()
+			if r>0.9 then
+				make_turret(i,j)
+			elseif r>0.7 then
 			end
 		end
 	end
+end
+
+function update_ground()
+	local i0,j0=flr(plyr.pos[1]/ground_scale),flr(plyr.pos[3]/ground_scale)
+	for i=i0-8,i0+8 do
+		local cx=(i%128+128)%128
+		for j=j0-8,j0+8 do
+			local cy=(j%128+128)%128
+			local t=turrets[cx+cy*128]
+			if t then
+				t:update()
+				add(drawables,t)
+			end
+		end
+	end
+end
+
+function update_turret(self)
+	local dx,dy=self.pos[1]-plyr.pos[1],self.pos[3]-plyr.pos[3]
+	local angle=atan2(dx,dy)
+	local q=make_q(v_up,angle)
+	local m=m_from_q(q)
+	m[13],m[14],m[15]=self.pos[1],0,self.pos[3]
+	self.m=m
+	return true
 end
 
 local debug_vectors=false
@@ -1003,15 +1059,18 @@ function control_plyr(self)
 		local q=make_q({1,0,0},-pitch/128)
 		q_x_q(plyr.q,q)
 	end
-
 	-- update pos
 	local m=m_from_q(plyr.q)
+	v_plus_v(plyr.pos,{m[9],m[10],m[11]},plyr.acc)
+	-- special cases
+	if game_mode==1 then
+		plyr.pos[2]=mid(plyr.pos[2],1,4)
+	end
 	m[13]=plyr.pos[1]
 	m[14]=plyr.pos[2]
 	m[15]=plyr.pos[3]
-	v_plus_v(plyr.pos,{m[9],m[10],m[11]},plyr.acc)
 	plyr.m=m
-			
+
 	-- cam modes
 	if btnp(4) then
 		cam_mode+=1
@@ -1143,21 +1202,14 @@ end
 
 -- play loop
 function game_screen:init()
+	game_mode=1
 	time_t=0
 	parts={}
 	actors={}
 	npc_count=0
 	plyr=make_plyr(0,0,0)
-end
-
-function make_rnd_pos_v(a,rng)
-	local p=make_rnd_v(8)
-	p[3]+=rng
-	local v=make_rnd_v(4)
-	v_plus_v(v,p,-1)
-	v_normz(v)
-	m_x_v(a.m,p)
-	return p,v
+	
+	init_ground()
 end
 
 function game_screen:update()
@@ -1168,21 +1220,25 @@ function game_screen:update()
 	end
 	cam:update()
 
-	if npc_count<=0 then
-		local p,v=make_rnd_pos_v(plyr,30)
-		local target
-		-- friendly npc?
-		if rnd()>0.8 then
-			target=make_npc(p,v,npc_xwing)
-			v_plus_v(p,v,-10)
+	if game_mode==0 then
+		if npc_count<=0 then
+			local p,v=make_rnd_pos_v(plyr,30)
+			local target
+			-- friendly npc?
+			if rnd()>0.8 then
+				target=make_npc(p,v,npc_xwing)
+				v_plus_v(p,v,-10)
+			end
+			-- spawn new enemy
+			for i=1,flr(1+rnd(2)) do
+				local a=make_npc(p,v,npc_tie)
+				a.target=target
+				target=a
+				v_plus_v(p,v,-10)
+			end
 		end
-		-- spawn new enemy
-		for i=1,flr(1+rnd(2)) do
-			local a=make_npc(p,v,npc_tie)
-			a.target=target
-			target=a
-			v_plus_v(p,v,-10)
-		end
+	elseif game_mode==1 then
+		update_ground()
 	end
 
 	zbuf_filter(actors)
@@ -1190,8 +1246,12 @@ function game_screen:update()
 
 end
 function game_screen:draw()
-	draw_deathstar()
-	draw_stars()
+	if game_mode==0 then
+		draw_deathstar()
+		draw_stars()
+	elseif game_mode==1 then
+		draw_ground()
+	end
 
 	zbuf_draw()
 		
