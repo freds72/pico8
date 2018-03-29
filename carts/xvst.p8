@@ -28,7 +28,11 @@ local game_screen={
 	starting=false
 }
 local gameover_screen={}
-
+local bench_screen={
+	angle=0,
+	dist=-4,
+	sel_actor=0
+}
 function nop() end
 
 -- futures
@@ -529,6 +533,7 @@ function make_turret(i,j)
 		draw=draw_actor
 	}
 	turrets[i+j*128]=t
+	return t
 end
 function make_junk(i,j,model)
 	local x,y,z=i*ground_scale,0,j*ground_scale
@@ -536,10 +541,11 @@ function make_junk(i,j,model)
 		pos={x,y,z},
 		m=make_m(x,y,z),
 		model=model,
-		update=nop,
+		update=function() return true end,
 		draw=draw_actor
 	}
 	turrets[i+j*128]=t
+	return t
 end
 
 function init_ground()
@@ -1194,8 +1200,8 @@ function start_screen:update()
 		-- init game
 		futures_add(function()
 			wait_async(30)
-			game_screen:init()
-			cur_screen=game_screen
+			bench_screen:init()
+			cur_screen=bench_screen
 			start_screen.starting=false
 		end)
 	end
@@ -1228,6 +1234,48 @@ function gameover_screen:draw()
 			draw_text("new highscore!",24,72,6)
 		end
 	end
+end
+
+-- bench screen
+function bench_screen:init()
+	time_t=0
+	parts={}
+	actors={}
+	for i=0,1 do
+		for j=0,1 do
+			add(actors,make_junk(2*i,2*j,all_models.junk1))
+		end
+	end
+end
+function bench_screen:update()
+	zbuf_clear()
+	
+	local x,y=0,0
+	
+	if(btn(0)) x=-1
+	if(btn(1)) x=1
+	if(btn(2)) y=-1
+	if(btn(3)) y=1
+	
+	self.angle+=0.1*x
+	cam.q=make_q({0,1,0},self.angle)
+	--local q=make_q({0,0,1},dy/128)
+	--q_x_q(cam.q,q)
+	local m=m_from_q(cam.q)
+	self.dist=min(self.dist+y/2,-2)
+	cam.pos=m_x_xyz(m,0,2,self.dist)
+	if btnp(4) then
+		self.sel_actor+=1
+	end
+	local a=actors[(self.sel_actor%#actors)+1]
+	v_plus_v(cam.pos,a.pos)
+
+	cam:update()
+	zbuf_filter(actors)
+end
+function bench_screen:draw()
+	zbuf_draw()
+	print("actors:"..#actors,2,9,7)
 end
 
 -- play loop
@@ -1360,7 +1408,7 @@ function _init()
 		
 	cam=make_cam(64)
 
-	cur_screen=start_screen	
+	cur_screen=start_screen
 end
 
 __gfx__
