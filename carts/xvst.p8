@@ -584,6 +584,22 @@ function draw_vector(m,pos,v,c,s)
 end
 
 local draw_session_id=0
+function compute_cp(model)
+	model.cp={}
+	for i=1,#model.f do
+		local f=model.f[i]
+		add(model.cp,v_dot(model.n[i],model.v[f[2]]))
+	end
+end
+compute_cp(all_models.junk2)
+
+function m_inv_x_v(m,v)
+	local x,y,z=v[1]-m[13],v[2]-m[14],v[3]-m[15]
+	v[1]=m[1]*x+m[2]*y+m[3]*z
+	v[2]=m[5]*x+m[6]*y+m[7]*z
+	v[3]=m[9]*x+m[10]*y+m[11]*z
+end
+
 function draw_model(model,m)
 	draw_session_id+=1
 
@@ -595,48 +611,41 @@ function draw_model(model,m)
 	
 	-- cam pos in object space
 	local cam_pos=v_clone(cam.pos)
-	local mm=m_clone(m)
-	v_plus_v(cam_pos,{m[13],m[14],m[15]},-1)
-	m_inv(mm)
-	o_x_v(mm,cam_pos)
+	m_inv_x_v(m,cam_pos)
 
+ -- projected points
 	local p={}	
 	-- faces
-	local ak,bk,v,x,y,z,w
-	local l=1
-	for _,f in pairs(model.f) do
-		-- point in face
-		local fp=model.v[f[2]]
-		local cp={fp[1]-cam_pos[1],fp[2]-cam_pos[2],fp[3]-cam_pos[3]}
-		if v_dot(model.n[l],cp)<0 then
-			for k=1,f[1] do	
+	local f,n
+	for i=1,#model.f do
+		f,n=model.f[i],model.n[i]
+		-- viz calculation
+		local d=n[1]*cam_pos[1]+n[2]*cam_pos[2]+n[3]*cam_pos[3]
+		if d>=model.cp[i] then
+			for k=1,f[1] do
 				model.e[f[k+2]][3]=draw_session_id
 			end
 		end
-		l+=1
 	end
 	-- edges
+	local x,y,z,w
 	for _,e in pairs(model.e) do
 		if e[3]==true or e[3]==draw_session_id then
 			local ak,bk=e[1],e[2]
 			local a,b=p[ak],p[bk]
 			if not a then
 				v=model.v[ak]
-				v={v[1],v[2],v[3]}
-				local x,y,z=v[1],v[2],v[3]
-				x,y,z=m[1]*x+m[5]*y+m[9]*z+m[13],m[2]*x+m[6]*y+m[10]*z+m[14],m[3]*x+m[7]*y+m[11]*z+m[15]
+				x,y,z=v[1],v[2],v[3]
 				--m_x_v(m,v)
-				x,y,z,w=cam:project(x,y,z)
+				x,y,z,w=cam:project(m[1]*x+m[5]*y+m[9]*z+m[13],m[2]*x+m[6]*y+m[10]*z+m[14],m[3]*x+m[7]*y+m[11]*z+m[15])
 				p[ak]={x,y,z,w}
 				a=p[ak]
 			end
 			if not b then
 				v=model.v[bk]
-				v={v[1],v[2],v[3]}
-				local x,y,z=v[1],v[2],v[3]
-				x,y,z=m[1]*x+m[5]*y+m[9]*z+m[13],m[2]*x+m[6]*y+m[10]*z+m[14],m[3]*x+m[7]*y+m[11]*z+m[15]
+				x,y,z=v[1],v[2],v[3]
 				--m_x_v(m,v)
-				x,y,z,w=cam:project(x,y,z)
+				x,y,z,w=cam:project(m[1]*x+m[5]*y+m[9]*z+m[13],m[2]*x+m[6]*y+m[10]*z+m[14],m[3]*x+m[7]*y+m[11]*z+m[15])
 				p[bk]={x,y,z,w}
 				b=p[bk]
 			end		
@@ -1133,14 +1142,11 @@ end
 function draw_radar(x,y,r,rng)
 	circ(x,y,r,3)
 	pset(x,y,3)
-	local m=m_clone(plyr.m)
-	m_inv(m)
 	local objs=game_mode==1 and ground_actors or actors
 	for _,a in pairs(objs) do
 		if a!=plyr then
 			local p=v_clone(a.pos)
-			v_plus_v(p,plyr.pos,-1)
-			o_x_v(m,p)
+			m_inv_x_v(plyr.m,p)
 			v_clamp(p,rng)
 			pset(x+r*p[1]/rng,y-r*p[3]/rng,p[2]>0 and 8 or 2)
 		end
@@ -1214,7 +1220,7 @@ function bench_screen:init()
 	actors={}
 	for i=0,1 do
 		for j=0,1 do
-			add(actors,make_junk(2*i,2*j,all_models.xwing))
+			add(actors,make_junk(2*i,2*j,all_models.junk2))
 		end
 	end
 end
