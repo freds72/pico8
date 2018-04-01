@@ -32,7 +32,7 @@ first=True
 for f in obdata.polygons:
     if first==False:
         print(',',end='')
-    print('{{{},{},{}}}'.format(round(f.normal.x,2), round(f.normal.y,2), round(f.normal.z,2)),end='')
+    print('{{{},{},{}}}'.format(round(f.normal.x,2), round(f.normal.z,2), round(f.normal.y,2)),end='')
     first=False
 
 print('},')
