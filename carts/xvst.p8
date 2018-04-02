@@ -242,14 +242,19 @@ end
 
 -- models
 local all_models={
+	deathstar={
+		c=3
+	},
 	xwing={
+		c=7,
 		wp={
 			dly=8,
    pos={{2,1,1.6},{2,-1,1.6},{-2,-1,1.6},{-2,1,1.6}},
    n={}
   }
 	},
-	tie={
+	sphere={
+		c=5,
 		wp={
 			dly=12,
 			pos={{0.7,-0.7,0.7},{-0.7,-0.7,0.7}},
@@ -539,15 +544,18 @@ end
 
 function update_turret(self)
 	local dx,dy=self.pos[1]-plyr.pos[1],self.pos[3]-plyr.pos[3]
-	local angle=atan2(dx,dy)-0.25
-	local q=make_q(v_up,angle)
-	local m=m_from_q(q)
-	m[13],m[14],m[15]=self.pos[1],0,self.pos[3]
-	self.m=m
-	
-	if abs(angle)<0.2 and self.fire_t<time_t then
-		self:fire()
-		self.fire_t=time_t+self.model.wp.dly
+	-- in range?
+	if dx*dx+dy*dy<64 then
+ 	local angle=atan2(dx,dy)-0.25
+ 	local q=make_q(v_up,angle)
+ 	local m=m_from_q(q)
+ 	m[13],m[14],m[15]=self.pos[1],0,self.pos[3]
+ 	self.m=m
+ 	
+ 	if abs(angle)<0.2 and self.fire_t<time_t then
+ 		self:fire()
+ 		self.fire_t=time_t+self.model.wp.dly
+ 	end
 	end
 	
 	return true
@@ -822,7 +830,10 @@ function seek(self)
 				v_normz(p)
 				-- within cone?
 				if v_dot(fwd,p)>0.5 then
-					return a
+				 -- avoid loops
+				 if a.target!=self then
+						return a
+					end
 				end
 			end
 		end
@@ -831,7 +842,7 @@ end
 
 -- return a pos in self space
 function wander(self)
-	local p=make_rnd_v(5)
+	local p=make_rnd_v(2)
 	p[3]+=15
 	return p
 end
@@ -910,20 +921,23 @@ function update_flying_npc(self)
 	if can_fire and self.fire_t<time_t then
 		local p=v_clone(self.target.pos)
 		v_plus_v(p,self.pos,-1)
-		v_normz(p)
-		if v_dot(fwd,p)>0.95 then
-		-- must be in sight for some time
-			if self.lock_t>45 then
-				self.lock_t=45
-				self.fire_t=time_t+self.model.wp.dly
-				self:fire()
-			end
-			self.lock_t+=1
-		else
-			-- target memory
-			self.lock_t=max(self.lock_t-4)
+		-- in range?
+		if v_dot(p)<96 then
+ 		v_normz(p)
+ 		if v_dot(fwd,p)>0.95 then
+ 		-- must be in sight for some time
+ 			if self.lock_t>45 then
+ 				self.lock_t=45
+ 				self.fire_t=time_t+self.model.wp.dly
+ 				self:fire()
+ 			end
+ 			self.lock_t+=2
+ 		end
 		end
 	end
+	-- target memory
+ self.lock_t=max(self.lock_t-4)
+
 	return true
 end
 
@@ -931,6 +945,7 @@ function make_plyr(x,y,z)
 	local p={
 		score=0,
 		hp=6,
+		boost=0,
 		acc=0.1,
 		model=all_models.xwing,
 		pos={x,y,z},
@@ -1160,7 +1175,7 @@ function control_plyr(self)
 	end
 	-- update pos
 	local m=m_from_q(plyr.q)
-	v_plus_v(plyr.pos,{m[9],m[10],m[11]},plyr.acc)
+	v_plus_v(plyr.pos,{m[9],m[10],m[11]},plyr.acc+plyr.boost)
 	-- special cases
 	if game_mode==1 then
 		plyr.pos[2]=mid(plyr.pos[2],1,4)
@@ -1170,8 +1185,15 @@ function control_plyr(self)
 	m[15]=plyr.pos[3]
 	plyr.m=m
 
+	-- boost 
+	if btn(4) then
+		self.boost=min(self.boost+0.01,0.1)
+	else
+		self.boost*=0.98
+	end
+	
 	-- cam modes
-	if btnp(4) then
+	if btnp(6) then
 		cam_mode+=1
 		cam_mode%=3
 	end
@@ -1408,8 +1430,12 @@ function game_screen:draw()
 	if cam_mode==1 then
 		palt(0,false)
 		palt(14,true)
-		spr(0,0,0,8,16)
-		spr(0,64,0,8,16,true)
+		spr(64,0,32,8,4)
+		spr(64,64,32,8,4,true)
+		spr(8,0,64,8,4)
+		spr(8,64,64,8,4,true)
+		spr(72,0,96,8,4)
+		spr(72,64,96,8,4,true)
 		-- radar
 		draw_radar(64,112,12,10)
 		-- hp
@@ -1422,6 +1448,10 @@ function game_screen:draw()
 			rectfill(x,120,x+1,123,1)
 			x+=3
 		end
+		-- engines
+		local p=(plyr.acc+plyr.boost)/(0.2)
+		rectfill(82,120,82+22*p,123,9)
+		
 	end
 
 end
