@@ -15,16 +15,20 @@ def call(args):
     #
     return exitcode, out, err
 
-s = "01"
-fd, path = tempfile.mkstemp()
-try:
-    os.close(fd)
-    exitcode, out, err = call([os.path.join(blender_dir,"blender.exe"),os.path.join(local_dir,"xwing.blend"),"--background","--python",os.path.join(local_dir,"blender_export.py"),"--","--out",path])
-    # print("exit: {} \n out:{}\n err: {}\n".format(exitcode,out,err))
-    with open(path, 'r') as outfile:
-        s = s + outfile.read()
-finally:
-    os.remove(path)
+file_list = ['deathstar','junk1','junk2','tie','xwing','title','turret']
+s = "{:02x}".format(len(file_list))
+for blend_file in file_list:
+    print("Exporting: {}.blend".format(blend_file))
+    fd, path = tempfile.mkstemp()
+    try:
+        os.close(fd)
+        exitcode, out, err = call([os.path.join(blender_dir,"blender.exe"),os.path.join(local_dir,blend_file + ".blend"),"--background","--python",os.path.join(local_dir,"blender_export.py"),"--","--out",path])
+        # print("exit: {} \n out:{}\n err: {}\n".format(exitcode,out,err))
+        with open(path, 'r') as outfile:
+            s = s + outfile.read()
+    finally:
+        os.remove(path)
 
+# pico-8 map format
 s = re.sub("(.{256})", "\\1\n", s, 0, re.DOTALL)
 print(s)
