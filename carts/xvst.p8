@@ -427,22 +427,14 @@ function m_from_q(q)
 		local yy,yz,zz=y*y2,y*z2,z*z2
 		local wx,wy,wz=w*x2,w*y2,w*z2
 
-		te[1]=1-( yy+zz )
-		te[5]=xy-wz
-		te[9]=xz+wy
+		te[1],te[5],te[9]=1-(yy+zz),xy-wz,xz+wy
+		te[2],te[6],te[10]=xy+wz,1-(xx+zz),yz-wx
+		te[3],te[7],te[11]=xz-wy,yz+wx,1-(xx+yy)
 
-		te[2]=xy+wz
-		te[6]=1-( xx+zz )
-		te[10]=yz-wx
-
-		te[3]=xz-wy
-		te[7]=yz+wx
-		te[11]=1-( xx+yy )
-
-		// last column
+		-- last column
 		te[4],te[8],te[12]=0,0,0
 
-		// bottom row
+		-- bottom row
 		te[13],te[14],te[15],te[16]=0,0,0,1
 
 		return te
@@ -460,6 +452,13 @@ function m_inv(m)
 	m[2],m[5]=m[5],m[2]
 	m[3],m[9]=m[9],m[3]
 	m[7],m[10]=m[10],m[7]
+end
+-- same as above, inline matrix invert
+function m_inv_x_v(m,v)
+	local x,y,z=v[1]-m[13],v[2]-m[14],v[3]-m[15]
+	v[1]=m[1]*x+m[2]*y+m[3]*z
+	v[2]=m[5]*x+m[6]*y+m[7]*z
+	v[3]=m[9]*x+m[10]*y+m[11]*z
 end
 
 local ground_colors={5,1,5,1}
@@ -697,13 +696,6 @@ function unpack_models()
 	end
 end
 unpack_models()
-
-function m_inv_x_v(m,v)
-	local x,y,z=v[1]-m[13],v[2]-m[14],v[3]-m[15]
-	v[1]=m[1]*x+m[2]*y+m[3]*z
-	v[2]=m[5]*x+m[6]*y+m[7]*z
-	v[3]=m[9]*x+m[10]*y+m[11]*z
-end
 
 function draw_model(model,m)
 	draw_session_id+=1
@@ -978,6 +970,7 @@ end
 local _id=0
 local npc_xwing={
 	hp=8,
+	r=0.7,
 	acc=0.1,
 	model=all_models.xwing,
 	side=good_side,
@@ -985,6 +978,7 @@ local npc_xwing={
 }
 local npc_tie={
 	hp=4,
+	r=0.7,
 	acc=0.1,
 	model=all_models.tie,
 	side=bad_side,

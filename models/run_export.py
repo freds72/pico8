@@ -7,8 +7,6 @@ local_dir = os.path.dirname(os.path.realpath(__file__))
 blender_dir = os.path.expandvars("%programfiles%/Blender Foundation/Blender")
 
 def call(args):
-    print(args)
-
     proc = Popen(args, stdout=PIPE, stderr=PIPE)
     out, err = proc.communicate()
     exitcode = proc.returncode

@@ -61,6 +61,3 @@ for e in bm.edges:
 with open(args.out, 'w') as f:
     f.write(s)
 
-# copy to clipboard
-# bpy.context.window_manager.clipboard=s
-
