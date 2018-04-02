@@ -1,6 +1,20 @@
 import bpy
 import bmesh
-import re
+import argparse
+import sys
+
+argv = sys.argv
+if "--" not in argv:
+    argv = []
+else:
+   argv = argv[argv.index("--") + 1:]
+
+try:
+    parser = argparse.ArgumentParser(description='Exports Blender model as a byte array',prog = "blender -b -P "+__file__+" --")
+    parser.add_argument('-o','--out', help='Output file', required=True, dest='out')
+    args = parser.parse_args(argv)
+except Exception as e:
+    sys.exit(repr(e))
 
 obdata = bpy.context.object.data
 
@@ -43,9 +57,10 @@ s = s + "{:02x}".format(len(bm.edges))
 for e in bm.edges:
     s = s + "{:02x}{:02x}{:02x}".format(e.verts[0].index+1, e.verts[1].index+1,1 if e.is_wire else 0)
 
-#s = re.sub("(.{256})", "\\1\n", s, 0, re.DOTALL)
-print(s)
+#
+with open(args.out, 'w') as f:
+    f.write(s)
 
 # copy to clipboard
-bpy.context.window_manager.clipboard=s
+# bpy.context.window_manager.clipboard=s
 
