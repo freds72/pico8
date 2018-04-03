@@ -250,14 +250,19 @@ local all_models={
 	},
 	xwing={
 		c=7,
+		r=0.8,
 		wp={
 			dly=8,
    pos={{2,1,1.6},{2,-1,1.6},{-2,-1,1.6},{-2,1,1.6}},
    n={}
   }
 	},
-	sphere={
+	tie={
 		c=5,
+		-- collision radius
+		r=0.7,
+		-- sphere 
+		s=0.7,
 		wp={
 			dly=12,
 			pos={{0.7,-0.7,0.7},{-0.7,-0.7,0.7}},
@@ -564,8 +569,8 @@ function update_turret(self)
 end
 
 local debug_vectors=false
-function draw_actor(self)
-	draw_model(self.model,self.m)
+function draw_actor(self,x,y,z,w)
+	draw_model(self.model,self.m,x,y,z,w)
 	-- debug
 	--[[
 	if debug_vectors then
@@ -697,21 +702,19 @@ function unpack_models()
 end
 unpack_models()
 
-function draw_model(model,m)
+function draw_model(model,m,x,y,z,w)
 	draw_session_id+=1
 
 	color(model.c or 1)
-	-- bounding radius
-	if model.show then
-		--circ(xe,ye,model.r*w)
+	-- sphere object?
+	if model.s then
+		circ(x,y,model.s*w)
 	end
 	
 	-- cam pos in object space
 	local cam_pos=v_clone(cam.pos)
 	m_inv_x_v(m,cam_pos)
 
- -- projected points
-	local p={}	
 	-- faces
 	local f,n
 	for i=1,#model.f do
@@ -725,7 +728,7 @@ function draw_model(model,m)
 		end
 	end
 	-- edges
-	local x,y,z,w
+	local p={}
 	for _,e in pairs(model.e) do
 		if e[3]==true or e[3]==draw_session_id then
 			local ak,bk=e[1],e[2]
@@ -745,7 +748,7 @@ function draw_model(model,m)
 				x,y,z,w=cam:project(m[1]*x+m[5]*y+m[9]*z+m[13],m[2]*x+m[6]*y+m[10]*z+m[14],m[3]*x+m[7]*y+m[11]*z+m[15])
 				p[bk]={x,y,z,w}
 				b=p[bk]
-			end		
+			end
 			if(a[3]>0 and b[3]>0) line(a[1],a[2],b[1],b[2])
 		end
 	end
@@ -787,7 +790,7 @@ end
 
 function die_actor(self)
 	make_blast(self.pos)
-	
+	self.disable=true
 	npc_count-=1
 	del(actors,self)
 end
@@ -936,6 +939,20 @@ function update_flying_npc(self)
 	return true
 end
 
+function hit_npc(self,dmg)
+	self.hp-=dmg
+	if self.hp<=0 then
+		self:die()
+	end
+end
+function hit_flying_npc(self,dmg,actor)
+	hit_npc(self,dmg)
+	-- todo: wait a bit
+	if actor==plyr then
+		self.target=plyr
+	end
+end
+		
 function make_plyr(x,y,z)
 	local p={
 		score=0,
@@ -949,6 +966,7 @@ function make_plyr(x,y,z)
 		fire_t=0,
 		side=good_side,
 		hit=function(self,dmg)
+			self.hp-=dmg
 			screen_shake(rnd(),rnd(),2)
 		end,
 		fire=make_laser,
@@ -970,33 +988,35 @@ end
 local _id=0
 local npc_xwing={
 	hp=8,
-	r=0.7,
 	acc=0.1,
 	model=all_models.xwing,
 	side=good_side,
-	update=update_flying_npc
+	update=update_flying_npc,
+	hit=hit_npc,
 }
 local npc_tie={
 	hp=4,
-	r=0.7,
 	acc=0.1,
 	model=all_models.tie,
 	side=bad_side,
-	update=update_flying_npc
+	update=update_flying_npc,
+	hit=hit_flying_npc
 }
 local npc_turret={
 	hp=2,
 	model=all_models.turret,
 	side=bad_side,
-	update=update_ground_npc
+	update=update_ground_npc,
+	hit=hit_npc
 }
 local npc_junk={
 	hp=1,
 	rnd={model={
 		all_models.junk1,
 		all_models.junk2,
-		all_models.junk3}},
-	side=any_side
+		all_models.junk2}},
+	side=any_side,
+	hit=hit_npc
 }
 
 function make_npc(p,v,src)
@@ -1012,12 +1032,6 @@ function make_npc(p,v,src)
 		laser_i=0,
 		fire=make_laser,
 		die=die_actor,
-		hit=function(self,dmg)
-			--self.hp-=dmg
-			if self.hp<=0 then
-				self:die()
-			end
-		end,
 		draw=draw_actor
 	}
 	-- instance
@@ -1065,6 +1079,8 @@ function make_laser(self)
 	-- laser colors
 	local c=self.side==good_side and 11 or 8
 	add(parts,{
+		-- laser owner
+		actor=self,
 		t=time_t+90,
 		acc=0.5,
 		pos=p,
