@@ -260,9 +260,9 @@ local all_models={
 	tie={
 		c=5,
 		-- collision radius
-		r=0.7,
+		r=1,
 		-- sphere 
-		s=0.7,
+		s=1,
 		wp={
 			dly=12,
 			pos={{0.7,-0.7,0.7},{-0.7,-0.7,0.7}},
@@ -568,11 +568,10 @@ function update_turret(self)
 	return true
 end
 
-local debug_vectors=false
+local debug_vectors=true
 function draw_actor(self,x,y,z,w)
 	draw_model(self.model,self.m,x,y,z,w)
 	-- debug
-	--[[
 	if debug_vectors then
  	if self.target then 
  		local c=12
@@ -581,7 +580,7 @@ function draw_actor(self,x,y,z,w)
  		end
  		local pos=v_clone(self.target.pos)
  		v_plus_v(pos,self.pos,-1)
-	 	draw_vector(self.m,self.pos,pos,c)
+	 	draw_vector(self.m,self.pos,pos,c,"tgt")
  	end
  	if self.avoid then
  		local m=self.m
@@ -596,7 +595,6 @@ function draw_actor(self,x,y,z,w)
  		draw_vector(m,self.pos,pos,2,"w")
  	end
  end
- ]]
 end
 function draw_vector(m,pos,v,c,s)
 	local x0,y0,z0,w=cam:project(pos[1],pos[2],pos[3])
@@ -897,8 +895,8 @@ function update_flying_npc(self)
 	-- too close/no force?
 	if d>0.25 then
 		-- ease in
-		acc=min(d/0.25,1.2)*self.acc
-		v_clamp(force,0.12)
+		-- acc=min(d/0.25,1.2)*self.acc
+		v_clamp(force,2*self.acc)
 		v_plus_v(pos,force)
 		v_plus_v(pos,self.pos,-1)
 		v_normz(pos)
@@ -920,7 +918,7 @@ function update_flying_npc(self)
 		local p=v_clone(self.target.pos)
 		v_plus_v(p,self.pos,-1)
 		-- in range?
-		if v_dot(p,p)<96 then
+		--if v_dot(p,p)<256 then
  		v_normz(p)
  		if v_dot(fwd,p)>0.95 then
  		-- must be in sight for some time
@@ -930,11 +928,11 @@ function update_flying_npc(self)
  				self:fire()
  			end
  			self.lock_t+=2
- 		end
+ 		--end
 		end
 	end
 	-- target memory
- self.lock_t=max(self.lock_t-4)
+ -- self.lock_t=max(self.lock_t-4)
 
 	return true
 end
@@ -1135,7 +1133,7 @@ function update_blt(self)
 	-- collision?
 	for _,a in pairs(actors) do
 		if a.model.r and band(a.side,self.side)==0 and sqr_dist(self.pos,a.pos)<a.model.r*a.model.r then
-			a:hit(self.dmg)
+			a:hit(self.dmg,self.actor)
 			make_flash(self.pos)
 			return false
 		end
@@ -1206,7 +1204,7 @@ function control_plyr(self)
 	end
 	
 	-- cam modes
-	if btnp(6) then
+	if btnp(0,1) then
 		cam_mode+=1
 		cam_mode%=3
 	end
