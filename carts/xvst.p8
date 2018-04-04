@@ -249,7 +249,12 @@ local all_models={
 		c=3
 	},
 	turret={
-		c=8
+		c=8,
+		wp={
+			dly=12,
+			pos={{-0.2,0.8,0.65},{0.2,0.8,0.65}},
+			n={{0,0,1},{0,0,1}}
+		}
 	},
 	xwing={
 		c=7,
@@ -578,6 +583,9 @@ function draw_actor(self,x,y,z,w)
 	draw_model(self.model,self.m,x,y,z,w)
 	-- debug
 	if debug_vectors then
+		if self.dist then
+			print(self.dist,x,y-8,7)
+		end
  	if self.target then 
  		local c=12
  		if band(self.side,self.target.side)==0 then
@@ -586,6 +594,12 @@ function draw_actor(self,x,y,z,w)
  		local pos=v_clone(self.target.pos)
  		v_plus_v(pos,self.pos,-1)
 	 	draw_vector(self.m,self.pos,pos,c,"tgt")
+ 	end
+ 	if self.follow then
+ 		local m=self.m
+ 		local pos=v_clone(self.follow)
+ 		o_x_v(m,pos)
+ 		draw_vector(m,self.pos,pos,10,"f")
  	end
  	if self.avoid then
  		local m=self.m
@@ -868,21 +882,25 @@ function update_flying_npc(self)
 	local m=self.m
 	m_x_v(m,pos)
 	-- forces
-	local force={0,0,0}
+	local force={acc*m[9],acc*m[10],acc*m[11]}
 	local can_fire=false
+	local fwd={m[9],m[10],m[11]}
 
 	if self.target then
 		-- friendly: formation flight
 		local target_pos={0,-4,-10}
 		-- enemy: get in sight
 		if band(self.target.side,self.side)==0 then
-			target_pos={0,0,-10}
+			target_pos={0,0,-15}
 			can_fire=true
 		end
-		v_plus_v(force,follow(pos,self.target,target_pos))
+		self.follow=follow(pos,self.target,target_pos)
+		v_plus_v(force,self.follow)
 	else
 		-- seek target
-		self.target=seek(self)
+		if self.side!=good_side then
+			self.target=seek(self)
+		end
 	end
 	-- nothing to track?
 	if not self.target then
@@ -896,7 +914,7 @@ function update_flying_npc(self)
 		-- debug
 		self.wander=nil
 	end
-	local avf=avoid(self,pos,8)
+	local avf=avoid(self,pos,16)
 	v_plus_v(force,avf)
 	
 	local d=v_dot(force,force)
@@ -904,10 +922,8 @@ function update_flying_npc(self)
 	self.dist=sqrt(d)
 	self.avoid=avf
 	-- too close/no force?
-	if d>0.25 then
-		-- ease in
-		-- acc=min(d/0.25,1.2)*self.acc
-		v_clamp(force,2*self.acc)
+	--if d>0.25 then
+		v_clamp(force,acc)
 		v_plus_v(pos,force)
 		v_plus_v(pos,self.pos,-1)
 		v_normz(pos)
@@ -916,11 +932,10 @@ function update_flying_npc(self)
 		local q=make_q_from_v({m[9],m[10],m[11]},pos)
 		q_x_q(self.q,q)
 		m=m_from_q(self.q)
-	end
-	-- move actor
-	local fwd={m[9],m[10],m[11]}
-	v_plus_v(self.pos,fwd,acc)
-
+	--end
+	-- move actor using force
+	v_plus_v(self.pos,force)
+	
 	m[13],m[14],m[15]=self.pos[1],self.pos[2],self.pos[3]
 	self.m=m
 
@@ -931,7 +946,8 @@ function update_flying_npc(self)
 		-- in range?
 		--if v_dot(p,p)<256 then
  		v_normz(p)
- 		if v_dot(fwd,p)>0.95 then
+	 	local fwd={m[9],m[10],m[11]}
+ 		if v_dot(fwd,p)>0.92 then
  		-- must be in sight for some time
  			if self.lock_t>45 then
  				self.lock_t=45
@@ -1395,7 +1411,7 @@ end
 
 -- play loop
 function game_screen:init()
-	game_mode=0
+	game_mode=1
 	time_t=0
 	parts={}
 	actors={}
@@ -1418,7 +1434,7 @@ function game_screen:update()
 			local p,v=make_rnd_pos_v(plyr,30)
 			local target
 			-- friendly npc?
-			if rnd()>0.8 then
+			if rnd()>0.5 then
 				target=make_npc(p,v,npc_xwing)
 				v_plus_v(p,v,-10)
 			end
@@ -1489,7 +1505,7 @@ function _update60()
 end
 
 function _draw()
-	cls()
+	cls(0)
 
 	cur_screen:draw()
 	
