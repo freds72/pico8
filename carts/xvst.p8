@@ -104,7 +104,7 @@ local cur_screen
 -- 0: space
 -- 1: surface
 -- 2: trenches
-local game_mode=0
+local game_mode=1
 local start_screen={
 	starting=false
 }
@@ -247,6 +247,9 @@ local all_models={
 	},
 	deathstar={
 		c=3
+	},
+	turret={
+		c=8
 	},
 	xwing={
 		c=7,
@@ -466,6 +469,8 @@ function m_inv_x_v(m,v)
 	v[3]=m[9]*x+m[10]*y+m[11]*z
 end
 
+local dither_pat=json_parse('[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]')
+
 local ground_colors={5,1,5,1}
 local ground_scale=4
 function draw_ground(self)
@@ -560,7 +565,7 @@ function update_turret(self)
  	self.m=m
  	
  	if abs(angle)<0.2 and self.fire_t<time_t then
- 		self:fire()
+ 		--self:fire()
  		self.fire_t=time_t+self.model.wp.dly
  	end
 	end
@@ -704,6 +709,11 @@ function draw_model(model,m,x,y,z,w)
 	draw_session_id+=1
 
 	color(model.c or 1)
+	
+	if w then
+		local d=lerp(1-smoothstep(w/4),1,#dither_pat)
+		fillp(dither_pat[flr(d)]+0b0.1)
+	end
 	-- sphere object?
 	if model.s then
 		circ(x,y,model.s*w)
@@ -750,6 +760,7 @@ function draw_model(model,m,x,y,z,w)
 			if(a[3]>0 and b[3]>0) line(a[1],a[2],b[1],b[2])
 		end
 	end
+	fillp()
 end
 
 function die_plyr(self)
@@ -969,11 +980,11 @@ function make_plyr(x,y,z)
 		end,
 		fire=make_laser,
 		die=die_plyr,
-		draw=function(self)
+		draw=function(self,x,y,z,w)
 			if cam_mode==1 then
 				return
 			end
-			draw_actor(self)
+			draw_model(self.model,self.m,x,y,z,w)
 		end,
 		update=function(self)
 			return true
