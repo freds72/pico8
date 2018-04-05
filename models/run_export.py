@@ -13,7 +13,7 @@ def call(args):
     #
     return exitcode, out, err
 
-file_list = ['deathstar','junk1','junk2','tie','xwing','title','turret']
+file_list = ['deathstar','junk1','junk2','tie','xwing','title','turret','trench1']
 s = "{:02x}".format(len(file_list))
 for blend_file in file_list:
     print("Exporting: {}.blend".format(blend_file))
