@@ -570,12 +570,39 @@ function update_turret(self)
  	self.m=m
  	
  	if abs(angle)<0.2 and self.fire_t<time_t then
- 		--self:fire()
+ 		self:fire()
  		self.fire_t=time_t+self.model.wp.dly
  	end
 	end
 	
 	return true
+end
+
+local trench_scale=6
+function make_trench(i)
+	local x,y,z=0,0,i*trench_scale
+	local t={
+		pos={x,y,z},
+		m=make_m(x,y,z),
+		side=no_side,
+		model=all_models.trench1,
+		update=function(self)
+			local dz=plyr.pos[3]-plyr.pos[3]%trench_scale
+			local z=i*trench_scale+dz
+			self.pos[3],self.m[15]=z,z
+			return true
+		end,
+		draw=draw_actor
+	}
+	add(actors,t)
+end
+function init_trench(n)
+	for i=-n,n do
+		make_trench(i)
+	end
+end
+function update_trench()
+	-- todo: spawn turrets
 end
 
 local debug_vectors=true
@@ -1188,6 +1215,7 @@ local turn_t=0
 local mousex,mousey=0,0
 local dist=0
 local sel_actor,sel_t=1,0
+local cam_rear=false
 function control_plyr(self)
 	local pitch,roll=0,0
 	
@@ -1235,15 +1263,25 @@ function control_plyr(self)
 		cam_mode+=1
 		cam_mode%=3
 	end
+	-- behind look?
+	cam_rear=false
+	if btn(2,1) then
+		cam_rear=true
+	end
 	
 	if cam_mode==0 then
-		local m=m_from_q(plyr.q)
-		cam.pos=m_x_xyz(m,0,2,-8)
-		v_plus_v(cam.pos,plyr.pos)
+		cam.pos=m_x_xyz(plyr.m,0,2,-8)
+		v_plus_v(cam.pos,plyr.pos,-1)
 		cam.q=q_clone(plyr.q)
 	elseif cam_mode==1 then
 		cam.pos=v_clone(plyr.pos)
-		cam.q=q_clone(plyr.q)
+		if cam_rear==true then
+			local q=q_clone(plyr.q)
+			q_x_q(q,make_q(v_up,0.5))
+			cam.q=q
+		else
+			cam.q=q_clone(plyr.q)
+		end
 	else
 		local x,y=stat(32),stat(33)
 		local dx,dy=mousex-x,mousey-y
@@ -1411,14 +1449,18 @@ end
 
 -- play loop
 function game_screen:init()
-	game_mode=1
+	game_mode=2
 	time_t=0
 	parts={}
 	actors={}
 	npc_count=0
 	plyr=make_plyr(0,0,0)
 	
-	init_ground()
+	if game_mode==1 then
+		init_ground()
+	elseif game_mode==2 then
+		init_trench(8)
+	end
 end
 
 function game_screen:update()
@@ -1448,6 +1490,8 @@ function game_screen:update()
 		end
 	elseif game_mode==1 then
 		update_ground()
+	elseif game_mode==2 then
+		update_trench()
 	end
 
 	zbuf_filter(actors)
@@ -1490,6 +1534,9 @@ function game_screen:draw()
 		local p=(plyr.acc+plyr.boost)/(0.2)
 		rectfill(82,120,82+22*p,123,9)
 		
+		if cam_rear==true then
+			print("rear view",48,12,7)
+		end
 	end
 
 end
@@ -1642,4 +1689,4 @@ bbbc01040501555601a8a901999a012425019297017b7c010c0d018f9001778501434401a0a101af
 28017c7d01343501b7b801808101030401b3b4015859018283011e1f012f30019a9b01061f201d1d101f1886958d829a8d869596829a968b9a8d869e8d8b9a96869e967a958d759a8d7a9596759a967e9a8d7a9e8d7e9a967a9e969080909080707080707080908da08d8da07373a07373a08d0f010402030401030404060705
 070407090a08030405080b01080406030c0909040e0f100d0b04101213110f04131516140b041114170d1004120f181515042224232111041b211d1912041d231f1c13041f24201e15041b1a20220f6969808080a09797809769806997806969808080a097978097698069978080a080a083808083606083808083a024030100
 0102000204000403000703000408000807000507000806000605000105000602000b0900090a000a0c000c0b000f0b000c1000100f000d0f00100e000e0d00090d000e0a00111200111400111500121300121600131400131700141800151600151800161700171800071f1d10190e130308e000e0e000202000202000e0e0c0
-e0e0c02020c02020c0e003010402060401010401050903030406080a070380a080608080a080800a010200010400010500020300020600030400030700040800050600070800
+e0e0c02020c02020c0e003010402060401010401050903030406080a070380a080608080a080800a01020001040001050002030002060003040003070004080005060007080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
