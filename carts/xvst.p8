@@ -479,14 +479,26 @@ local dither_pat=json_parse('[0b1111111111111111,0b0111111111111111,0b0111111111
 local ground_colors={5,1,5,1}
 local ground_scale=4
 function draw_ground(self)
+	if(cam.pos[2]<0) return
+	
 	local v={}
 	local x,z=plyr.pos[1],plyr.pos[3]
 	local dx,dy=x%ground_scale,z%ground_scale
 	
 	local c=1
+	local imax=game_mode==2 and 1 or 0
 	for j=-16,16,ground_scale do
-		for i=-16,16,ground_scale do
-			local ii,jj=i-dx+x,j-dy+z
+		local jj=j-dy+z
+		for i=-16,-1,ground_scale do
+			local ii=i-dx+x
+			local x,y,z=cam:project(ii,0,jj)
+			if z>0 then
+				pset(x,y,ground_colors[flr(ii+jj)%2+1])
+			end
+			c+=1
+		end
+		for i=imax,16,ground_scale do
+			local ii=i-dx+x
 			local x,y,z=cam:project(ii,0,jj)
 			if z>0 then
 				pset(x,y,ground_colors[flr(ii+jj)%2+1])
@@ -496,9 +508,14 @@ function draw_ground(self)
 	end
 end
 local turrets={}
-function make_turret(i,j)
-	local x,y,z=i*ground_scale,0,j*ground_scale
+function make_turret(i,j,y,scalex,scaley)
+	scalex,scaley=scalex or ground_scale,scaley or ground_scale
+	
+	local x,z=i*scalex,j*scaley
+	y=y or 0
 	local t={
+		scalex=scalex,
+		scaley=scaley,
 		pos={x,y,z},
 		m=make_m(x,y,z),
 		model=all_models.turret,
@@ -519,7 +536,11 @@ function make_junk(i,j,model)
 		m=make_m(x,y,z),
 		side=any_side,
 		model=model,
-		update=function() return true end,
+		update=function(self,i,j)
+			self.pos[1],self.pos[3]=i*ground_scale,j*ground_scale
+			local m=self.m
+		m[13],m[15]=self.pos[1],self.pos[3]
+		end,
 		draw=draw_actor
 	}
 	turrets[i+j*128]=t
@@ -559,28 +580,30 @@ function update_ground()
 	end
 end
 
-function update_turret(self)
+function update_turret(self,i,j)
+	self.pos[1],self.pos[3]=i*self.scalex,j*self.scaley
 	local dx,dy=self.pos[1]-plyr.pos[1],self.pos[3]-plyr.pos[3]
 	-- in range?
+	local angle,m=1,self.m
 	if dx*dx+dy*dy<64 then
- 	local angle=atan2(dx,dy)-0.25
- 	local q=make_q(v_up,angle)
- 	local m=m_from_q(q)
- 	m[13],m[14],m[15]=self.pos[1],0,self.pos[3]
- 	self.m=m
- 	
+		angle=atan2(dx,dy)-0.25
+		local q=make_q(v_up,angle)
+		m=m_from_q(q)
+		self.m=m
+	end
+	m[13],m[14],m[15]=self.pos[1],self.pos[2],self.pos[3]
+	
  	if abs(angle)<0.2 and self.fire_t<time_t then
- 		self:fire()
+ 		self:fire(plyr.pos)
  		self.fire_t=time_t+self.model.wp.dly
  	end
-	end
 	
 	return true
 end
 
 local trench_scale=6
 function make_trench(i)
-	local x,y,z=0,0,i*trench_scale
+	local x,y,z=0,-3,i*trench_scale
 	local t={
 		pos={x,y,z},
 		m=make_m(x,y,z),
@@ -600,9 +623,31 @@ function init_trench(n)
 	for i=-n,n do
 		make_trench(i)
 	end
+	for i=-1,1 do
+		local ii=(i+128)%128
+		for j=0,127 do
+			local r=rnd()
+			if r>0.9 then
+				make_turret(ii,j,-6,2,4)
+			end
+		end
+	end
 end
 function update_trench()
-	-- todo: spawn turrets
+	ground_actors={}
+	local i0,j0=flr(plyr.pos[1]/2),flr(plyr.pos[3]/4)
+	for i=i0-2,i0+2 do
+		local cx=(i%128+128)%128
+		for j=j0-5,j0+5 do
+			local cy=(j%128+128)%128
+			local t=turrets[cx+cy*128]
+			if t then
+				t:update(i,j)
+				add(drawables,t)
+				add(ground_actors,t)
+			end
+		end
+	end
 end
 
 local debug_vectors=true
@@ -1102,7 +1147,7 @@ function make_cam(f)
 		q=make_q(v_fwd,0),
 		update=function(self)
 			self.m=m_from_q(self.q)
-			m_inv(self.m)		
+			m_inv(self.m)
 		end,
 		project=function(self,x,y,z)
 			-- world to view
@@ -1120,13 +1165,22 @@ function make_cam(f)
 	}
 end
 
-function make_laser(self)
+function make_laser(self,target)
 	local wp=self.model.wp
 	local i=self.laser_i%#wp.pos+1
+	-- rebase laser in world space
 	local p=v_clone(wp.pos[i])
 	m_x_v(self.m,p)
-	local v=v_clone(wp.n[i])
-	o_x_v(self.m,v)
+	-- direction override?
+	local v
+	if target then
+		v=v_clone(target)
+		v_plus_v(v,p,-1)
+		v_normz(v) 
+	else
+		v=v_clone(wp.n[i])
+		o_x_v(self.m,v)
+	end
 	self.laser_i+=1
 	-- laser colors
 	local c=self.side==good_side and 11 or 8
@@ -1271,7 +1325,7 @@ function control_plyr(self)
 	
 	if cam_mode==0 then
 		cam.pos=m_x_xyz(plyr.m,0,2,-8)
-		v_plus_v(cam.pos,plyr.pos,-1)
+		--v_plus_v(cam.pos,plyr.pos,-1)
 		cam.q=q_clone(plyr.q)
 	elseif cam_mode==1 then
 		cam.pos=v_clone(plyr.pos)
@@ -1502,10 +1556,10 @@ function game_screen:draw()
 	if game_mode==0 then
 		draw_deathstar()
 		draw_stars()
-	elseif game_mode==1 then
+	else
 		draw_ground()
 	end
-
+	
 	zbuf_draw()
 		
 	-- cockpit
