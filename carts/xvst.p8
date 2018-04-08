@@ -251,6 +251,7 @@ local all_models={
 	turret={
 		c=8,
 		wp={
+			dmg=1,
 			dly=12,
 			pos={{-0.2,0.8,0.65},{0.2,0.8,0.65}},
 			n={{0,0,1},{0,0,1}}
@@ -259,7 +260,14 @@ local all_models={
 	xwing={
 		c=7,
 		r=0.8,
+		proton_wp={
+			dmg=4,
+			dly=60,
+			pos={0,-0.4,1.5},
+			n={0,0,1}
+		},
 		wp={
+		 dmg=1,
 			dly=8,
    pos={{2,1,1.6},{2,-1,1.6},{-2,-1,1.6},{-2,1,1.6}},
    n={}
@@ -270,6 +278,7 @@ local all_models={
 		-- collision radius
 		r=1,
 		wp={
+			dmg=2,
 			dly=24,
 			pos={{0.7,-0.7,0.7},{-0.7,-0.7,0.7}},
 			n={{0,0,1},{0,0,1}}
@@ -1030,8 +1039,9 @@ function update_flying_npc(self)
 	v_plus_v(pos,self.pos,-1)
 	v_normz(pos)
 
+ -- good looking but a bit unstable
 	--m=make_m_toward(pos,self.target and {self.target.m[5],self.target.m[6],self.target.m[7]} or {m[5],m[6],m[7]})
-m=make_m_toward(pos,{m[5],m[6],m[7]})	
+ m=make_m_toward(pos,{m[5],m[6],m[7]})	
 	-- move actor using force
 	v_plus_v(self.pos,force)
 	
@@ -1086,6 +1096,8 @@ function make_plyr(x,y,z)
 		model=all_models.xwing,
 		pos={x,y,z},
 		q=make_q({0,0,1},0),
+		roll=0,
+		pitch=0,
 		laser_i=0,
 		fire_t=0,
 		side=good_side,
@@ -1094,6 +1106,7 @@ function make_plyr(x,y,z)
 			screen_shake(rnd(),rnd(),2)
 		end,
 		fire=make_laser,
+		fire_proton=make_proton,
 		die=die_plyr,
 		draw=function(self,x,y,z,w)
 			if cam_mode==1 then
@@ -1220,9 +1233,34 @@ function make_laser(self,target)
 		u=v,
 		c=c,
 		side=self.side,
-		dmg=1,
+		dmg=wp.dmg,
 		update=update_blt,
 		draw=draw_line_part})
+	make_flash(p,c)
+end
+
+function make_proton(self,target)
+	local wp=self.model.proton_wp
+	-- rebase laser in world space
+	local p=v_clone(wp.pos)
+	m_x_v(self.m,p)
+	-- fire direction in world space
+	v=v_clone(wp.n)
+	o_x_v(self.m,v)
+
+	add(parts,{
+		-- proton owner
+		actor=self,
+		target=target,
+		t=time_t+90,
+		duration=0,
+		acc=0.6,
+		pos=p,
+		u=v,
+		side=self.side,
+		dmg=wp.dmg,
+		update=update_proton,
+		draw=draw_proton_part})
 	make_flash(p,c)
 end
 function make_flash(p,c)
@@ -1236,6 +1274,18 @@ function make_flash(p,c)
 		draw=draw_circ_part
 	})
 end
+function make_trail(p,c)
+	return add(parts,{
+		t=time_t+8,
+		c=c or 7,
+		r=0.2,
+		dr=-0.02,
+		pos=v_clone(p),
+		update=update_part,
+		draw=draw_circ_part
+	})
+end
+
 function make_blast(p)
 	return add(parts,{
 		t=time_t+8,
@@ -1277,6 +1327,29 @@ function update_blt(self)
 	return true
 end
 
+ function update_proton(self)
+ if time_t%2==0 then
+ 	make_trail(self.pos,10)
+ end
+ -- update orientation to match target
+ if self.target and not self.target.disabled then
+		-- old enough?
+		local v=v_clone(self.target.pos)
+		v_plus_v(v,self.pos,-1)
+		-- too close?
+		if v_dot(v,v)>0.25 then
+			v_normz(v)	 
+ 		-- within cone?
+ 		if v_dot(self.u,v)>0.6 then
+ 			v_plus_v(self.u,v,smoothstep(self.duration/60))
+ 			v_normz(self.u)	 
+ 		end
+ 	end
+ end
+ self.duration+=1
+ return update_blt(self)		
+end
+		
 function draw_line_part(self,x0,y0,z0,w0)
 	local x1,y1,z1,w1=cam:project(self.pos[1]+self.u[1],self.pos[2]+self.u[2],self.pos[3]+self.u[3])
 	if z1>0 then
@@ -1290,6 +1363,13 @@ end
 
 function draw_blast_part(self,x,y,z,w)
 	circfill(x,y,self.r*w,7)
+end
+function draw_proton_part(self,x,y,z,w)
+	-- light effect
+	fillp(dither_pat[mid(#dither_pat-flr(w/2),1,#dither_pat)])
+	circfill(x,y,(0.5+rnd(1))*w,8)
+	fillp()
+	circfill(x,y,(0.1+0.2*rnd())*w,10)
 end
 
 local turn_t=0
@@ -1317,9 +1397,13 @@ function control_plyr(self)
 	end
 	
 	if pitch!=0 then
-		local q=make_q({1,0,0},-pitch/128)
-		q_x_q(plyr.q,q)
+	 self.pitch-=pitch/256
+	 self.pitch=mid(self.pitch,-1/196,1/196)
 	end
+	self.pitch*=0.9
+	local q=make_q({1,0,0},self.pitch)
+	q_x_q(plyr.q,q)
+	
 	-- update pos
 	local m=m_from_q(plyr.q)
 	v_plus_v(plyr.pos,{m[9],m[10],m[11]},plyr.acc+plyr.boost)
@@ -1385,6 +1469,16 @@ function control_plyr(self)
 	
 	if btnp(5) then
 		plyr:fire()
+	end
+	
+	-- lock
+	if btnp(4) then
+		-- find target
+		for _,a in pairs(actors) do
+			if a!=plyr then
+				plyr:fire_proton(a)
+			end
+		end		
 	end
 end
 
@@ -1509,7 +1603,9 @@ function bench_screen:init()
 	actors={}
 	for i=0,1 do
 		for j=0,1 do
-			add(actors,make_junk(2*i,2*j,all_models.turret))
+			local a=make_junk(2*i,2*j,all_models.junk1)
+			a.update=function() return true end
+			add(actors,a)
 		end
 	end
 end
@@ -1606,6 +1702,45 @@ function game_screen:draw()
 	-- cockpit
 	if cam_mode==1 then
 	 if cam_rear==false then
+	  pal()
+	  palt()
+	  palt(4,true)
+	  palt(5,true)
+	  palt(6,true)
+	  
+	  -- draw locks
+	  local min_dist,target=32000	  
+ 		for _,a in pairs(actors) do
+ 			if a!=plyr then
+ 				local d=sqr_dist(a.pos,plyr.pos)
+ 				if d<min_dist then
+ 					min_dist=d
+ 					target=a
+ 				end
+ 			end
+ 		end
+ 		if target then
+ 			local x,y,z,w=cam:project(target.pos[1],target.pos[2],target.pos[3])
+			 if z>0 then
+			 	if y>96 then
+	 		  palt(6,false)
+			 		pal(6,8)
+			 	elseif y<32 then
+	 		  palt(4,false)
+			 		pal(4,8)
+			 	end
+			 	-- todo: fix
+			 	x-=64
+			 	y+=64
+			 	x*=11/64
+			 	y*=11/64
+			 	x=64+x
+			 	y=115-y
+			 	pset(x,y,8)
+			 	
+			 end
+ 		end		
+	  
  		palt(0,false)
  		palt(14,true)
  		spr(64,0,32,8,4)
@@ -1615,7 +1750,7 @@ function game_screen:draw()
  		spr(72,0,96,8,4)
  		spr(72,64,96,8,4,true)
  		-- radar
- 		draw_radar(64,112,12,10)
+ 		--draw_radar(64,112,12,32)
  		-- hp
  		local x=23
  		for i=1,plyr.hp do
@@ -1635,6 +1770,8 @@ function game_screen:draw()
  		rectfill(0,64,127,127,0)
  		rect(19,64,108,125,1)
  	end
+ 	pal()
+ 	palt()
  end
 
 end
@@ -1736,30 +1873,30 @@ eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee11000000010010000000000000000000000000000
 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee100000000100100000000000000000000000000000
 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee11000000001001000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1100000000010010000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee10000000000100100000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1100000000001001000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee110000000000010010000000000000000000000000000000000
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee11000000000000100100000000000000000000000000000000000
-1eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee100000000000001001000000000000000000000000000000000000
-01eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee11000000000000010010000000000000000000000000000000000000
-001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1100000000000000100100000000000000000000000000000000000000
-0001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee110000000000000001001000000000000000000000000000000000000000
-00001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1000000000000000010010000000000000000000000000000000000000000
-000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee110000000000000000100100000000000000000000000000000000000000000
-0000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1000000000000000001001000000000000000000000000000000000000000000
-00000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000010010000000000000000000000000000000000000000000
-000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000100100000000000000000000000000000000000000000000
-0000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000001001000111111111111111111111111100000000000000000
-00000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000010010001000000000000000000000000010000000000000000
-000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000100100001000000000000000000000000010000000000000000
-0000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000001001000001000000000000000000000000010000000000000000
-00000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000010010000001000000000000000000000000010000000000000000
-000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000100100000001000000000000000000000000010000000000000000
-0000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000001001000000001000000000000000000000000010000000000000000
-00000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee111111e0000000010010000000000111111111111111111111111100000000000000000
-000000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1eeeee1e0000000100100000000000000000000000000000000000000000000000000000
-0000000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1eeeeeeee0000001001000000000000000000000000000000000000000000000000000000
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1100000000010010000000000000000000001111111111
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1000000000010010000000000000000000001eeeeee3444
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee110000000000100100000000000000000000001eeeeeee344
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee11000000000001001000000000000000000000001eeeeeeee34
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1100000000000010010000000000000000000000001eeeeeeeee3
+1eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee10000000000000100100000000000000000000000001eeeeeeeeee
+01eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1100000000000001001000000000000000000000000001eeeeeeeeee
+001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee110000000000000010010000000000000000000000000001eeeeeeeeee
+0001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee110000000000000001001000000000000000000000000000013eeeeeeeee
+00001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee10000000000000000100100000000000000000000000000000153eeeeeeee
+000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee11000000000000000010010000000000000000000000000000001553eeeeeee
+0000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1000000000000000001001000000000000000000000000000000015553eeeeee
+00000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000010010000000000000000000000000000000015553eeeeee
+000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000000000000010010000000000000000000000000000000001553eeeeeee
+0000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000010010001111111111111111111111111000000153eeeeeeee
+00000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000010010001000000000000000000000000010000013eeeeeeeee
+000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000000000010010000100000000000000000000000001000001eeeeeeeeee
+0000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000000000100100000100000000000000000000000001000001eeeeeeeeee
+00000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000000001001000000100000000000000000000000001000001eeeeeeeeee
+000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000000010010000000100000000000000000000000001000001eeeeeeeee3
+0000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000000100100000000100000000000000000000000001000001eeeeeeee36
+00000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee111111e000000001001000000000011111111111111111111111110000001eeeeeee366
+000000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1eeeee1e000000010010000000000000000000000000000000000000000001eeeeee3666
+0000000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1eeeeeeee0000001001000000000000000000000000000000000000000000001111111111
 __map__
 08090f100c1f131e1f0c1d1b80a080749e80699780628c806080806274806969807462808060808c62809769809e7480a080809e8c809797808c9e807398806d96806b90806d8a80738880798a807b90807996807683808a8380a0808000001b0201010302010403010504010605010706010807010908010a09010b0a010c0b
 010d0c010e0d010f0e01100f01011001121101131201141301151401161501171601181701111801051901191a011a1b01051520191603188080a0698097608080698069808060978069a0808097809780a0a069a09760a08069a06980a06097a069a0a08097a09780b09372b08e6db08072b07280b06d8eb07293b0808eb08e
