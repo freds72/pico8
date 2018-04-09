@@ -773,12 +773,9 @@ function unpack_models()
 	local n=unpack_int()
 	for m=1,n do
  	local name=unpack_string()
- 	printh("-------------------------")
- 	printh("unpack:"..name)
  	local model={}
  	-- vertices
  	n=unpack_int()
- 	printh("verts:"..n)
  	model.v={}
  	for i=1,n do
  		local v={unpack_float(),unpack_float(),unpack_float()}
@@ -786,7 +783,6 @@ function unpack_models()
  	end	
  	-- faces
  	n=unpack_int()
- 	printh("faces:"..n)
  	model.f={}
  	for i=1,n do
  		local f={unpack_int(),unpack_int()}
@@ -797,17 +793,14 @@ function unpack_models()
  	end
  	-- normals
  	n=unpack_int()
- 	printh("normz:"..n)	
  	model.n={}
  	for i=1,n do
  		local v={unpack_float(),unpack_float(),unpack_float()}
- 		printh("n["..i.."]:"..v[1].." "..v[2].." "..v[3])
  		add(model.n,v)
  	end
  	
  	-- edges
  	n=unpack_int()
- 	printh("edges:"..n)	
  	model.e={}
  	for i=1,n do
  		local e={
@@ -829,14 +822,10 @@ function draw_model(model,m,x,y,z,w)
 	draw_session_id+=1
 
 	color(model.c or 1)
-	
+	-- camera distance ditheting
 	if w then
 		local d=lerp(1-smoothstep(w/2),1,#dither_pat)
 		fillp(dither_pat[flr(d)]+0b0.1)
-	end
-	-- sphere object?
-	if model.s then
-		circ(x,y,model.s*w)
 	end
 	
 	-- cam pos in object space
@@ -919,7 +908,7 @@ end
 
 function die_actor(self)
 	make_blast(self.pos)
-	self.disable=true
+	self.disabled=true
 	npc_count-=1
 	del(actors,self)
 end
@@ -948,14 +937,15 @@ function avoid(self,pos,dist)
 	end
 	return v
 end
-function seek(self)
+function seek(self,r)
 	local fwd={self.m[9],self.m[10],self.m[11]}
+	local d2=r*r
 	for _,a in pairs(actors) do
 		if band(a.side,self.side)==0 then
 			local p=v_clone(a.pos)
 			v_plus_v(p,self.pos,-1)
 			-- within range?
-			if v_dot(p,p)<16*16 then
+			if v_dot(p,p)<d2 then
 				v_normz(p)
 				-- within cone?
 				if v_dot(fwd,p)>0.5 then
@@ -1007,14 +997,14 @@ function update_flying_npc(self)
 	else
 		-- search for target
 		if self.side!=good_side then
-			self.target=seek(self)
+			self.target=seek(self,24)
 		end
 	end
 	-- nothing to track?
 	if not self.target then
 		if not self.wander or self.wander_t<time_t then
 			-- pick a random location
-			self.wander=wander(self)			
+			self.wander=wander(self)
 			self.wander_t=time_t+120+rnd(60)
 		end
 		v_plus_v(force,follow(pos,self,self.wander))
@@ -1201,6 +1191,17 @@ function make_cam(f)
 			-- view to screen
  			local w=self.focal/v[3]
  			return 64+v[1]*w,64-v[2]*w,v[3],w
+		end,
+		project_v=function(self,v,x0,y0)
+			-- world to view
+			v_plus_v(v,self.pos,-1)
+			m_x_v(self.m,v)
+			-- distance to camera plane
+			v[3]-=1
+			if(v[3]<0.001) v[3]=-1 return
+			-- view to screen
+ 		local w=self.focal/v[3]
+ 		v[1],v[2],v[4]=x0+v[1]*w,y0-v[2]*w,w
 		end
 	}
 end
@@ -1406,7 +1407,8 @@ function control_plyr(self)
 	
 	-- update pos
 	local m=m_from_q(plyr.q)
-	v_plus_v(plyr.pos,{m[9],m[10],m[11]},plyr.acc+plyr.boost)
+	local fwd={m[9],m[10],m[11]}
+	v_plus_v(plyr.pos,fwd,plyr.acc+plyr.boost)
 	-- special cases
 	if game_mode==1 then
 		plyr.pos[2]=mid(plyr.pos[2],1,4)
@@ -1471,15 +1473,34 @@ function control_plyr(self)
 		plyr:fire()
 	end
 	
-	-- lock
-	if btnp(4) then
-		-- find target
-		for _,a in pairs(actors) do
-			if a!=plyr then
-				plyr:fire_proton(a)
-			end
-		end		
+	-- find nearest enemy (360)
+	local min_dist,target=32000
+	for _,a in pairs(actors) do
+		if band(a.side,plyr.side)==0 then
+ 		local d=sqr_dist(a.pos,plyr.pos)
+ 		if d<min_dist then
+ 			min_dist=d
+ 			target=a
+ 		end
+		end
 	end
+	-- is lock stable?
+	local is_locked=false
+	if target and pitch==0 and roll==0 then
+		local p=v_clone(target.pos)
+		v_plus_v(p,plyr.pos,-1)
+		if v_dot(p,fwd)>0.8 then
+			plyr.target=target
+			plyr.lock_t+=1
+		end
+	else
+		target=nil
+		plyr.lock_t=0
+	end
+	if plyr.lock_t>30 and btnp(4) then
+		plyr:fire_proton(target)
+	end
+	
 end
 
 local ds_m=make_m()
@@ -1709,38 +1730,31 @@ function game_screen:draw()
 	  palt(6,true)
 	  
 	  -- draw locks
-	  local min_dist,target=32000	  
- 		for _,a in pairs(actors) do
- 			if a!=plyr then
- 				local d=sqr_dist(a.pos,plyr.pos)
- 				if d<min_dist then
- 					min_dist=d
- 					target=a
- 				end
- 			end
- 		end
- 		if target then
- 			local x,y,z,w=cam:project(target.pos[1],target.pos[2],target.pos[3])
-			 if z>0 then
-			 	if y>96 then
+ 		if plyr.target then
+ 			local p=v_clone(plyr.target.pos)
+ 			cam:project_v(p,64,115)
+			 if plyr.lock_t>30 then
+					if time_t%2==0 then
+	 		  palt(6,false)
+						palt(5,false)
+						palt(4,false)
+			 		pal(6,8)
+			 		pal(5,8)
+						pal(4,8)
+		 		end
+			 elseif v[3]>0 then
+			 	if v[2]>115 then
 	 		  palt(6,false)
 			 		pal(6,8)
-			 	elseif y<32 then
-	 		  palt(4,false)
-			 		pal(4,8)
+			 	elseif v[2]<115 then
+						palt(4,false)
+						pal(4,8)
 			 	end
 			 	-- todo: fix
-			 	x-=64
-			 	y+=64
-			 	x*=11/64
-			 	y*=11/64
-			 	x=64+x
-			 	y=115-y
-			 	pset(x,y,8)
-			 	
+			 	pset(v[1],v[2],8)
 			 end
- 		end		
-	  
+ 		end
+	 
  		palt(0,false)
  		palt(14,true)
  		spr(64,0,32,8,4)
