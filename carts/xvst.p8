@@ -1192,7 +1192,8 @@ function make_cam(f)
  			local w=self.focal/v[3]
  			return 64+v[1]*w,64-v[2]*w,v[3],w
 		end,
-		project_v=function(self,v,x0,y0)
+		project_v=function(self,v,x0,y0,f)
+		f=f or self.focal
 			-- world to view
 			v_plus_v(v,self.pos,-1)
 			m_x_v(self.m,v)
@@ -1200,7 +1201,7 @@ function make_cam(f)
 			v[3]-=1
 			if(v[3]<0.001) v[3]=-1 return
 			-- view to screen
- 		local w=self.focal/v[3]
+ 		local w=f/v[3]
  		v[1],v[2],v[4]=x0+v[1]*w,y0-v[2]*w,w
 		end
 	}
@@ -1475,26 +1476,24 @@ function control_plyr(self)
 	
 	-- find nearest enemy (360)
 	local min_dist,target=32000
+	-- is lock stable?
 	for _,a in pairs(actors) do
 		if band(a.side,plyr.side)==0 then
- 		local d=sqr_dist(a.pos,plyr.pos)
- 		if d<min_dist then
- 			min_dist=d
- 			target=a
- 		end
+			local d=sqr_dist(a.pos,plyr.pos)
+			if d<min_dist then
+				min_dist=d
+				target=a
+			end
 		end
 	end
-	-- is lock stable?
-	local is_locked=false
+	plyr.target=target
 	if target and pitch==0 and roll==0 then
 		local p=v_clone(target.pos)
 		v_plus_v(p,plyr.pos,-1)
 		if v_dot(p,fwd)>0.8 then
-			plyr.target=target
 			plyr.lock_t+=1
 		end
-	else
-		target=nil
+else
 		plyr.lock_t=0
 	end
 	if plyr.lock_t>30 and btnp(4) then
@@ -1729,12 +1728,15 @@ function game_screen:draw()
 	  palt(5,true)
 	  palt(6,true)
 	  
+	  rectfill(
+	  	64-11,115-11,
+	  	64+11,115+11,3)
 	  -- draw locks
  		if plyr.target then
- 			local p=v_clone(plyr.target.pos)
- 			cam:project_v(p,64,115)
+ 			local v=v_clone(plyr.target.pos)
+ 			cam:project_v(v,64,115,11)
 			 if plyr.lock_t>30 then
-					if time_t%2==0 then
+					if time_t%4>1 then
 	 		  palt(6,false)
 						palt(5,false)
 						palt(4,false)
