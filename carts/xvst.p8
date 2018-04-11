@@ -1523,18 +1523,23 @@ end
 function draw_ag_radar(x,y,r,rng)
 	local objs=game_mode==1 and ground_actors or actors
 	-- get angle dir
-	local angle=atan2(plyr.m[9],plyr.m[11])
+	local angle=atan2(plyr.m[9],plyr.m[11])+0.5
 	local c,s=cos(angle),-sin(angle)
 	-- draw grid
-	local dx,dy=c,s
-	local x0,y0,x1,y1=3*dy,3*dx,3*dy,-3*dx
+	local scale=6
+	local x0,y0=x-abs(plyr.pos[1]%scale)-6*c,y+abs(plyr.pos[3]%scale)+6*s
 	color(3)
-	for i=-3,3 do
-		line(x+x0,y+y0,x+x1,y+y1)
-		x0+=c
-		y0+=s
-		x1+=c
-		y1+=s
+	for i=1,4 do
+		line(x0-r*s,y0-r*c,x0+r*s,y0+r*c)
+		x0+=scale*c
+		y0-=scale*s
+	end
+	local x0,y0=x-abs(plyr.pos[1]%scale)+6*c,y+abs(plyr.pos[3]%scale)-6*s
+	color(11)
+	for i=1,4 do
+		line(x0+r*c,y0-r*s,x0-r*c,y0+r*s)
+		x0-=scale*s
+		y0-=scale*c
 	end
 	-- radar dots
 	for _,a in pairs(objs) do
@@ -1777,7 +1782,9 @@ function game_screen:draw()
 	if cam_mode==1 then
 	 if cam_rear==false then
 	  
-	 
+ 		-- radar
+ 		draw_ag_radar(64,115,22,16)
+
  		palt(0,false)
  		palt(14,true)
  		spr(64,0,32,8,4)
@@ -1786,8 +1793,7 @@ function game_screen:draw()
  		spr(8,64,64,8,4,true)
  		spr(72,0,96,8,4)
  		spr(72,64,96,8,4,true)
- 		-- radar
- 		--draw_radar(64,112,12,32)
+ 		
  		-- hp
  		local x=23
  		for i=1,plyr.hp do
