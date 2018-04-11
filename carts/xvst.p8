@@ -354,6 +354,19 @@ function v_plus_v(v,dv,scale)
 	v[2]+=scale*dv[2]
 	v[3]+=scale*dv[3]
 end
+function in_cone(p,t,fwd,angle,rng)
+	local v=v_clone(t)
+	v_plus_v(v,p,-1)
+	-- close enough?
+	if v_dot(v,v)<rng*rng then
+		v_normz(v)
+		-- in cone?
+		return v_dot(fwd,v)>angle
+	end
+	return false
+end
+
+-- matrix functions
 function m_x_v(m,v)
 	local x,y,z=v[1],v[2],v[3]
 	v[1],v[2],v[3]=m[1]*x+m[5]*y+m[9]*z+m[13],m[2]*x+m[6]*y+m[10]*z+m[14],m[3]*x+m[7]*y+m[11]*z+m[15]
@@ -943,19 +956,10 @@ function seek(self,r)
 	local fwd={self.m[9],self.m[10],self.m[11]}
 	local d2=r*r
 	for _,a in pairs(actors) do
-		if band(a.side,self.side)==0 then
-			local p=v_clone(a.pos)
-			v_plus_v(p,self.pos,-1)
-			-- within range?
-			if v_dot(p,p)<d2 then
-				v_normz(p)
-				-- within cone?
-				if v_dot(fwd,p)>0.5 then
-				 -- avoid loops
-				 if a.target!=self then
-						return a
-					end
-				end
+		if band(a.side,self.side)==0 and in_cone(self.pos,a.pos,fwd,0.5,r) then
+			 -- avoid loops
+			if a.target!=self then
+				return a
 			end
 		end
 	end
@@ -1041,23 +1045,15 @@ function update_flying_npc(self)
 	self.m=m
 
 	-- fire solution?
-	if can_fire and self.fire_t<time_t then
-		local p=v_clone(self.target.pos)
-		v_plus_v(p,self.pos,-1)
-		-- in range?
-		--if v_dot(p,p)<256 then
- 		v_normz(p)
-	 	local fwd={m[9],m[10],m[11]}
- 		if v_dot(fwd,p)>0.92 then
+	local fwd={m[9],m[10],m[11]}
+	if can_fire and self.fire_t<time_t and in_cone(self.pos,self.target.pos,fwd,0.92,24) then
  		-- must be in sight for some time
- 			if self.lock_t>45 then
- 				self.lock_t=45
- 				self.fire_t=time_t+self.model.wp.dly
- 				self:fire(self.target.pos)
- 			end
- 			self.lock_t+=2
- 		--end
-		end
+ 		if self.lock_t>45 then
+ 			self.lock_t=45
+ 			self.fire_t=time_t+self.model.wp.dly
+ 			self:fire(self.target.pos)
+ 		end
+ 		self.lock_t+=2
 	end
 	-- target memory
  -- self.lock_t=max(self.lock_t-4)
@@ -1340,18 +1336,18 @@ end
 		-- old enough?
 		local v=v_clone(self.target.pos)
 		v_plus_v(v,self.pos,-1)
-		-- too close?
+		-- not too close?
 		if v_dot(v,v)>0.25 then
-			v_normz(v)	 
+			v_normz(v)
  		-- within cone?
  		if v_dot(self.u,v)>0.6 then
  			v_plus_v(self.u,v,smoothstep(self.duration/60))
- 			v_normz(self.u)	 
+ 			v_normz(self.u)	
  		end
  	end
  end
  self.duration+=1
- return update_blt(self)		
+ return update_blt(self)
 end
 		
 function draw_line_part(self,x0,y0,z0,w0)
@@ -1489,13 +1485,9 @@ function control_plyr(self)
 		end
 	end
 	plyr.target=target
-	if target and pitch==0 and roll==0 then
-		local p=v_clone(target.pos)
-		v_plus_v(p,plyr.pos,-1)
-		if v_dot(p,fwd)>0.8 then
-			plyr.lock_t+=1
-		end
-else
+	if target and pitch==0 and roll==0 and in_cone(plyr.pos,target.pos,fed,0.8,48) then
+		plyr.lock_t+=1
+	else
 		plyr.lock_t=0
 	end
 	if plyr.lock_t>30 and btnp(4) then
@@ -1528,18 +1520,76 @@ function draw_stars()
 	end
 end
 
-function draw_radar(x,y,r,rng)
-	circ(x,y,r,3)
-	pset(x,y,3)
+function draw_ag_radar(x,y,r,rng)
 	local objs=game_mode==1 and ground_actors or actors
+	-- get angle dir
+	local angle=atan2(plyr.m[9],plyr.m[11])
+	local c,s=cos(angle),-sin(angle)
+	-- draw grid
+	local dx,dy=c,s
+	local x0,y0,x1,y1=3*dy,3*dx,3*dy,-3*dx
+	color(3)
+	for i=-3,3 do
+		line(x+x0,y+y0,x+x1,y+y1)
+		x0+=c
+		y0+=s
+		x1+=c
+		y1+=s
+	end
+	-- radar dots
 	for _,a in pairs(objs) do
 		if a!=plyr then
 			local p=v_clone(a.pos)
-			m_inv_x_v(plyr.m,p)
+			v_plus_v(p,plyr.pos,-1)
 			v_clamp(p,rng)
-			pset(x+r*p[1]/rng,y-r*p[3]/rng,p[2]>0 and 8 or 2)
+			v_scale(p,r/rng)
+			local px,py=c*p[1]-s*p[3],
+			pset(x+p[1],y-p[3],8)
 		end
 	end
+end
+
+local all_locks=json_parse('{"1":{"spr":206,"x":53,"y":107,"flipx":false,"flipy":false},"2":{"spr":206,"x":67,"y":107,"flipx":true,"flipy":false},"4":{"spr":207,"x":60,"y":105,"flipx":false,"flipy":false},"8":{"spr":207,"x":60,"y":109,"flipx":false,"flipy":true}}')
+function draw_locks(f)
+	for i=1,4 do
+		local s=all_locks[shr(f,i)]
+		if s then
+			spr(s.spr,s.x,s.y,1,1,s.flipx,s.flipy)
+		end
+	end
+end
+
+function draw_aa_radar()
+	  rectfill(
+	  	64-11,115-11,
+	  	64+11,115+11,0)
+	  -- draw locks
+ 		if plyr.target then
+ 			local v=v_clone(plyr.target.pos)
+ 			-- todo: project in plyr space
+ 			cam:project_v(v,64,115,8)
+			 if plyr.lock_t>30 then
+			  if time_t%4>1 then
+					draw_locks(1+2+4+8)
+		 		end
+				end
+			 if v[3]>0 then
+			 	local l=0
+			 	if v[2]>115 then
+	 		  	l+=4
+			 	elseif v[2]<115 then
+					l+=8
+			 	end
+			 	if v[1]>64 then
+	 		  	l+=1
+			 	elseif v[1]<64 then
+					l+=2
+			 	end
+			 	local x,y=mid(v[1],50,70),mid(v[2],100,127)
+			 	rectfill(x,y,x+1,y+1,8)
+			 	draw_locks(l)
+			 end
+ 		end
 end
 
 function draw_text(s,x,y)
@@ -1619,6 +1669,7 @@ function gameover_screen:draw()
 end
 
 -- bench screen
+--[[
 function bench_screen:init()
 	time_t=0
 	parts={}
@@ -1661,6 +1712,7 @@ function bench_screen:draw()
 	zbuf_draw()
 	print("actors:"..#actors,2,9,7)
 end
+]]
 
 -- play loop
 function game_screen:init()
@@ -1724,41 +1776,7 @@ function game_screen:draw()
 	-- cockpit
 	if cam_mode==1 then
 	 if cam_rear==false then
-	  pal()
-	  palt()
-	  palt(4,true)
-	  palt(5,true)
-	  palt(6,true)
 	  
-	  rectfill(
-	  	64-11,115-11,
-	  	64+11,115+11,0)
-	  -- draw locks
- 		if plyr.target then
- 			local v=v_clone(plyr.target.pos)
- 			cam:project_v(v,64,115,8)
-			 if plyr.lock_t>30 then
-			  if time_t%4>1 then
-	 		  palt(6,false)
-						palt(5,false)
-						palt(4,false)
-			 		pal(6,8)
-			 		pal(5,8)
-						pal(4,8)
-		 		end
-				end
-			 if v[3]>0 then
-			 	if v[2]>115 then
-	 		  palt(6,false)
-			 		pal(6,8)
-			 	elseif v[2]<115 then
-						palt(4,false)
-						pal(4,8)
-			 	end
-			 	-- todo: fix
-			 	rectfill(v[1],v[2],v[1]+1,v[2]+1,7)
-			 end
- 		end
 	 
  		palt(0,false)
  		palt(14,true)
@@ -1814,6 +1832,7 @@ function _draw()
 
 	time_dt=0
 
+	--[[
 	local y=2	
 	rectfill(32,y,128-32,y+18,0)
 	rect(32,y,128-32,y+18,1)
@@ -1831,8 +1850,9 @@ function _draw()
 	elseif time_t%32>16 then
 		line(40,y+13,41,y+13,0)
 	end
-	--rectfill(0,0,127,8,1)
-	--print(stat(1),2,2,7)
+	]]
+	rectfill(0,0,127,8,1)
+	print(stat(1),2,2,7)
 end
 
 
@@ -1910,28 +1930,28 @@ eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee100000000100100000000000000000000000000000
 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee11000000001001000000000000000000000000000000
 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1100000000010010000000000000000000001111111111
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1000000000010010000000000000000000001eeeeee3444
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee110000000000100100000000000000000000001eeeeeee344
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee11000000000001001000000000000000000000001eeeeeeee34
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1100000000000010010000000000000000000000001eeeeeeeee3
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1000000000010010000000000000000000001eeeeeeeeee
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee110000000000100100000000000000000000001eeeeeeeeee
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee11000000000001001000000000000000000000001eeeeeeeeee
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1100000000000010010000000000000000000000001eeeeeeeeee
 1eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee10000000000000100100000000000000000000000001eeeeeeeeee
 01eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1100000000000001001000000000000000000000000001eeeeeeeeee
 001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee110000000000000010010000000000000000000000000001eeeeeeeeee
-0001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee110000000000000001001000000000000000000000000000013eeeeeeeee
-00001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee10000000000000000100100000000000000000000000000000153eeeeeeee
-000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee11000000000000000010010000000000000000000000000000001553eeeeeee
-0000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1000000000000000001001000000000000000000000000000000015553eeeeee
-00000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000010010000000000000000000000000000000015553eeeeee
-000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000000000000010010000000000000000000000000000000001553eeeeeee
-0000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000010010001111111111111111111111111000000153eeeeeeee
-00000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000010010001000000000000000000000000010000013eeeeeeeee
+0001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee11000000000000000100100000000000000000000000000001eeeeeeeeee
+00001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee100000000000000001001000000000000000000000000000001eeeeeeeeee
+000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee11000000000000000010010000000000000000000000000000001eeeeeeeeee
+0000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee100000000000000000100100000000000000000000000000000001eeeeeeeeee
+00000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000000000000001001000000000000000000000000000000001eeeeeeeeee
+000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000000000000010010000000000000000000000000000000001eeeeeeeeee
+0000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000000000000100100011111111111111111111111110000001eeeeeeeeee
+00000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000000000001001000100000000000000000000000001000001eeeeeeeeee
 000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000000000010010000100000000000000000000000001000001eeeeeeeeee
 0000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000000000100100000100000000000000000000000001000001eeeeeeeeee
 00000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000000001001000000100000000000000000000000001000001eeeeeeeeee
-000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000000010010000000100000000000000000000000001000001eeeeeeeee3
-0000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000000100100000000100000000000000000000000001000001eeeeeeee36
-00000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee111111e000000001001000000000011111111111111111111111110000001eeeeeee366
-000000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1eeeee1e000000010010000000000000000000000000000000000000000001eeeeee3666
+000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000000010010000000100000000000000000000000001000001eeeeeeeeee
+0000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000000100100000000100000000000000000000000001000001eeeeeeeeee
+00000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee111111e000000001001000000000011111111111111111111111110000001eeeeeeeeee
+000000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1eeeee1e000000010010000000000000000000000000000000000000000001eeeeeeeeee
 0000000000000000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1eeeeeeee0000001001000000000000000000000000000000000000000000001111111111
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
