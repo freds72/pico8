@@ -240,51 +240,6 @@ function sort(data)
  end
 end
 
--- models
-local all_models={
-	title={
-		c=10
-	},
-	deathstar={
-		c=3
-	},
-	turret={
-		c=8,
-		wp={
-			dmg=1,
-			dly=12,
-			pos={{-0.2,0.8,0.65},{0.2,0.8,0.65}},
-			n={{0,0,1},{0,0,1}}
-		}
-	},
-	xwing={
-		c=7,
-		r=0.8,
-		proton_wp={
-			dmg=4,
-			dly=60,
-			pos={0,-0.4,1.5},
-			n={0,0,1}
-		},
-		wp={
-		 dmg=1,
-			dly=8,
-   pos={{2,1,1.6},{2,-1,1.6},{-2,-1,1.6},{-2,1,1.6}},
-   n={}
-  }
-	},
-	tie={
-		c=5,
-		-- collision radius
-		r=1,
-		wp={
-			dmg=2,
-			dly=24,
-			pos={{0.7,-0.7,0.7},{-0.7,-0.7,0.7}},
-			n={{0,0,1},{0,0,1}}
-		}
-	}
-}
 function sqr_dist(a,b)
 	local dx,dy,dz=b[1]-a[1],b[2]-a[2],b[3]-a[3]
 	if abs(dx)>128 or abs(dy)>128 or abs(dz)>128 then
@@ -521,6 +476,8 @@ function m_inv_x_v(m,v)
 	v[3]=m[9]*x+m[10]*y+m[11]*z
 end
 
+-- models
+local all_models=json_parse('{"title":{"c":10},"deathstar":{"c":3},"turret":{"c":8,"wp":{"dmg":1,"dly":12,"pos":[[-0.2,0.8,0.65],[0.2,0.8,0.65]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"proton_wp":{"dmg":4,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"dmg":1,"dly":8,"pos":[[2,1,1.6],[2,-1,1.6],[-2,-1,1.6],[-2,1,1.6]],"n":[]}},"tie":{"c":5,"r":1,"wp":{"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}}}')
 local dither_pat=json_parse('[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]')
 
 local ground_colors={5,1,5,1}
@@ -736,6 +693,7 @@ function draw_actor(self,x,y,z,w)
  end
  ]]
 end
+--[[
 function draw_vector(m,pos,v,c,s)
 	local x0,y0,z0,w=cam:project(pos[1],pos[2],pos[3])
 	local x1,y1,z1,w=cam:project(pos[1]+v[1],pos[2]+v[2],pos[3]+v[3])
@@ -750,8 +708,7 @@ function draw_vector(m,pos,v,c,s)
  	end
 	end
 end
-
-local draw_session_id=0
+]]
 
 -- unpack models
 local mem=0x2000
@@ -833,11 +790,13 @@ function unpack_models()
 end
 unpack_models()
 
+-- little hack to perform in-place data updates
+local draw_session_id=0
 function draw_model(model,m,x,y,z,w)
 	draw_session_id+=1
 
 	color(model.c or 1)
-	-- camera distance ditheting
+	-- camera distance dithering
 	if w then
 		local d=lerp(1-smoothstep(w/2),1,#dither_pat)
 		fillp(dither_pat[flr(d)]+0b0.1)
@@ -860,7 +819,7 @@ function draw_model(model,m,x,y,z,w)
 		end
 	end
 	-- edges
-	local p={}
+	local p,v={}
 	for _,e in pairs(model.e) do
 		if e[3]==true or e[3]==draw_session_id then
 			local ak,bk=e[1],e[2]
@@ -905,6 +864,7 @@ function die_plyr(self)
 	end
 	last_score=plyr.score
 	-- 
+	plyr.disabled=true
 	del(actors,plyr)
 	plyr=nil
 	cur_screen=gameover_screen
@@ -921,7 +881,7 @@ function die_plyr(self)
 	end)
 end
 
-function die_actor(self)
+_g.die_actor=function(self)
 	make_blast(self.pos)
 	self.disabled=true
 	npc_count-=1
@@ -972,7 +932,7 @@ function wander(self)
 	return p
 end
 
-function update_flying_npc(self)
+_g.update_flying_npc=function(self)
 	-- if npc still in range
 	--[[
 	if sqr_dist(self.pos,plyr.pos)>16*16 then
@@ -1037,7 +997,7 @@ function update_flying_npc(self)
 
  -- good looking but a bit unstable
 	--m=make_m_toward(pos,self.target and {self.target.m[5],self.target.m[6],self.target.m[7]} or {m[5],m[6],m[7]})
- m=make_m_toward(pos,{m[5],m[6],m[7]})	
+ 	m=make_m_toward(pos,{m[5],m[6],m[7]})	
 	-- move actor using force
 	v_plus_v(self.pos,force)
 	
@@ -1061,14 +1021,14 @@ function update_flying_npc(self)
 	return true
 end
 
-function hit_npc(self,dmg)
+_g.hit_npc=function(self,dmg)
 	self.hp-=dmg
 	if self.hp<=0 then
 		self:die()
 	end
 end
-function hit_flying_npc(self,dmg,actor)
-	hit_npc(self,dmg)
+_g.hit_flying_npc=function(self,dmg,actor)
+	_g.hit_npc(self,dmg)
 	-- todo: wait a bit
 	if actor==plyr then
 		self.target=plyr
@@ -1111,44 +1071,14 @@ function make_plyr(x,y,z)
 end
 
 local _id=0
-local npc_xwing={
-	hp=8,
-	acc=0.2,
-	model=all_models.xwing,
-	side=good_side,
-	update=update_flying_npc,
-	hit=hit_npc,
-}
-local npc_tie={
-	hp=4,
-	acc=0.2,
-	model=all_models.tie,
-	side=bad_side,
-	update=update_flying_npc,
-	hit=hit_flying_npc
-}
-local npc_turret={
-	hp=2,
-	model=all_models.turret,
-	side=bad_side,
-	update=update_ground_npc,
-	hit=hit_npc
-}
-local npc_junk={
-	hp=1,
-	rnd={model={
-		all_models.junk1,
-		all_models.junk2,
-		all_models.junk2}},
-	side=any_side,
-	hit=hit_npc
-}
+local all_npcs=json_parse('{"xwing":{"hp":8,"acc":0.2,"model":"xwing","side":"good_side","update":"update_flying_npc","hit":"hit_npc"},"tie":{"hp":4,"acc":0.2,"model":"tie","side":"bad_side","update":"update_flying_npc","hit":"hit_flying_npc"},"turret":{"hp":2,"model":"turret","side":"bad_side","update":"update_ground_npc","hit":"hit_npc"}}')
 
 function make_npc(p,v,src)
 	npc_count+=1
 	_id+=1
 	local a={
 		id=_id,
+		model=all_models[src.model],
 		pos=v_clone(p),
 		q=make_q(v,0),
 		wander_t=0,
@@ -1485,7 +1415,7 @@ function control_plyr(self)
 		end
 	end
 	plyr.target=target
-	if target and pitch==0 and roll==0 and in_cone(plyr.pos,target.pos,fed,0.8,48) then
+	if target and pitch==0 and roll==0 and in_cone(plyr.pos,target.pos,fwd,0.8,48) then
 		plyr.lock_t+=1
 	else
 		plyr.lock_t=0
@@ -1530,9 +1460,9 @@ function draw_ag_radar(x,y,r,rng)
 	local dx,dy=(plyr.pos[1]/2)%scale,(plyr.pos[3]/2)%scale
 	color(3)
 	local x0=-dx-scale
-	while x0<22+scale do
+	while x0<22 do
 		local y0=-dy-scale
-		while y0<22+scale do
+		while y0<22 do
 			local xx,yy=x0-11,y0-11
 			xx,yy=xx*c-yy*s,xx*s+yy*c
 			pset(x+xx,y-yy)
@@ -1748,12 +1678,12 @@ function game_screen:update()
 			local target
 			-- friendly npc?
 			if rnd()>0.5 then
-				target=make_npc(p,v,npc_xwing)
+				target=make_npc(p,v,all_npcs.xwing)
 				v_plus_v(p,v,10)
 			end
 			-- spawn new enemy
 			for i=1,flr(1+rnd(2)) do
-				local a=make_npc(p,v,npc_tie)
+				local a=make_npc(p,v,all_npcs.tie)
 				a.target=target
 				target=a
 				v_plus_v(p,v,10)
