@@ -1523,33 +1523,33 @@ end
 function draw_ag_radar(x,y,r,rng)
 	local objs=game_mode==1 and ground_actors or actors
 	-- get angle dir
-	local angle=atan2(plyr.m[9],plyr.m[11])+0.5
+	local angle=atan2(plyr.m[9],plyr.m[11])-0.75
 	local c,s=cos(angle),-sin(angle)
 	-- draw grid
 	local scale=6
-	local x0,y0=x-abs(plyr.pos[1]%scale)-6*c,y+abs(plyr.pos[3]%scale)+6*s
+	local dx,dy=(plyr.pos[1]/2)%scale,(plyr.pos[3]/2)%scale
 	color(3)
-	for i=1,4 do
-		line(x0-r*s,y0-r*c,x0+r*s,y0+r*c)
-		x0+=scale*c
-		y0-=scale*s
-	end
-	local x0,y0=x-abs(plyr.pos[1]%scale)+6*c,y+abs(plyr.pos[3]%scale)-6*s
-	color(11)
-	for i=1,4 do
-		line(x0+r*c,y0-r*s,x0-r*c,y0+r*s)
-		x0-=scale*s
-		y0-=scale*c
+	local x0=-dx-scale
+	while x0<22+scale do
+		local y0=-dy-scale
+		while y0<22+scale do
+			local xx,yy=x0-11,y0-11
+			xx,yy=xx*c-yy*s,xx*s+yy*c
+			pset(x+xx,y-yy)
+			y0+=scale
+		end
+		x0+=scale
 	end
 	-- radar dots
 	for _,a in pairs(objs) do
 		if a!=plyr then
 			local p=v_clone(a.pos)
 			v_plus_v(p,plyr.pos,-1)
-			v_clamp(p,rng)
-			v_scale(p,r/rng)
-			local px,py=c*p[1]-s*p[3],
-			pset(x+p[1],y-p[3],8)
+			v_scale(p,1/2)
+			if v_dot(p,p)<64 then
+				local px,py=c*p[1]-s*p[3],s*p[1]+c*p[3]
+				pset(x+px,y-py,8)
+			end
 		end
 	end
 end
@@ -1783,8 +1783,11 @@ function game_screen:draw()
 	 if cam_rear==false then
 	  
  		-- radar
- 		draw_ag_radar(64,115,22,16)
-
+ 		if game_mode==0 then
+ 			draw_aa_radar()
+ 		else
+ 			draw_ag_radar(64,115,22,16)
+		end
  		palt(0,false)
  		palt(14,true)
  		spr(64,0,32,8,4)
