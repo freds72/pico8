@@ -211,11 +211,19 @@ end
 function lerp(a,b,t)
 	return a*(1-t)+b*t
 end
+function rndlerp(a,b)
+	return lerp(b,a,1-rnd())
+end
 function smoothstep(t)
 	t=mid(t,0,1)
 	return t*t*(3-2*t)
 end
-
+function rndrng(ab)
+	return flr(rndlerp(ab[1],ab[2]))
+end
+function rndarray(a)
+	return a[flr(rnd(#a))+1]
+end
 function padding(i,n)
 	local txt=tostr(i)
  -- padding
@@ -847,7 +855,7 @@ function draw_model(model,m,x,y,z,w)
 end
 
 function die_plyr(self)
-	make_blast(plyr.pos)
+	make_part("blast",plyr.pos)
 	-- clear
 	for s in all(scores) do
 		s.islast=false
@@ -882,7 +890,7 @@ function die_plyr(self)
 end
 
 _g.die_actor=function(self)
-	make_blast(self.pos)
+	make_part("blast",self.pos)
 	self.disabled=true
 	npc_count-=1
 	del(actors,self)
@@ -1135,6 +1143,80 @@ function make_cam(f)
 	}
 end
 
+_g.update_part=function(self)
+	if(self.t<time_t) return false
+	if(self.r<0) return false
+	self.r+=self.dr
+	return true
+end
+
+_g.update_blt=function(self)
+	if(self.t<time_t) return false
+	
+	-- ground?
+	if game_mode==1 then
+		if self.pos[2]<0 then
+			self.pos[2]=0
+			make_part("flash",self.pos)
+			return false
+		end
+	end
+	-- collision?
+	for _,a in pairs(actors) do
+		if a.model.r and band(a.side,self.side)==0 and sqr_dist(self.pos,a.pos)<a.model.r*a.model.r then
+			a:hit(self.dmg,self.actor)
+			make_part("part",self.pos)
+			return false
+		end
+	end
+	v_plus_v(self.pos,self.u,self.acc)
+	return true
+end
+
+_g.update_proton=function(self)
+ if time_t%2==0 then
+ 	make_part("trail",self.pos,10)
+ end
+ -- update orientation to match target
+ if self.target and not self.target.disabled then
+		-- old enough?
+		local v=v_clone(self.target.pos)
+		v_plus_v(v,self.pos,-1)
+		-- not too close?
+		if v_dot(v,v)>0.25 then
+			v_normz(v)
+ 		-- within cone?
+ 		if v_dot(self.u,v)>0.6 then
+ 			v_plus_v(self.u,v,smoothstep(self.duration/60))
+ 			v_normz(self.u)	
+ 		end
+ 	end
+ end
+ self.duration+=1
+ return _g.update_blt(self)
+end
+
+_g.draw_part=function(self,x,y,z,w)
+	if self.kind==0 then
+		local x1,y1,z1,w1=cam:project(self.pos[1]+self.u[1],self.pos[2]+self.u[2],self.pos[3]+self.u[3])
+		if z1>0 then
+			line(x,y,x1,y1,time_t%2==0 and 7 or self.c)
+		end
+	elseif self.kind==1 then
+		circfill(x,y,self.r*w,self.c)
+	elseif self.kind==2 then
+		circfill(x,y,self.r*w,7)
+	elseif self.kind==3 then
+		-- light effect
+		fillp(dither_pat[mid(#dither_pat-flr(w/2),1,#dither_pat)])
+		circfill(x,y,(0.5+rnd(1))*w,8)
+		fillp()
+		circfill(x,y,(0.1+0.2*rnd())*w,10)
+	end
+end
+
+local all_parts=json_parse('{"laser":{"rnd":{"dly":[80,110]},"acc":0.8,"kind":0,"update":"update_blt","draw":"draw_part"},"flash":{"kind":1,"rnd":{"r":[0.3,0.5],"dly":[6,10]},"dr":-0.05},"trail":{"kind":1,"rnd":{"r":[0.2,0.3],"dly":[12,24]},"dr":-0.02},"blast":{"kind":1,"c":7,"rnd":{"r":[1.5,1.8],"dly":[6,8]},"dr":-0.04},"proton":{"rnd":{"dly":[90,120]},"duration":0,"acc":0.6,"kind":3,"update":"update_proton","draw":"draw_part"}}')
+
 function make_laser(self,target)
 	local wp=self.model.wp
 	local i=self.laser_i%#wp.pos+1
@@ -1154,19 +1236,15 @@ function make_laser(self,target)
 	self.laser_i+=1
 	-- laser colors
 	local c=self.side==good_side and 11 or 8
-	add(parts,{
-		-- laser owner
-		actor=self,
-		t=time_t+90,
-		acc=0.8,
-		pos=p,
-		u=v,
-		c=c,
-		side=self.side,
-		dmg=wp.dmg,
-		update=update_blt,
-		draw=draw_line_part})
-	make_flash(p,c)
+	local pt=add(parts,clone(all_parts["laser"],{
+			actor=self, -- laser owner
+			pos=p,
+			u=v,
+			c=c,
+			side=self.side,
+			dmg=wp.dmg}))
+	pt.t=time_t+pt.dly
+	make_part("flash",p,c)
 end
 
 function make_proton(self,target)
@@ -1178,128 +1256,22 @@ function make_proton(self,target)
 	v=v_clone(wp.n)
 	o_x_v(self.m,v)
 
-	add(parts,{
+	local pt=add(parts,clone(all_parts["proton"],{
 		-- proton owner
 		actor=self,
 		target=target,
-		t=time_t+90,
-		duration=0,
-		acc=0.6,
 		pos=p,
 		u=v,
 		side=self.side,
-		dmg=wp.dmg,
-		update=update_proton,
-		draw=draw_proton_part})
-	make_flash(p,c)
-end
-function make_flash(p,c)
-	return add(parts,{
-		t=time_t+8,
-		c=c or 7,
-		r=0.4,
-		dr=-0.05,
-		pos=v_clone(p),
-		update=update_part,
-		draw=draw_circ_part
-	})
-end
-function make_trail(p,c)
-	return add(parts,{
-		t=time_t+8,
-		c=c or 7,
-		r=0.2,
-		dr=-0.02,
-		pos=v_clone(p),
-		update=update_part,
-		draw=draw_circ_part
-	})
+		dmg=wp.dmg}))
+	pt.t=time_t+pt.dly
+	make_part("flash",p,c)
 end
 
-function make_blast(p)
-	return add(parts,{
-		t=time_t+8,
-		r=1,
-		dr=0.05,
-		pos=v_clone(p),
-		update=update_part,
-		draw=draw_blast_part
-	})
-end
-
-function update_part(self)
-	if(self.t<time_t) return false
-	if(self.r<0) return false
-	self.r+=self.dr
-	return true
-end
-
-function update_blt(self)
-	if(self.t<time_t) return false
-	
-	-- ground?
-	if game_mode==1 then
-		if self.pos[2]<0 then
-			self.pos[2]=0
-			make_flash(self.pos)
-			return false
-		end
-	end
-	-- collision?
-	for _,a in pairs(actors) do
-		if a.model.r and band(a.side,self.side)==0 and sqr_dist(self.pos,a.pos)<a.model.r*a.model.r then
-			a:hit(self.dmg,self.actor)
-			make_flash(self.pos)
-			return false
-		end
-	end
-	v_plus_v(self.pos,self.u,self.acc)
-	return true
-end
-
- function update_proton(self)
- if time_t%2==0 then
- 	make_trail(self.pos,10)
- end
- -- update orientation to match target
- if self.target and not self.target.disabled then
-		-- old enough?
-		local v=v_clone(self.target.pos)
-		v_plus_v(v,self.pos,-1)
-		-- not too close?
-		if v_dot(v,v)>0.25 then
-			v_normz(v)
- 		-- within cone?
- 		if v_dot(self.u,v)>0.6 then
- 			v_plus_v(self.u,v,smoothstep(self.duration/60))
- 			v_normz(self.u)	
- 		end
- 	end
- end
- self.duration+=1
- return update_blt(self)
-end
-		
-function draw_line_part(self,x0,y0,z0,w0)
-	local x1,y1,z1,w1=cam:project(self.pos[1]+self.u[1],self.pos[2]+self.u[2],self.pos[3]+self.u[3])
-	if z1>0 then
-		line(x0,y0,x1,y1,time_t%2==0 and 7 or self.c)
-	end
-end
-
-function draw_circ_part(self,x,y,z,w)
-	circfill(x,y,self.r*w,self.c)
-end
-
-function draw_blast_part(self,x,y,z,w)
-	circfill(x,y,self.r*w,7)
-end
-function draw_proton_part(self,x,y,z,w)
-	-- light effect
-	fillp(dither_pat[mid(#dither_pat-flr(w/2),1,#dither_pat)])
-	circfill(x,y,(0.5+rnd(1))*w,8)
-	fillp()
-	circfill(x,y,(0.1+0.2*rnd())*w,10)
+function make_part(part,p,c)
+	local pt= add(parts,clone(all_parts[part],{c=c or 7,pos=v_clone(p)}))
+	pt.t,pt.update,pt.draw=time_t+pt.dly,_g.update_part,_g.draw_part
+	return pt
 end
 
 local turn_t=0
