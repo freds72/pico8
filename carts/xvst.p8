@@ -448,6 +448,9 @@ function m_inv_x_v(m,v)
 	v[2]=m[5]*x+m[6]*y+m[7]*z
 	v[3]=m[9]*x+m[10]*y+m[11]*z
 end
+function m_set_pos(m,v)
+	m[13],m[14],m[15]=v[1],v[2],v[3]
+end
 
 -- models
 local all_models=json_parse('{"title":{"c":10},"deathstar":{"c":3},"turret":{"c":8,"wp":{"sfx":1,"dmg":1,"dly":12,"pos":[[-0.2,0.8,0.65],[0.2,0.8,0.65]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"proton_wp":{"dmg":4,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":2,"dmg":1,"dly":8,"pos":[[2,1,1.6],[2,-1,1.6],[-2,-1,1.6],[-2,1,1.6]],"n":[]}},"tie":{"c":5,"r":1,"wp":{"sfx":1,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}}}')
@@ -568,7 +571,7 @@ function update_turret(self,i,j)
 		m=m_from_q(q)
 		self.m=m
 	end
-	m[13],m[14],m[15]=self.pos[1],self.pos[2],self.pos[3]
+	m_set_pos(m,self.pos)
 	
 	if abs(angle)<0.2 and self.fire_t<time_t then
 		self:fire(plyr.pos)
@@ -973,8 +976,7 @@ _g.update_flying_npc=function(self)
  	m=make_m_toward(pos,{m[5],m[6],m[7]})	
 	-- move actor using force
 	v_plus_v(self.pos,force)
-	
-	m[13],m[14],m[15]=self.pos[1],self.pos[2],self.pos[3]
+	m_set_pos(m,self.pos)
 	self.m=m
 
 	-- fire solution?
@@ -1066,7 +1068,7 @@ function make_npc(p,v,src)
 	clone(src,a)
 	-- init orientation
 	local m=m_from_q(a.q)
-	m[13],m[14],m[15]=p[1],p[2],p[3]
+	m_set_pos(m,p)
 	a.m=m
 	return add(actors,a)
 end
@@ -1153,7 +1155,7 @@ _g.update_proton=function(self)
  		-- within cone?
  		if v_dot(self.u,v)>0.6 then
  			v_plus_v(self.u,v,smoothstep(self.duration/60))
- 			v_normz(self.u)	
+ 			v_normz(self.u)
  		end
  	end
  end
@@ -1284,7 +1286,7 @@ function control_plyr(self)
 	if game_mode==1 then
 		plyr.pos[2]=mid(plyr.pos[2],1,4)
 	end
-	m[13],m[14],m[15]=plyr.pos[1],plyr.pos[2],plyr.pos[3]
+	m_set_pos(m,plyr.pos)
 	plyr.m=m
 
 	-- boost 
@@ -1368,7 +1370,7 @@ end
 
 local ds_m=make_m()
 function draw_deathstar()
-	ds_m[13],ds_m[14],ds_m[15]=cam.pos[1],cam.pos[2],6+cam.pos[3]	
+	m_set_pos(ds_m,{cam.pos[1],cam.pos[2],6+cam.pos[3]})
 	draw_model(all_models.deathstar,ds_m)
 end
 
@@ -1442,32 +1444,31 @@ function draw_locks(f)
 end
 
 function draw_aa_radar()
-	  rectfill(
-	  	64-11,115-11,
-	  	64+11,115+11,0)
-	  -- draw locks
- 		if plyr.target then
- 			local v=v_clone(plyr.target.pos)
- 			-- todo: project in plyr space
- 			cam:project_v(v,64,115,8)
-			 if plyr.lock_t>30 then
-			  if time_t%4>1 then
-					draw_locks(1+2+4+8)
-		 		end
-				end
-			 if v[3]>0 then
-			 	local l=0
-			 	if(v[1]>68) l+=1
-			 	if(v[1]<60) l+=2
-			 	if(v[2]>120) l+=4
-			 	if(v[2]<110) l+=8
-			 	local x,y=mid(v[1],50,70),mid(v[2],100,127)
-			 	rectfill(x,y,x+1,y+1,8)
-			 	draw_locks(l)
-			 	
-			 	print("lock:"..l,2,2,7)
-			 end
- 		end
+	rectfill(
+		64-11,115-11,
+		64+11,115+11,0)
+	-- draw locks
+	if plyr.target then
+		local v=v_clone(plyr.target.pos)
+		m_inv_x_v(plyr.m,v)
+		local l=0
+		if plyr.lock_t>30 then
+			if time_t%4>1 then
+				l=15
+			end
+		else
+			if(v[1]>2) l+=1
+			if(v[1]<-2) l+=2
+			if(v[2]>2) l+=4
+			if(v[2]<-2) l+=8
+		end
+		draw_locks(l)
+		 
+		if v[3]>0 then
+			local x,y=mid(v[1],50,70),mid(v[2],100,127)
+			rectfill(x,y,x+1,y+1,8)
+		end
+	end
 end
 
 local colors={0,1,0,14}
@@ -1511,9 +1512,7 @@ function start_screen:draw()
 	cam:update()
 	draw_stars()
 	local m=m_from_q(make_q({1,0,0},0.75))
-	m[13]=-0.85
-	m[14]=0.4
-	m[15]=2.1+cam.pos[3]
+	m_set_pos(m,{-0.85,0.4,2.1+cam.pos[3]})
 	draw_model(all_models.title,m)
 	print("attack on the death star",20,78,12)
 	
@@ -1670,7 +1669,7 @@ function game_screen:draw()
  			draw_aa_radar()
  		else
  			draw_ag_radar(64,115,22,16)
-			end
+		end
 			
 			-- cockpit
 			set_layer(false)
@@ -1693,7 +1692,7 @@ function game_screen:draw()
  			x+=3
  		end
  		-- engines
- 		local p=(plyr.acc+plyr.boost)/(0.2)
+ 		local p=(plyr.acc+plyr.boost)/(0.4)
  		rectfill(82,120,82+22*p,123,9)
  	else
  		set_layer(true)
