@@ -96,7 +96,8 @@ end
 -- 0: chase
 -- 1: cockpit
 -- 2: orbit
-local cam_mode,cam=0
+local cam_mode,cam,radar_cam=0
+local radar_cam_offset={0,3,-12}
 local actors,npc_count={},0
 local parts={}
 local scores,last_score={},0
@@ -356,6 +357,12 @@ function make_m(x,y,z)
 	m[13],m[14],m[15]=x or 0,y or 0,z or 0
 	return m
 end
+function m_clone(m)
+	local te={}
+	for i=1,16 do
+		te[i]=m[i]
+	end
+end
 function make_m_toward(z,up)
  	local x=make_v_cross(up,z)
 	-- aligned?
@@ -453,7 +460,7 @@ function m_set_pos(m,v)
 end
 
 -- models
-local all_models=json_parse('{"title":{"c":10},"deathstar":{"c":3},"turret":{"c":8,"wp":{"sfx":1,"dmg":1,"dly":12,"pos":[[-0.2,0.8,0.65],[0.2,0.8,0.65]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"proton_wp":{"dmg":4,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":2,"dmg":1,"dly":8,"pos":[[2,1,1.6],[2,-1,1.6],[-2,-1,1.6],[-2,1,1.6]],"n":[]}},"tie":{"c":5,"r":1,"wp":{"sfx":1,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}}}')
+local all_models=json_parse('{"plane":{"c":3,"v":[[-3,0,-3],[-3,0,3],[3,0,3],[3,0,-3]],"f":[],"e":[[1,2,true],[2,3,true],[3,4,true],[4,1,true]]},"title":{"c":10},"deathstar":{"c":3},"turret":{"c":8,"wp":{"sfx":1,"dmg":1,"dly":12,"pos":[[-0.2,0.8,0.65],[0.2,0.8,0.65]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"proton_wp":{"dmg":4,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":2,"dmg":1,"dly":8,"pos":[[2,1,1.6],[2,-1,1.6],[-2,-1,1.6],[-2,1,1.6]],"n":[]}},"tie":{"c":5,"r":1,"wp":{"sfx":1,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}}}')
 local dither_pat=json_parse('[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]')
 
 local ground_colors={5,1,5,1}
@@ -1073,7 +1080,8 @@ function make_npc(p,v,src)
 	return add(actors,a)
 end
 
-function make_cam(f)
+function make_cam(f,x0,y0)
+	x0,y0=x0 or 64,y0 or 64
 	return {
 		pos={0,0,3},
 		focal=f,
@@ -1093,19 +1101,7 @@ function make_cam(f)
 			if(v[3]<0.001) return nil,nil,-1,nil
 			-- view to screen
  			local w=self.focal/v[3]
- 			return 64+v[1]*w,64-v[2]*w,v[3],w
-		end,
-		project_v=function(self,v,x0,y0,f)
-		f=f or self.focal
-			-- world to view
-			v_plus_v(v,self.pos,-1)
-			m_x_v(self.m,v)
-			-- distance to camera plane
-			v[3]-=1
-			if(v[3]<0.001) v[3]=-1 return
-			-- view to screen
- 		local w=f/v[3]
- 		v[1],v[2],v[4]=x0+v[1]*w,y0-v[2]*w,w
+ 			return x0+v[1]*w,y0-v[2]*w,v[3],w
 		end
 	}
 end
@@ -1307,19 +1303,21 @@ function control_plyr(self)
 		cam_rear=true
 	end
 	
+	-- update radar cam
+	radar_cam.pos=m_x_xyz(plyr.m,0,2,-8)
+	radar_cam.q=q_clone(plyr.q)
+	--radar_cam.m=m_clone(plyr.m)
 	if cam_mode==0 then
 		cam.pos=m_x_xyz(plyr.m,0,2,-8)
 		--v_plus_v(cam.pos,plyr.pos,-1)
 		cam.q=q_clone(plyr.q)
 	elseif cam_mode==1 then
 		cam.pos=v_clone(plyr.pos)
+		local q=q_clone(plyr.q)
 		if cam_rear==true then
-			local q=q_clone(plyr.q)
 			q_x_q(q,make_q(v_up,0.5))
-			cam.q=q
-		else
-			cam.q=q_clone(plyr.q)
 		end
+		cam.q=q
 	else
 		local x,y=stat(32),stat(33)
 		local dx,dy=mousex-x,mousey-y
@@ -1399,74 +1397,21 @@ function draw_stars()
 	end
 end
 
-function draw_ag_radar(x,y,r,rng)
+
+local plane_m=make_m()
+function draw_radar()
+	m_set_pos(plane_m,plyr.pos)
+	local g_cam=cam
+	cam=radar_cam
+	draw_model(all_models["plane"],plane_m)
+	cam=g_cam
 	local objs=game_mode==1 and ground_actors or actors
-	-- get angle dir
-	local angle=atan2(plyr.m[9],plyr.m[11])-0.75
-	local c,s=cos(angle),-sin(angle)
-	-- draw grid
-	local scale=6
-	local dx,dy=(plyr.pos[1]/2)%scale,(plyr.pos[3]/2)%scale
-	color(3)
-	local x0=-dx-scale
-	while x0<22 do
-		local y0=-dy-scale
-		while y0<22 do
-			local xx,yy=x0-11,y0-11
-			xx,yy=xx*c-yy*s,xx*s+yy*c
-			pset(x+xx,y-yy)
-			y0+=scale
-		end
-		x0+=scale
-	end
-	-- radar dots
 	for _,a in pairs(objs) do
 		if a!=plyr then
-			local p=v_clone(a.pos)
-			v_plus_v(p,plyr.pos,-1)
-			v_scale(p,1/2)
-			if v_dot(p,p)<64 then
-				local px,py=c*p[1]-s*p[3],s*p[1]+c*p[3]
-				pset(x+px,y-py,8)
+			local x,y,z,w=radar_cam:project(a.pos[1],a.pos[2],a.pos[3])
+			if z>0 then
+				pset(x,y,8)
 			end
-		end
-	end
-end
-
-local all_locks=json_parse('[{"spr":40,"x":54,"y":112,"flipx":false,"flipy":false},{"spr":40,"x":66,"y":112,"flipx":true,"flipy":false},{"spr":41,"x":60,"y":105,"flipx":false,"flipy":false},{"spr":41,"x":60,"y":119,"flipx":false,"flipy":true}]')
-function draw_locks(f)
-	for i=1,4 do
-		if band(shr(f,i-1),1)==1 then
-			local s=all_locks[i]
-			spr(s.spr,s.x,s.y,1,1,s.flipx,s.flipy)
-		end
-	end
-end
-
-function draw_aa_radar()
-	rectfill(
-		64-11,115-11,
-		64+11,115+11,0)
-	-- draw locks
-	if plyr.target then
-		local v=v_clone(plyr.target.pos)
-		m_inv_x_v(plyr.m,v)
-		local l=0
-		if plyr.lock_t>30 then
-			if time_t%4>1 then
-				l=15
-			end
-		else
-			if(v[1]>2) l+=1
-			if(v[1]<-2) l+=2
-			if(v[2]>2) l+=4
-			if(v[2]<-2) l+=8
-		end
-		draw_locks(l)
-		 
-		if v[3]>0 then
-			local x,y=mid(v[1],50,70),mid(v[2],100,127)
-			rectfill(x,y,x+1,y+1,8)
 		end
 	end
 end
@@ -1622,6 +1567,7 @@ function game_screen:update()
 		control_plyr(plyr)
 	end
 	cam:update()
+	radar_cam:update()
 
 	if game_mode==0 then
 		if npc_count<=0 then
@@ -1665,11 +1611,7 @@ function game_screen:draw()
 	 if cam_rear==false then
 	  
  		-- radar
- 		if game_mode==0 then
- 			draw_aa_radar()
- 		else
- 			draw_ag_radar(64,115,22,16)
-		end
+ 		draw_radar()
 			
 			-- cockpit
 			set_layer(false)
@@ -1777,7 +1719,8 @@ function _init()
 	end
 		
 	cam=make_cam(64)
-
+	radar_cam=make_cam(16,64,110)
+	
 	cur_screen=start_screen
 end
 
