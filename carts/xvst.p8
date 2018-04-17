@@ -268,7 +268,7 @@ function make_rnd_pos_v(a,rng)
 	local d,v=0
 	while d==0 do
 		v=make_rnd_v(4)
-		v_plus_v(v,p,-1)
+		v_add(v,p,-1)
 		d=v_normz(v)
 	end
 	m_x_v(a.m,p)
@@ -312,7 +312,7 @@ function v_scale(v,scale)
 	v[2]*=scale
 	v[3]*=scale
 end
-function v_plus_v(v,dv,scale)
+function v_add(v,dv,scale)
 	scale=scale or 1
 	v[1]+=scale*dv[1]
 	v[2]+=scale*dv[2]
@@ -320,7 +320,7 @@ function v_plus_v(v,dv,scale)
 end
 function in_cone(p,t,fwd,angle,rng)
 	local v=v_clone(t)
-	v_plus_v(v,p,-1)
+	v_add(v,p,-1)
 	-- close enough?
 	if v_dot(v,v)<rng*rng then
 		v_normz(v)
@@ -338,9 +338,7 @@ end
 -- 3x3 matrix mul (orientation only)
 function o_x_v(m,v)
 	local x,y,z=v[1],v[2],v[3]
-	v[1]=m[1]*x+m[5]*y+m[9]*z
-	v[2]=m[2]*x+m[6]*y+m[10]*z
-	v[3]=m[3]*x+m[7]*y+m[11]*z
+	v[1],v[2],v[3]=m[1]*x+m[5]*y+m[9]*z,m[2]*x+m[6]*y+m[10]*z,m[3]*x+m[7]*y+m[11]*z
 end
 function m_x_xyz(m,x,y,z)
 	return {
@@ -413,10 +411,7 @@ function v_x_q(v,q)
 	local x,y,z=v[1],v[2],v[3]
 	local qx,qy,qz,qw=q[1],q[2],q[3],q[4]
 	-- calculate quat*vector
-	local ix=qw*x+qy*z-qz*y
-	local iy=qw*y+qz*x-qx*z
-	local iz=qw*z+qx*y-qy*x
-	local iw=-qx*x-qy*y-qz*z
+	local ix,iy,iz,iw=qw*x+qy*z-qz*y,qw*y+qz*x-qx*z,qw*z+qx*y-qy*x,-qx*x-qy*y-qz*z
 	
 	-- calculate result*inverse quat	
 	return {
@@ -425,9 +420,6 @@ function v_x_q(v,q)
 		iz*qw+iw*-qz+ix*-qy-iy*-qx}
 end
 function m_from_q(q)
-
-	local te={}
-
 	local x,y,z,w=q[1],q[2],q[3],q[4]
 	local x2,y2,z2=x+x,y+y,z+z
 	local xx,xy,xz=x*x2,x*y2,x*z2
@@ -652,7 +644,7 @@ function draw_actor(self,x,y,z,w)
 	 		c=8
  		end
  		local pos=v_clone(self.target.pos)
- 		v_plus_v(pos,self.pos,-1)
+ 		v_add(pos,self.pos,-1)
 	 	draw_vector(self.m,self.pos,pos,c,"tgt")
  	end
  	if self.follow then
@@ -877,7 +869,7 @@ function follow(pos,other,offset)
 	local v=v_clone(offset)
 	m_x_v(other.m,v)
 	-- line to target
-	v_plus_v(v,pos,-1)
+	v_add(v,pos,-1)
 	return v
 end
 function avoid(self,pos,dist)
@@ -886,10 +878,10 @@ function avoid(self,pos,dist)
 	for _,a in pairs(actors) do
 		if a!=self then
 			local p=v_clone(a.pos)
-			v_plus_v(p,pos,-1)
+			v_add(p,pos,-1)
 			local d=v_dot(p,p)
 			if d>0 and d<d2 then
-				v_plus_v(v,p,-1)
+				v_add(v,p,-1)
 			end
 		end
 	end
@@ -942,7 +934,7 @@ _g.update_flying_npc=function(self)
 			can_fire=true
 		end
 		self.follow=follow(pos,self.target,target_pos)
-		v_plus_v(force,self.follow)
+		v_add(force,self.follow)
 	else
 		-- search for target
 		if self.side!=good_side then
@@ -956,14 +948,14 @@ _g.update_flying_npc=function(self)
 			self.wander=wander(self)
 			self.wander_t=time_t+120+rnd(60)
 		end
-		v_plus_v(force,follow(pos,self,self.wander))
+		v_add(force,follow(pos,self,self.wander))
 	else
 		-- debug
 		self.wander=nil
 	end
 	local avf=avoid(self,pos,8)
 	-- weight avoid more than follow
-	v_plus_v(force,avf,4)
+	v_add(force,avf,4)
 	
 	local d=v_dot(force,force)
 	-- debug
@@ -974,15 +966,15 @@ _g.update_flying_npc=function(self)
 	v_clamp(force,1.2*acc)
 
 	-- update orientation		
-	v_plus_v(pos,force)
-	v_plus_v(pos,self.pos,-1)
+	v_add(pos,force)
+	v_add(pos,self.pos,-1)
 	v_normz(pos)
 
  -- good looking but a bit unstable
 	--m=make_m_toward(pos,self.target and {self.target.m[5],self.target.m[6],self.target.m[7]} or {m[5],m[6],m[7]})
  	m=make_m_toward(pos,{m[5],m[6],m[7]})	
 	-- move actor using force
-	v_plus_v(self.pos,force)
+	v_add(self.pos,force)
 	m_set_pos(m,self.pos)
 	self.m=m
 
@@ -1025,7 +1017,7 @@ function make_plyr(x,y,z)
 		acc=0.2,
 		model=all_models.xwing,
 		pos={x,y,z},
-		q=make_q({0,0,1},0),
+		q=make_q(v_fwd,0),
 		roll=0,
 		pitch=0,
 		laser_i=0,
@@ -1132,7 +1124,7 @@ _g.update_blt=function(self)
 			return false
 		end
 	end
-	v_plus_v(self.pos,self.u,self.acc)
+	v_add(self.pos,self.u,self.acc)
 	return true
 end
 
@@ -1144,13 +1136,13 @@ _g.update_proton=function(self)
  if self.target and not self.target.disabled then
 		-- old enough?
 		local v=v_clone(self.target.pos)
-		v_plus_v(v,self.pos,-1)
+		v_add(v,self.pos,-1)
 		-- not too close?
 		if v_dot(v,v)>0.25 then
 			v_normz(v)
  		-- within cone?
  		if v_dot(self.u,v)>0.6 then
- 			v_plus_v(self.u,v,smoothstep(self.duration/60))
+ 			v_add(self.u,v,smoothstep(self.duration/60))
  			v_normz(self.u)
  		end
  	end
@@ -1190,7 +1182,7 @@ function make_laser(self,target)
 	local v
 	if target then
 		v=v_clone(target)
-		v_plus_v(v,p,-1)
+		v_add(v,p,-1)
 		v_normz(v) 
 	else
 		v=v_clone(wp.n[i])
@@ -1207,7 +1199,7 @@ function make_laser(self,target)
 			side=self.side,
 			dmg=wp.dmg}))
 	pt.t=time_t+pt.dly
-	sfx(wp.sfx)
+	if (wp.sfx) sfx(wp.sfx)
 	make_part("flash",p,c)
 end
 
@@ -1260,9 +1252,9 @@ function control_plyr(self)
 		turn_t=0
 	end
 	local r=turn_t/8
-	local q=make_q({0,1,0},(1-r)*roll/128)
+	local q=make_q(v_up,(1-r)*roll/128)
 	q_x_q(plyr.q,q)
-	q=make_q({0,0,1},-r*roll/128)
+	q=make_q(v_fwd,-r*roll/128)
 	q_x_q(plyr.q,q)
 	self.roll*=0.9
 	
@@ -1270,14 +1262,14 @@ function control_plyr(self)
 	 self.pitch-=pitch/396
 	 self.pitch=mid(self.pitch,-1/256,1/256)
 	end
-	local q=make_q({1,0,0},self.pitch)
+	local q=make_q(v_right,self.pitch)
 	q_x_q(plyr.q,q)
 	self.pitch*=0.9
 	
 	-- update pos
 	local m=m_from_q(plyr.q)
 	local fwd={m[9],m[10],m[11]}
-	v_plus_v(plyr.pos,fwd,plyr.acc+plyr.boost)
+	v_add(plyr.pos,fwd,plyr.acc+plyr.boost)
 	-- special cases
 	if game_mode==1 then
 		plyr.pos[2]=mid(plyr.pos[2],1,4)
@@ -1309,7 +1301,7 @@ function control_plyr(self)
 	--radar_cam.m=m_clone(plyr.m)
 	if cam_mode==0 then
 		cam.pos=m_x_xyz(plyr.m,0,2,-8)
-		--v_plus_v(cam.pos,plyr.pos,-1)
+		--v_add(cam.pos,plyr.pos,-1)
 		cam.q=q_clone(plyr.q)
 	elseif cam_mode==1 then
 		cam.pos=v_clone(plyr.pos)
@@ -1321,7 +1313,7 @@ function control_plyr(self)
 	else
 		local x,y=stat(32),stat(33)
 		local dx,dy=mousex-x,mousey-y
-		local q=make_q({0,1,0},dx/128)
+		local q=make_q(v_up,dx/128)
 		q_x_q(cam.q,q)
 		--local q=make_q({0,0,1},dy/128)
 		--q_x_q(cam.q,q)
@@ -1334,7 +1326,7 @@ function control_plyr(self)
 			sel_t=time_t+8
 		end
 		local a=actors[sel_actor%#actors+1]
-		v_plus_v(cam.pos,a.pos)
+		v_add(cam.pos,a.pos)
 		mousex,mousey=x,y
 	end
 	
@@ -1392,7 +1384,7 @@ function draw_stars()
 			local star=make_rnd_v(32)
 			v[1],v[2],v[3]=star[1],star[2],star[3]
 			v.x,v.y=nil,nil
-			v_plus_v(v,cam.pos)
+			v_add(v,cam.pos)
 		end
 	end
 end
@@ -1411,7 +1403,7 @@ function draw_radar()
 			local x,y,z,w=radar_cam:project(a.pos[1],a.pos[2],a.pos[3])
 			if z>0 then
 				pset(x,y,8)
-			end
+      end
 		end
 	end
 end
@@ -1440,7 +1432,6 @@ function start_screen:update()
 	game_mode=mid(game_mode,0,2)
 	
 	if not self.starting and (btnp(4) or btnp(5)) then
-		sfx(0)
 		-- avoid start reentrancy
 		self.starting=true
 		-- init game
@@ -1524,7 +1515,7 @@ function bench_screen:update()
 	if(btn(3)) y=1
 	
 	self.angle+=0.01*x
-	cam.q=make_q({0,1,0},self.angle)
+	cam.q=make_q(v_up,self.angle)
 	--local q=make_q({0,0,1},dy/128)
 	--q_x_q(cam.q,q)
 	local m=m_from_q(cam.q)
@@ -1534,7 +1525,7 @@ function bench_screen:update()
 		self.sel_actor+=1
 	end
 	local a=actors[(self.sel_actor%#actors)+1]
-	v_plus_v(cam.pos,a.pos)
+	v_add(cam.pos,a.pos)
 
 	cam:update()
 	zbuf_filter(actors)
@@ -1576,14 +1567,14 @@ function game_screen:update()
 			-- friendly npc?
 			if rnd()>0.8 then
 				target=make_npc(p,v,all_npcs.xwing)
-				v_plus_v(p,v,10)
+				v_add(p,v,10)
 			end
 			-- spawn new enemy
 			for i=1,flr(2+rnd(2)) do
 				local a=make_npc(p,v,all_npcs.tie)
 				a.target=target
 				--target=a
-				v_plus_v(p,v,10)
+				v_add(p,v,10)
 			end
 		end
 	elseif game_mode==1 then
@@ -1686,8 +1677,8 @@ function _draw()
 	end
 	]]
 	
-	--rectfill(0,0,127,8,1)
-	--print(stat(1),2,2,7)
+	rectfill(0,0,127,8,1)
+	print(stat(1),2,2,7)
 end
 
 
