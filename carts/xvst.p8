@@ -354,12 +354,7 @@ function make_m(x,y,z)
 	m[13],m[14],m[15]=x or 0,y or 0,z or 0
 	return m
 end
-function m_clone(m)
-	local te={}
-	for i=1,16 do
-		te[i]=m[i]
-	end
-end
+
 function make_m_toward(z,up)
  	local x=make_v_cross(up,z)
 	-- aligned?
@@ -442,9 +437,7 @@ end
 -- same as above, inline matrix invert
 function m_inv_x_v(m,v)
 	local x,y,z=v[1]-m[13],v[2]-m[14],v[3]-m[15]
-	v[1]=m[1]*x+m[2]*y+m[3]*z
-	v[2]=m[5]*x+m[6]*y+m[7]*z
-	v[3]=m[9]*x+m[10]*y+m[11]*z
+	v[1],v[2],v[3]=m[1]*x+m[2]*y+m[3]*z,m[5]*x+m[6]*y+m[7]*z,m[9]*x+m[10]*y+m[11]*z
 end
 function m_set_pos(m,v)
 	m[13],m[14],m[15]=v[1],v[2],v[3]
@@ -520,8 +513,7 @@ function make_junk(i,j,model)
 		model=model,
 		update=function(self,i,j)
 			self.pos[1],self.pos[3]=i*ground_scale,j*ground_scale
-			local m=self.m
-		m[13],m[15]=self.pos[1],self.pos[3]
+			m_set_pos(self.m,self.pos)
 		end,
 		draw=draw_actor
 	}
@@ -730,7 +722,7 @@ function unpack_models()
  	for i=1,n do
  		local v={unpack_float(),unpack_float(),unpack_float()}
  		add(model.v,v)
- 	end	
+ 	end
  	-- faces
  	n=unpack_int()
  	model.f={}
@@ -759,6 +751,10 @@ function unpack_models()
  			unpack_int()==1 and true or -1
  		}
  		add(model.e,e)
+ 		
+ 		-- progress bar
+ 		line(0,0,127*m/n,0,1)
+ 		flip()
  	end
  	
  	compute_cp(model)
@@ -766,7 +762,6 @@ function unpack_models()
 		all_models[name]=clone(model,all_models[name])
 	end
 end
-unpack_models()
 
 -- little hack to perform in-place data updates
 local draw_session_id=0
@@ -959,11 +954,6 @@ _g.update_flying_npc=function(self)
 	local avf=avoid(self,pos,8)
 	-- weight avoid more than follow
 	v_add(force,avf,4)
-	
-	local d=v_dot(force,force)
-	-- debug
-	self.dist=sqrt(sqr_dist(self.pos,plyr.pos))
-	self.avoid=avf
 
 	-- clamp acceleration
 	v_clamp(force,1.2*acc)
@@ -1301,7 +1291,6 @@ function control_plyr(self)
 	-- update radar cam
 	radar_cam.pos=m_x_xyz(plyr.m,0,12,-24)
 	radar_cam.q=q_clone(plyr.q)
-	--radar_cam.m=m_clone(plyr.m)
 	if cam_mode==0 then
 		cam.pos=m_x_xyz(plyr.m,0,2,-8)
 		--v_add(cam.pos,plyr.pos,-1)
@@ -1410,6 +1399,22 @@ function draw_radar()
 		end
 	end
 	clip()
+	-- draw lock
+	if plyr.target then
+		local p=plyr.target.pos
+		local x,y,z,w=cam:project(p[1],p[2],p[3])
+			if z>0 then
+				if plyr.lock_t>30 then
+					pal(time_dt%2==0 and 10 or 11)
+				end
+				w=min(w,4)
+				spr(40,x-w,y-w)
+				spr(40,x+w-8,y-w,1,1,true)
+				spr(40,x-w,y+w-8,1,1,false,true)
+				spr(40,x+w-8,y+w-8,1,1,true,true)
+				pal()
+			end
+	end
 end
 
 local colors={0,1,0,14}
@@ -1702,6 +1707,9 @@ function _init()
 		-- in case...
 		sort(scores)
 	end
+	
+	cls()
+	unpack_models()
 	
 	-- compute xwing laser aim
 	local wp=all_models.xwing.wp
