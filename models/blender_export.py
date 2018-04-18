@@ -21,7 +21,7 @@ obdata = bpy.context.object.data
 # charset
 charset="_0123456789abcdefghijklmnopqrstuvwxyz"
 
-# how many models (to be manually edited)
+# model data
 s = ""
 
 # object name
@@ -29,6 +29,9 @@ name = bpy.context.object.name.lower()
 s = s + "{:02x}".format(len(name))
 for c in name:
     s = s + "{:02x}".format(charset.index(c)+1)
+
+# scale (custom model property)
+s = s + "{:02x}".format(bpy.context.object.get("scale", 1))
 
 bm = bmesh.new()
 bm.from_mesh(obdata)
