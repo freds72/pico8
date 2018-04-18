@@ -960,9 +960,7 @@ _g.update_flying_npc=function(self)
 	local up=v_clone({m[5],m[6],m[7]})
 	if self.target then
 		local up_target={self.target.m[5],self.target.m[6],self.target.m[7]}
-		v_scale(up_target,0.2)
-		v_add(up,up_target)
-		v_normz(up)
+		v_add(up,up_target,0.2)
 	end
 	m=make_m_toward(pos,up)
  	--m=make_m_toward(pos,{m[5],m[6],m[7]})	
