@@ -21,6 +21,12 @@ obdata = bpy.context.object.data
 # charset
 charset="_0123456789abcdefghijklmnopqrstuvwxyz"
 
+def pack_float(x):
+    h = "{:02x}".format(int(round(32*x+128,0)))
+    if len(h)!=2:
+        raise Exception('Unable to convert: {} into a byte: {}'.format(x,h))
+    return h
+
 # model data
 s = ""
 
@@ -38,7 +44,7 @@ bm.from_mesh(obdata)
 
 s = s + "{:02x}".format(len(obdata.vertices))
 for v in obdata.vertices:
-    s = s + "{:02x}{:02x}{:02x}".format(int(round(32*v.co.x+128,0)), int(round(32*v.co.z+128,0)), int(round(32*v.co.y+128,0)))
+    s = s + "{}{}{}".format(pack_float(v.co.x), pack_float(v.co.z), pack_float(v.co.y))
 
 # faces:
 s = s + "{:02x}".format(len(bm.faces))
@@ -53,7 +59,7 @@ for f in bm.faces:
 #normals
 s = s + "{:02x}".format(len(obdata.polygons))
 for f in obdata.polygons:
-    s = s + "{:02x}{:02x}{:02x}".format(int(round(32*f.normal.x+128,0)), int(round(32*f.normal.z+128,0)), int(round(32*f.normal.y+128,0)))
+    s = s + "{}{}{}".format(pack_float(f.normal.x), pack_float(f.normal.z), pack_float(f.normal.y))
 
 # all edges
 s = s + "{:02x}".format(len(bm.edges))
