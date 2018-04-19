@@ -97,6 +97,7 @@ end
 -- 1: cockpit
 -- 2: orbit
 local cam_mode,cam,radar_cam=0
+local plyr,waypt
 local actors,npc_count={},0
 local parts={}
 local scores,last_score={},0
@@ -444,7 +445,7 @@ function m_set_pos(m,v)
 end
 
 -- models
-local all_models=json_parse('{"plane":{"c":3},"title":{"c":10},"deathstar":{"c":3},"turret":{"c":8,"wp":{"sfx":1,"dmg":1,"dly":12,"pos":[[-0.2,0.8,0.65],[0.2,0.8,0.65]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"proton_wp":{"dmg":4,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":2,"dmg":1,"dly":8,"pos":[[2,1,1.6],[2,-1,1.6],[-2,-1,1.6],[-2,1,1.6]],"n":[]}},"tie":{"c":5,"r":1,"wp":{"sfx":1,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}}}')
+local all_models=json_parse('{"plane":{"c":3},"title":{"c":10},"deathstar":{"c":3},"turret":{"c":8,"r":0.5,"wp":{"sfx":1,"dmg":1,"dly":12,"pos":[[-0.2,0.8,0.65],[0.2,0.8,0.65]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"proton_wp":{"dmg":4,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":2,"dmg":1,"dly":8,"pos":[[2,1,1.6],[2,-1,1.6],[-2,-1,1.6],[-2,1,1.6]],"n":[]}},"tie":{"c":5,"r":1,"wp":{"sfx":1,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}}}')
 local dither_pat=json_parse('[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]')
 
 local ground_colors={5,1,5,1}
@@ -485,6 +486,7 @@ function make_turret(i,j,y,scalex,scaley)
 	local x,z=i*scalex,j*scaley
 	y=y or 0
 	local t={
+		hp=2,
 		scalex=scalex,
 		scaley=scaley,
 		pos={x,y,z},
@@ -495,7 +497,8 @@ function make_turret(i,j,y,scalex,scaley)
 		laser_i=0,
 		fire=make_laser,
 		update=update_turret,
-		draw=draw_actor
+		draw=draw_actor,
+		hit=_g.hit_npc
 	}
 	turrets[i+j*128]=t
 	return t
@@ -541,7 +544,7 @@ function update_ground()
 		for j=j0-6,j0+6 do
 			local cy=(j%128+128)%128
 			local t=turrets[cx+cy*128]
-			if t then
+			if t and not t.disabled then
 				t:update(i,j)
 				add(drawables,t)
 				add(ground_actors,t)
@@ -698,8 +701,7 @@ end
 -- valid chars for model names
 local itoa='_0123456789abcdefghijklmnopqrstuvwxyz'
 function unpack_string()
-	local n=unpack_int()
-	s=""
+	local n,s=unpack_int(),""
 	for i=1,n do
 		local c=unpack_int()
 		s=s..sub(itoa,c,c)
@@ -747,7 +749,7 @@ function unpack_models()
  			unpack_int(), -- end
  			unpack_int()==1 and true or -1
  		}
- 		add(model.e,e) 		
+ 		add(model.e,e)
  	end
  	
  	compute_cp(model)
@@ -916,7 +918,7 @@ _g.update_flying_npc=function(self)
 	local can_fire=false
 	local fwd={m[9],m[10],m[11]}
 
-	if self.target then
+	if self.target and not self.target.disabled then
 		-- friendly: formation flight
 		local target_pos={0,-4,-10}
 		-- enemy: get in sight
@@ -928,9 +930,7 @@ _g.update_flying_npc=function(self)
 		v_add(force,self.follow)
 	else
 		-- search for target
-		if self.side!=good_side then
-			self.target=seek(self,24)
-		end
+		self.target=seek(self,24)
 	end
 	-- nothing to track?
 	if not self.target then
@@ -956,14 +956,13 @@ _g.update_flying_npc=function(self)
 	v_add(pos,self.pos,-1)
 	v_normz(pos)
 
- -- good looking but a bit unstable
-	local up=v_clone({m[5],m[6],m[7]})
+ -- try to align w/ target
+	local up={m[5],m[6],m[7]}
 	if self.target then
 		local up_target={self.target.m[5],self.target.m[6],self.target.m[7]}
 		v_add(up,up_target,0.2)
 	end
 	m=make_m_toward(pos,up)
- 	--m=make_m_toward(pos,{m[5],m[6],m[7]})	
 	-- move actor using force
 	v_add(self.pos,force)
 	m_set_pos(m,self.pos)
@@ -1096,23 +1095,29 @@ _g.update_part=function(self)
 	return true
 end
 
+_g.die_blt=function(self)
+	make_part("flash",self.pos)
+	return false
+end
 _g.update_blt=function(self)
 	if(self.t<time_t) return false
 	
 	-- ground?
-	if game_mode==1 then
-		if self.pos[2]<0 then
-			self.pos[2]=0
-			make_part("flash",self.pos)
-			return false
+	if self.pos[2]<0 then
+		if game_mode==1 then
+			return self:die()
+		elseif game_mode==2 then
+			if abs(self.pos[1])>3 or self.pos[2]<-3 then
+				return self:die()
+			end
 		end
 	end
 	-- collision?
 	for _,a in pairs(actors) do
-		if a.model.r and band(a.side,self.side)==0 and sqr_dist(self.pos,a.pos)<a.model.r*a.model.r then
+		local r=a.model.r
+		if r and band(a.side,self.side)==0 and sqr_dist(self.pos,a.pos)<r*r then
 			a:hit(self.dmg,self.actor)
-			make_part("flash",self.pos)
-			return false
+			return self:die()
 		end
 	end
 	v_add(self.pos,self.u,self.acc)
@@ -1158,10 +1163,16 @@ _g.draw_part=function(self,x,y,z,w)
 		circfill(x,y,(0.5+rnd(1))*w,8)
 		fillp()
 		circfill(x,y,(0.1+0.2*rnd())*w,10)
+	elseif self.kind==4 then
+		if z>8 then
+ 		x,y=mid(x,4,124),mid(y,4,124)
+ 		spr(41,x-4,y-4)
+ 		print(sqrt(sqr_dist(self.pos,plyr.pos)).."nm",x+2,y,9)
+		end
 	end
 end
 
-local all_parts=json_parse('{"laser":{"rnd":{"dly":[80,110]},"acc":0.8,"kind":0,"update":"update_blt","draw":"draw_part"},"flash":{"kind":1,"rnd":{"r":[0.3,0.5],"dly":[6,10]},"dr":-0.05},"trail":{"kind":1,"rnd":{"r":[0.2,0.3],"dly":[12,24]},"dr":-0.02},"blast":{"sfx":3,"kind":1,"c":7,"rnd":{"r":[2.5,2],"dly":[8,12]},"dr":-0.04},"proton":{"rnd":{"dly":[90,120]},"duration":0,"acc":0.6,"kind":3,"update":"update_proton","draw":"draw_part"}}')
+local all_parts=json_parse('{"laser":{"rnd":{"dly":[80,110]},"acc":0.8,"kind":0,"update":"update_blt","draw":"draw_part","die":"die_blt"},"flash":{"kind":1,"rnd":{"r":[0.3,0.5],"dly":[6,10]},"dr":-0.05},"trail":{"kind":1,"rnd":{"r":[0.2,0.3],"dly":[12,24]},"dr":-0.02},"blast":{"sfx":3,"kind":1,"c":7,"rnd":{"r":[2.5,2],"dly":[8,12]},"dr":-0.04},"proton":{"rnd":{"dly":[90,120]},"duration":0,"acc":0.6,"kind":3,"update":"update_proton","draw":"draw_part","die":"die_blt"},"waypoint":{"r":1,"dr":0,"dly":3600,"kind":4}}')
 
 function make_laser(self,target)
 	local wp=self.model.wp
@@ -1393,9 +1404,14 @@ function draw_radar()
 			local x,y,z,w=radar_cam:project(a.pos[1],a.pos[2],a.pos[3])
 			if z>0 then
 				pset(x,y,8)
-      end
+   end
 		end
 	end
+	local x,y,z,w=radar_cam:project(waypt.pos[1],waypt.pos[2],waypt.pos[3])
+	if z>0 then
+		pset(x,y,10)
+ end
+	
 	clip()
 	-- draw lock
 	if plyr.target then
@@ -1551,12 +1567,16 @@ function game_screen:init()
 	actors={}
 	npc_count=0
 	plyr=make_plyr(0,0,0)
+	waypt=make_part("waypoint",{0,0,24})
 	
 	if game_mode==1 then
 		init_ground()
 	elseif game_mode==2 then
 		init_trench(8)
 	end
+end
+
+function make_mission()
 end
 
 function game_screen:update()
@@ -1747,14 +1767,14 @@ aaaaaaaa999998888888840000000000000000000000000000000004400000000000000000000000
 0000000000000012669888888888888840000000000000000000000000000000000000dffd000000000005ffff50000000000000000000000000000000000000
 00000000000000122144888888888888840000000000000000000000000000000000076666700000000000577500000000000000000000000000000000000000
 00000000000000122100448888888888884000000000000000000000000000000006776677776000000000000000000000000000000000000000000000000000
-00000000000001222100004888888888888400000000000000000000000000008800000000000000000000000000000000000000000000000000000000000000
-00000000000001221000000448888888888840000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000
-00000000000012221000000004488888888884000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000012210000000000044888888888400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000001122210000000000000488888888840000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000001112222100000000000000044888888884000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00001112222222110000000000000000448888888400000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-01112222222222121000000000000000004888888840000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000000000000012221000048888888888884000000000000000000000000000088000000aaaaaaaa000000000000000000000000000000000000000000000000
+000000000000012210000004488888888888400000000000000000000000000080000000a000000a000000000000000000000000000000000000000000000000
+000000000000122210000000044888888888840000000000000000000000000000000000a000000a000000000000000000000000000000000000000000000000
+0000000000001221000000000004488888888840000000000000000000000000000000000a0000a0000000000000000000000000000000000000000000000000
+0000000000112221000000000000048888888884000000000000000000000000000000000a0000a0000000000000000000000000000000000000000000000000
+00000001112222100000000000000044888888884000000000000000000000000000000000a00a00000000000000000000000000000000000000000000000000
+00001112222222110000000000000000448888888400000000000000000000000000000000a00a00000000000000000000000000000000000000000000000000
+011122222222221210000000000000000048888888400000000000000000000000000000000aa000000000000000000000000000000000000000000000000000
 12222222222211222100000000000000000448888884000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 22222222211122222210000000000000000004488888444444444444444444440000000000000000000000000000000000000000000000000000000000000000
 22222221122222222221000000000000000048888888888888888888888888880000000000000000000000000000000000000000000000000000000000000000
