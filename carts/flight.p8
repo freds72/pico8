@@ -394,7 +394,7 @@ function rspr(s,x,y,ca,sa,w)
  w*=4
  ca*=w
  sa*=w
- local dx0,dy0=sa-ca+w,-ca-sa+w
+ local dx0,dy0=sa-ca+w+0.5,-ca-sa+w+0.5
  w=2*w-1
  for ix=0,w do
   srcx,srcy=dx0,dy0
