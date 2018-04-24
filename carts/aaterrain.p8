@@ -4,7 +4,7 @@ __lua__
 
 local actors={}
 local models={
-	"plyr_model"={
+	plyr_model={
 		v={
 		{-1,2,-1},
 		{1,2,-1},
@@ -16,7 +16,7 @@ local models={
 		{-1,-2,1}},
 		f={0,1,2,3,4,0,8,7,6,5,0,4,8,5,1,0,7,3,2,6}
 	},
- "plane_model"={
+ plane_model={
 		v={
 		{0,0,0},
 		{0,5,0},
@@ -150,7 +150,7 @@ function _init()
  			add(m.n,
  				cross(
  					vec(m.v[self.model.f[i+1]],m.v[self.model.f[i+1]]),
- 					vec(m.v[self.model.f[i+1]],m.v[self.model.f[i+1]]))
+ 					vec(m.v[self.model.f[i+1]],m.v[self.model.f[i+1]])))
  			i+=5
  		end
  	end
@@ -484,8 +484,8 @@ end
 function qfill(v,i,j,k,l)
 	local n=getwinding(v[i],v[j],v[k])
 	if n<0 then
- 	trifill(v[i][1],v[i][2],v[j][1],v[j][2],v[k][1],v[k][2],)
- 	trifill(v[k][1],v[k][2],v[l][1],v[l][2],v[i][1],v[i][2],)
+ 	trifill(v[i][1],v[i][2],v[j][1],v[j][2],v[k][1],v[k][2])
+ 	trifill(v[k][1],v[k][2],v[l][1],v[l][2],v[i][1],v[i][2])
 	end
 end
 

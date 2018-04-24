@@ -98,6 +98,7 @@ end
 -- 2: orbit
 local cam_mode,cam,radar_cam=0
 local plyr,waypt
+local spawn_t=0
 local actors,npc_count={},0
 local parts={}
 local scores,last_score={},0
@@ -612,6 +613,13 @@ end
 
 local debug_vectors=false
 function draw_actor(self,x,y,z,w)
+	if self.recover then
+		print("?",x,y-w-8,7)
+	end
+	print(self.g,x+w+2,y-16,7)
+	print(self.overg_t,x+w+2,y-8,7)
+	
+	-- distance culling
 	if w>1 then
 		draw_model(self.model,self.m,x,y,z,w)
 	end
@@ -893,6 +901,7 @@ _g.update_flying_npc=function(self)
 	-- if npc still in range
 	if sqr_dist(self.pos,plyr.pos)>64*64 then
 		npc_count-=1
+		spawn_t=time_t+60+rnd(60)
 		return false
 	end
 	
@@ -906,7 +915,7 @@ _g.update_flying_npc=function(self)
 	local can_fire=false
 	local fwd={m[9],m[10],m[11]}
 
-	if self.target and not self.target.disabled and in_cone(self.pos,self.target.pos,fwd,0.92,24) then
+	if self.target and not self.target.disabled then
 		-- friendly: formation flight
 		local target_pos={0,-4,-10}
 		-- enemy: get in sight
@@ -943,6 +952,30 @@ _g.update_flying_npc=function(self)
 	v_add(pos,force)
 	v_add(pos,self.pos,-1)
 	v_normz(pos)
+
+	local f=v_clone(force)
+	v_normz(f)
+	self.g+=1-abs(v_dot(f,fwd))
+	self.g*=0.9
+	if self.g>0.5 then
+		self.overg_t+=1
+	end
+	self.overg_t*=0.95
+	if self.overg_t>18 then
+		if not self.recover then
+			local tgt=self.target
+			self.recover=true
+			can_fire=false
+			self.target=nil				
+			futures_add(function()
+				-- forget target
+				wait_async(180)	
+				self.target=tgt
+				self.recover=false
+				self.g,self.overg_t=0,0
+			end)
+		end
+	end
 
  -- try to align w/ target
 	local up={m[5],m[6],m[7]}
@@ -1037,6 +1070,8 @@ function make_npc(p,v,src)
 		lock_t=0,
 		fire_t=0,
 		laser_i=0,
+		g=0,
+		overg_t=0,
 		fire=make_laser,
 		die=_g.die_actor,
 		draw=draw_actor
@@ -1224,6 +1259,42 @@ function make_part(part,p,c)
 	pt.t,pt.update,pt.draw=time_t+pt.dly,_g.update_part,_g.draw_part
 	if(pt.sfx) sfx(pt.sfx)
 	return pt
+end
+
+local msgs={}
+local all_msgs=json_parse'{""}'
+function make_msg(msg)
+	local m=clone(all_msgs[msg],{
+	})
+	m.t=time_t+m.dly
+	return add(msgs,m)
+end
+
+function update_msg(self)
+	if(self.t<time_t) return false
+	if(self.can_skip and btnp(4) or btnp(5)) return false
+	return false
+end
+function draw_msg(self)
+	local y=2	
+	rectfill(32,y,128-32,y+18,0)
+	rect(32,y,128-32,y+18,1)
+	spr(10,33,y+1,2,2)
+	print(self.title,50,y+3,9)
+	print(self.msg,50,y+10,7)
+	if time_t%4==0 then
+		fillp(0b1111000011110000.1)
+		rectfill(33,y,128-32,y+23,0)
+		fillp()			
+ end
+	
+	if time_t%64>50 then
+		rectfill(40,y+13,41,y+14,0)
+	elseif time_t%64>30 then
+		line(40,y+13,41,y+13,0)
+ elseif time_t%64>15 then
+	 line(39,y+13,42,y+13,0)
+ end
 end
 
 local turn_t=0
@@ -1468,6 +1539,7 @@ function start_screen:update()
 		futures_add(function()
 			wait_async(30)
 			game_screen:init()
+			spawn_t=time_t+3600
 			cur_screen=game_screen
 			start_screen.starting=false
 		end)
@@ -1595,9 +1667,9 @@ function game_screen:update()
 	radar_cam:update()
 
 	if game_mode==0 then
-		if npc_count<=0 then
+		if npc_count<=0 and spawn_t<time_t then
 			local p,v=make_rnd_pos_v(plyr,64)
-			local target
+			local target=plyr
 			-- friendly npc?
 			if rnd()>0.8 then
 				target=make_npc(p,v,all_npcs.xwing)
@@ -1692,28 +1764,6 @@ function _draw()
 	futures_update(after_draw)
 
 	time_dt=0
-
-	--[[
-	local y=2	
-	rectfill(32,y,128-32,y+18,0)
-	rect(32,y,128-32,y+18,1)
-	spr(10,33,y+1,2,2)
-	print("red leader:",50,y+3,9)
-	print("help!",50,y+10,7)
-	if time_t%4==0 then
-		fillp(0b1111000011110000.1)
-		rectfill(33,y,128-32,y+23,0)
-		fillp()			
- end
-	
-	if time_t%64>50 then
-		rectfill(40,y+13,41,y+14,0)
-	elseif time_t%64>30 then
-		line(40,y+13,41,y+13,0)
- elseif time_t%64>15 then
-	 line(39,y+13,42,y+13,0)
- end
-	]]
 	
 	rectfill(0,0,127,8,1)
 	print(stat(1),2,2,7)
