@@ -18,6 +18,9 @@ end
 function vec:__sub(a)
 	return vec(self.x-a.x,self.y-a.y)
 end
+function vec:__unm()
+	return vec(-self.x,-self.y)
+end
 function vec:__mul(a)
 
 	-- scalar mul
@@ -126,12 +129,22 @@ function mat:__mul(a)
 	end
 end
 
+-- misc math
+function is_gt(a,b)
+	return a>=b*0.95+a*0.01
+end
+
 -- global vectors
-local v_gravity=vec(0,-9)
+local v_gravity=vec(0,0)
 
 function project(v)
 	return 64+v.x,64-v.y
 end
+function unproject(x,y)
+	return vec(x-64,-y+64)
+end
+
+
 -->8
 -- cube shape
 function make_cube(r,d)
@@ -155,6 +168,7 @@ function make_cube(r,d)
 			local x0,y0=project(self:apply(m))
 			local x1,y1=project(self:apply(m+4*n))
 			line(x0,y0,x1,y1,8)
+			--print(i,x1+2,y1,8)
 		end,
 		draw=function(self)
 			local v=self.v[#self.v]
@@ -167,6 +181,12 @@ function make_cube(r,d)
 				x,y=x1,y1
 				v=v1
 			end
+		end,
+		draw_face=function(self,i)
+			local v0,v1=self.v[i-1==0 and #self.v or i-1],self.v[i]
+			local x0,y0=project(self:apply(v0))
+			local x1,y1=project(self:apply(v1))
+			line(x0,y0,x1,y1,9)
 		end,
 		init=function(self,b)
 		 -- calculate normals
@@ -202,7 +222,50 @@ function make_cube(r,d)
 			b.ii=1/b.i
 			
 			self.body=b
-		end
+		end,
+		support=function(self,d)
+			local maxp,maxv=-32000
+			for i=1,#self.v do
+				local v=self.v[i]
+				local p=v_dot(v,d)
+				if p>maxp then
+					maxp,maxv=p,v
+				end
+			end
+			return maxv
+		end,
+  leastpenetration=function(self,b)
+ 		local maxd,maxi=-32000
+  	for i=1,#self.v do
+  		local n,v=self.n[i],self.v[i]
+  		local nw,vw=self.u*n,self:apply(v)-b.body.pos
+  		local but=b.u:transpose()
+  		n,v=but*nw,but*vw
+  		
+  		local s=b:support(-n)
+  		
+  		local d=v_dot(n,s-v)
+  		
+  		if d>maxd then
+  			maxd,maxi=d,i
+  		end		
+  	end
+  	return maxd,maxi
+  end,
+  incidentface=function(self,b,ni)
+  	local n=self.u*self.n[ni]
+  	n=b.u:transpose()*n
+  	local mini,mindot=-1,32000
+  	for i=1,#b.n do
+  		local d=v_dot(n,b.n[i])
+  		if d<mindot then
+  			mindot,mini=d,i
+  		end
+  	end
+  	return {
+  		b:apply(b.v[mini]),
+  		b:apply(b.v[mini-1==0 and #b.v or mini-1])}
+  end
 	}
 	return c
 end
@@ -236,7 +299,7 @@ function make_body(shape,x,y)
 			if(self.im==0) return
 			self.pos+=dt*self.v
 			self.angle+=dt*self.angularv
-			self.shape:rotate(angle)
+			self.shape:rotate(self.angle)
 			
 			self:apply_forces(dt)
 		end,
@@ -250,8 +313,13 @@ function make_body(shape,x,y)
 end
 -->8
 -- game loop
+local mousex,mousey=0,0
+local body_a,body_b
 function _init()
-	make_body(make_cube(5,1),5,5)
+	poke(0x5f2d,1)
+	body_a=make_body(make_cube(10,1),15,5)
+	body_b=make_body(make_cube(10,1),-15,5)	
+	body_b.angle=0.2
 end
 
 function _draw()
@@ -262,9 +330,31 @@ function _draw()
 	
 	rectfill(0,0,30,9,1)
 	print(flr(100*stat(2)).."%",2,2,7)
+
+	local manifold={}
+	poly2poly(manifold,body_b.shape,body_a.shape)
+	for _,cp in pairs(manifold.contacts) do
+		local x,y=project(cp)
+		circfill(x,y,2,8)
+	end
+			
+	local d,i=body_b.shape:leastpenetration(body_a.shape)
+	if d<=0 then
+		body_b.shape:draw_face(i)
+	end
+
+	spr(2,mousex,mousey)
 end
 
 function _update60()
+	mousex,mousey=stat(32),stat(33)
+
+	if stat(34)==1 then
+		body_b.pos=unproject(mousex,mousey)
+		body_b:reset()
+		body_b.v=vec(0,0)
+	end
+		
 	for _,b in pairs(bodies) do
 		b:apply_forces(1/60)
 		b:apply_v(1/60)
@@ -274,27 +364,84 @@ end
 
 -->8
 -- collision resolution
-function leastpenetration(a,b)
-	for i=1,#a.v do
-		local n=a.n[i]
-		local nw=a.u*n
-		local but=b.u:transpose()
-	end
-end
 
-function incidentface(a,b)
+function face_clip(n,c,f)
+	local sp,out=0,{f[1],f[2]}
+	
+	local d1,d2=v_dot(n,f[1])-c,v_dot(n,f[2])-c
+	if(d1<=0) out[sp+1]=f[1] sp+=1
+	if(d2<=0) out[sp+1]=f[2] sp+=1
+	
+	if d1*d2<0 then
+		local t=d1/(d1-d2)
+		out[sp+1]=f[1]+t*(f[2]-f[1])
+		sp+=1
+	end
+	
+	assert(sp!=3)
+	
+	f[1],f[2]=out[1],out[2]
+	
+	return sp
 end
 
 function poly2poly(m,a,b)
 	m.contacts={}
 	
+	local pa,fa=a:leastpenetration(b)
+	if(pa>0) return
+	
+	local pb,fb=b:leastpenetration(a)
+	if(pb>0) return
+	
+	local ref,inc,i,flip=a,b,fa,false
+	if not is_gt(pa,pb) then
+		ref,inc,i,flip=b,a,fb,true
+	end
+	
+	local incf=ref:incidentface(inc,i)
+	
+	local v1,v2=ref.v[i],ref.v[i-1==0 and #ref.v or i-1]
+	v1,v2=ref:apply(v1),ref:apply(v2)
+	
+	local sn=v2-v1
+	sn:normz()
+	
+	local refn=vec(-sn.y,sn.x)
+
+	-- dist
+	local refc=v_dot(refn,v1)
+	local negside,posside=-v_dot(sn,v1),v_dot(sn,v2)
+		
+	if(face_clip(-sn,negside,incf)<2) return
+	if(face_clip(-sn,posside,incf)<2) return
+	
+	m.n=flip==true and -refn or refn		
+	
+	
+	local cp=0
+	local sep=v_dot(refn,incf[1])-refc
+	m.penetration=0
+	if sep<=0 then
+		cp+=1
+		add(m.contacts,incf[1])
+		m.penetration=-sep
+	end
+	
+	sep=v_dot(refn,incf[2])-refc
+	if sep<=0 then
+		cp+=1
+		add(m.contacts,incf[2])
+		m.penetration+=-sep
+		m.penetration/=cp
+	end
 end
 
 __gfx__
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000005577000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00700700055577700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00077000055577700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000007777000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000005577007000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00700700055577707077000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00077000055577707077000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00077000077755500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00700700077755500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000007755000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
