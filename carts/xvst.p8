@@ -13,7 +13,7 @@ local before_update,after_draw={},{}
 local _tok={
  ['true']=true,
  ['false']=false}
-function nop() end
+function nop() return true end
 local _g={
 	good_side=good_side,
 	bad_side=bad_side,
@@ -97,7 +97,7 @@ end
 -- 1: cockpit
 -- 2: orbit
 local cam_mode,cam,radar_cam=0
-local plyr,waypt
+local plyr
 local spawn_t=0
 local actors,npc_count={},0
 local parts={}
@@ -105,7 +105,6 @@ local scores,last_score={},0
 local cur_screen
 -- 0: space
 -- 1: surface
--- 2: trenches
 local game_mode=1
 local start_screen={
 	starting=false
@@ -252,9 +251,11 @@ end
 
 function sqr_dist(a,b)
 	local dx,dy,dz=b[1]-a[1],b[2]-a[2],b[3]-a[3]
+	local scale=1
 	if abs(dx)>128 or abs(dy)>128 or abs(dz)>128 then
 		return 32000
 	end
+
 	return dx*dx+dy*dy+dz*dz
 end
 
@@ -263,6 +264,7 @@ function make_rnd_v(scale)
 	v_normz(v)
 	return {scale*v[1],scale*v[2],scale*v[3]}
 end
+
 function make_rnd_pos_v(a,rng)
 	local p=make_rnd_v(8)
 	p[3]+=rng
@@ -447,177 +449,18 @@ end
 
 -- models
 local all_models=json_parse'{"plane":{"c":3},"title":{"c":10},"deathstar":{"c":3},"turret":{"c":8,"r":0.5,"wp":{"sfx":1,"dmg":1,"dly":12,"pos":[[-0.2,0.8,0.65],[0.2,0.8,0.65]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"proton_wp":{"dmg":4,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":2,"dmg":1,"dly":8,"pos":[[2,1,1.6],[2,-1,1.6],[-2,-1,1.6],[-2,1,1.6]],"n":[]}},"tie":{"c":5,"r":1,"wp":{"sfx":1,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}}}'
+local _id=0
 local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]'
-
-local ground_colors={1,5,5,1}
-local ground_scale=4
-function draw_ground(self)
-	if(cam.pos[2]<0) return
-	
-	ground_scale=mid(flr(cam.pos[2]/16+0.5),2,16)
-	ground_scale*=ground_scale
-	local v={}
-	local x0,z0=cam.pos[1],cam.pos[3]
-	local dx,dy=x0%ground_scale,z0%ground_scale
-	
-	local c=5
-	for i=-8,8 do
-		local ii=ground_scale*i-dx+x0
-		-- don't draw on trench
-		if abs(flr(ii-x0+cam.pos[1]))>=8 then
- 		for j=-8,8 do
- 		 local jj=ground_scale*j-dy+z0
- 			local x,y,z=cam:project(ii,0,jj)
- 			if(z>0) pset(x,y,c)
- 		end
-		end
-	end
-	ground_scale=4
-end
-local turrets={}
-function make_turret(i,j,y,scalex,scaley)
-	scalex,scaley=scalex or ground_scale,scaley or ground_scale
-	
-	local x,z=i*scalex,j*scaley
-	y=y or 0
-	local t={
-		hp=2,
-		scalex=scalex,
-		scaley=scaley,
-		pos={x,y,z},
-		m=make_m(x,y,z),
-		model=all_models.turret,
-		side=bad_side,
-		fire_t=0,
-		laser_i=0,
-		fire=make_laser,
-		update=update_turret,
-		draw=draw_actor,
-		hit=_g.hit_npc
-	}
-	turrets[i+j*128]=t
-	return t
-end
-function make_junk(i,j,model)
-	local x,y,z=i*ground_scale,0,j*ground_scale
-	local t={
-		pos={x,y,z},
-		m=make_m(x,y,z),
-		side=any_side,
-		model=model,
-		update=function(self,i,j)
-			self.pos[1],self.pos[3]=i*ground_scale,j*ground_scale
-			m_set_pos(self.m,self.pos)
-		end,
-		draw=draw_actor
-	}
-	turrets[i+j*128]=t
-	return t
-end
-
-function init_ground()
-	for i=0,127 do
-		for j=0,127 do
-			local r=rnd()
-			if r>0.99 then
-				make_turret(i,j)
-			elseif r>0.95 then
-				make_junk(i,j,all_models.junk1)
-			elseif r>0.9 then
-				make_junk(i,j,all_models.junk2)
-			end
-		end
-	end
-end
-
-local ground_actors={}
-function update_ground()
-	ground_actors={}
-	local i0,j0=flr(cam.pos[1]/ground_scale),flr(cam.pos[3]/ground_scale)
-	for i=i0-6,i0+6 do
-		local cx=(i%128+128)%128
-		for j=j0-6,j0+6 do
-			local cy=(j%128+128)%128
-			local t=turrets[cx+cy*128]
-			if t and not t.disabled then
-				t:update(i,j)
-				add(drawables,t)
-				add(ground_actors,t)
-			end
-		end
-	end
-end
-
-function update_turret(self,i,j)
-	self.pos[1],self.pos[3]=i*self.scalex,j*self.scaley
-	local dx,dy=self.pos[1]-plyr.pos[1],self.pos[3]-plyr.pos[3]
-	-- in range?
-	local angle,m=1,self.m
-	if dx*dx+dy*dy<64 then
-		angle=atan2(dx,dy)-0.25
-		local q=make_q(v_up,angle)
-		m=m_from_q(q)
-		self.m=m
-	end
-	m_set_pos(m,self.pos)
-	
-	if abs(angle)<0.2 then
-		self:fire(plyr.pos)
-		self.fire_t=time_t+self.model.wp.dly
-	end
-	
-	return true
-end
-
-local trench_scale=6
-function make_trench(i)
-	local x,y,z=0,0,i*trench_scale
-	local t={
-		pos={x,y,z},
-		m=make_m(x,y,z),
-		side=no_side,
-		model=all_models.trench1,
-		update=function(self)
-			local dz=cam.pos[3]-cam.pos[3]%(2*trench_scale)
-			local z=i*trench_scale+dz
-			self.pos[3],self.m[15]=z,z
-			return true
-		end,
-		draw=draw_actor
-	}
-	add(actors,t)
-end
-function init_trench(n)
-	for i=-n,n do
-		make_trench(i)
-	end
-end
---[[
-function update_trench()
-	ground_actors={}
-	local i0,j0=flr(plyr.pos[1]/2),flr(plyr.pos[3]/4)
-	for i=i0-2,i0+2 do
-		local cx=(i%128+128)%128
-		for j=j0-5,j0+5 do
-			local cy=(j%128+128)%128
-			local t=turrets[cx+cy*128]
-			if t then
-				t:update(i,j)
-				add(drawables,t)
-				add(ground_actors,t)
-			end
-		end
-	end
-end
-]]
 
 local debug_vectors=false
 function draw_actor(self,x,y,z,w)
+	--[[
 	if self.recover then
 		print("?",x,y-w-8,7)
 	end
 	print(self.g,x+w+2,y-16,7)
 	print(self.overg_t,x+w+2,y-8,7)
+	]]
 	
 	-- distance culling
 	if w>1 then
@@ -1018,6 +861,7 @@ _g.hit_flying_npc=function(self,dmg,actor)
 		self.target=plyr
 	end
 end
+local all_npcs=json_parse'{"xwing":{"hp":8,"acc":0.2,"g":0,"overg_t":0,"model":"xwing","side":"good_side","update":"update_flying_npc","hit":"hit_npc"},"tie":{"hp":4,"acc":0.2,"g":0,"overg_t":0,"model":"tie","side":"bad_side","update":"update_flying_npc","hit":"hit_flying_npc"},"turret":{"hp":2,"model":"turret","side":"bad_side","update":"update_ground_npc","hit":"hit_npc"},"generator":{"waypt":true,"hp":2,"model":"junk2","side":"bad_side","update":"nop","hit":"hit_npc"}}'
 		
 function make_plyr(x,y,z)
 	local p={
@@ -1032,6 +876,7 @@ function make_plyr(x,y,z)
 		pitch=0,
 		laser_i=0,
 		fire_t=0,
+		lock_t=0,
 		proton_ammo=4,
 		side=good_side,
 		hit=function(self,dmg)
@@ -1055,9 +900,6 @@ function make_plyr(x,y,z)
 	return p
 end
 
-local _id=0
-local all_npcs=json_parse'{"xwing":{"hp":8,"acc":0.2,"model":"xwing","side":"good_side","update":"update_flying_npc","hit":"hit_npc"},"tie":{"hp":4,"acc":0.2,"model":"tie","side":"bad_side","update":"update_flying_npc","hit":"hit_flying_npc"},"turret":{"hp":2,"model":"turret","side":"bad_side","update":"update_ground_npc","hit":"hit_npc"}}'
-
 function make_npc(p,v,src)
 	npc_count+=1
 	_id+=1
@@ -1070,8 +912,6 @@ function make_npc(p,v,src)
 		lock_t=0,
 		fire_t=0,
 		laser_i=0,
-		g=0,
-		overg_t=0,
 		fire=make_laser,
 		die=_g.die_actor,
 		draw=draw_actor
@@ -1117,6 +957,19 @@ _g.update_part=function(self)
 	self.r+=self.dr
 	return true
 end
+_g.update_blast=function(self)
+	if self.frame==8 then
+		self.kind=5
+		self.dr=-0.2
+		for i=1,6+rnd(6) do
+			local v=make_rnd_v(rnd(4))
+			v_add(v,self.pos)
+			make_part("spark",v)
+		end
+	end
+	self.frame+=1
+	return _g.update_part(self)
+end
 
 _g.die_blt=function(self)
 	make_part("flash",self.pos)
@@ -1128,8 +981,6 @@ _g.update_blt=function(self)
 	-- ground?
 	if self.pos[2]<0 then
 		if game_mode==1 then
-			return self:die()
-		elseif game_mode==2 then
 			if abs(self.pos[1])>6 or self.pos[2]<-6 then
 				return self:die()
 			end
@@ -1161,12 +1012,12 @@ _g.update_proton=function(self)
 			v_normz(v)
  		-- within cone?
  		if v_dot(self.u,v)>0.6 then
- 			v_add(self.u,v,smoothstep(self.duration/60))
+ 			v_add(self.u,v,smoothstep(self.frame/60))
  			v_normz(self.u)
  		end
  	end
  end
- self.duration+=1
+ self.frame+=1
  return _g.update_blt(self)
 end
 
@@ -1186,16 +1037,14 @@ _g.draw_part=function(self,x,y,z,w)
 		circfill(x,y,(0.5+rnd(1))*w,8)
 		fillp()
 		circfill(x,y,(0.1+0.2*rnd())*w,10)
-	elseif self.kind==4 then
-		if z>8 then
- 		x,y=mid(x,4,124),mid(y,4,124)
- 		spr(41,x-4,y-4)
- 		print(sqrt(sqr_dist(self.pos,plyr.pos)).."nm",x+2,y,9)
-		end
+	elseif self.kind==5 then
+		circ(x,y,w*self.r,7)
+	elseif self.kind==6 then
+		pset(x,y,15*rnd())
 	end
 end
 
-local all_parts=json_parse'{"laser":{"rnd":{"dly":[80,110]},"acc":0.8,"kind":0,"update":"update_blt","draw":"draw_part","die":"die_blt"},"flash":{"kind":1,"rnd":{"r":[0.3,0.5],"dly":[6,10]},"dr":-0.05},"trail":{"kind":1,"rnd":{"r":[0.2,0.3],"dly":[12,24]},"dr":-0.02},"blast":{"sfx":3,"kind":1,"c":7,"rnd":{"r":[2.5,2],"dly":[8,12]},"dr":-0.04},"proton":{"rnd":{"dly":[90,120]},"duration":0,"acc":0.6,"kind":3,"update":"update_proton","draw":"draw_part","die":"die_blt"},"waypoint":{"r":1,"dr":0,"dly":3600,"kind":4}}'
+local all_parts=json_parse'{"laser":{"rnd":{"dly":[80,110]},"acc":0.8,"kind":0,"update":"update_blt","draw":"draw_part","die":"die_blt"},"flash":{"kind":1,"rnd":{"r":[0.3,0.5],"dly":[6,10]},"dr":-0.05},"trail":{"kind":1,"rnd":{"r":[0.2,0.3],"dly":[12,24]},"dr":-0.02},"blast":{"frame":0,"sfx":3,"kind":1,"c":7,"rnd":{"r":[2.5,3],"dly":[8,12]},"dr":-0.04,"update":"update_blast"},"proton":{"rnd":{"dly":[90,120]},"frame":0,"acc":0.6,"kind":3,"update":"update_proton","draw":"draw_part","die":"die_blt"},"spark":{"kind":6,"dr":0,"r":1,"rnd":{"dly":[24,38]}}}'
 
 function make_laser(self,target)
 	if(self.fire_t>time_t) return false
@@ -1255,14 +1104,164 @@ function make_proton(self,target)
 end
 
 function make_part(part,p,c)
-	local pt= add(parts,clone(all_parts[part],{c=c or 7,pos=v_clone(p)}))
-	pt.t,pt.update,pt.draw=time_t+pt.dly,_g.update_part,_g.draw_part
+	local pt=add(parts,clone(all_parts[part],{c=c or 7,pos=v_clone(p)}))
+	pt.t,pt.update,pt.draw=time_t+pt.dly,pt.update or _g.update_part,_g.draw_part
 	if(pt.sfx) sfx(pt.sfx)
 	return pt
 end
 
+local ground_colors={1,5,5,1}
+local ground_scale=4
+function draw_ground(self)
+	if(cam.pos[2]<0) return
+	
+	ground_scale=mid(flr(cam.pos[2]/16+0.5),2,16)
+	ground_scale*=ground_scale
+	local v={}
+	local x0,z0=cam.pos[1],cam.pos[3]
+	local dx,dy=x0%ground_scale,z0%ground_scale
+	
+	local c=5
+	for i=-8,8 do
+		local ii=ground_scale*i-dx+x0
+		-- don't draw on trench
+		if abs(flr(ii-x0+cam.pos[1]))>=8 then
+ 		for j=-8,8 do
+ 		 local jj=ground_scale*j-dy+z0
+ 			local x,y,z=cam:project(ii,0,jj)
+ 			if(z>0) pset(x,y,c)
+ 		end
+		end
+	end
+	ground_scale=4
+end
+local turrets={}
+function make_turret(i,j,y,scalex,scaley)
+	scalex,scaley=scalex or ground_scale,scaley or ground_scale
+	
+	local x,z=i*scalex,j*scaley
+	y=y or 0
+	local t={
+		hp=2,
+		scalex=scalex,
+		scaley=scaley,
+		pos={x,y,z},
+		m=make_m(x,y,z),
+		model=all_models.turret,
+		side=bad_side,
+		fire_t=0,
+		laser_i=0,
+		fire=make_laser,
+		update=update_turret,
+		draw=draw_actor,
+		hit=_g.hit_npc
+	}
+	turrets[i+j*128]=t
+	return t
+end
+function make_junk(i,j,model)
+	local x,y,z=i*ground_scale,0,j*ground_scale
+	local t={
+		pos={x,y,z},
+		m=make_m(x,y,z),
+		side=any_side,
+		model=model,
+		update=function(self,i,j)
+			self.pos[1],self.pos[3]=i*ground_scale,j*ground_scale
+			m_set_pos(self.m,self.pos)
+		end,
+		draw=draw_actor
+	}
+	turrets[i+j*128]=t
+	return t
+end
+
+function init_ground()
+	for i=0,127 do
+		for j=0,127 do
+			local r=rnd()
+			if r>0.995 then
+				make_turret(i,j)
+			elseif r>0.995 then
+				make_junk(i,j,all_models.junk1)
+			elseif r>0.95 then
+				make_junk(i,j,all_models.junk2)
+			end
+		end
+	end
+	
+	make_npc({256,0,256},v_up,all_npcs.generator)
+	make_npc({-256,0,256},v_up,all_npcs.generator)
+	make_npc({-256,0,-256},v_up,all_npcs.generator)
+	make_npc({256,0,-256},v_up,all_npcs.generator)
+end
+
+local ground_actors={}
+function update_ground()
+	ground_actors={}
+	local i0,j0=flr(cam.pos[1]/ground_scale),flr(cam.pos[3]/ground_scale)
+	for i=i0-10,i0+10 do
+		local cx=(i%128+128)%128
+		for j=j0-10,j0+10 do
+			local cy=(j%128+128)%128
+			local t=turrets[cx+cy*128]
+			if t and not t.disabled then
+				t:update(i,j)
+				add(drawables,t)
+				add(ground_actors,t)
+			end
+		end
+	end
+end
+
+function update_turret(self,i,j)
+	self.pos[1],self.pos[3]=i*self.scalex,j*self.scaley
+	local dx,dy=self.pos[1]-plyr.pos[1],self.pos[3]-plyr.pos[3]
+	-- in range?
+	local angle,m=1,self.m
+	if dx*dx+dy*dy<64 then
+		angle=atan2(dx,dy)-0.25
+		local q=make_q(v_up,angle)
+		m=m_from_q(q)
+		self.m=m
+	end
+	m_set_pos(m,self.pos)
+	
+	if abs(angle)<0.2 then
+		self:fire(plyr.pos)
+		self.fire_t=time_t+self.model.wp.dly
+	end
+	
+	return true
+end
+
+local trench_scale=6
+function make_trench(i)
+	local x,y,z=0,0,i*trench_scale
+	local t={
+		pos={x,y,z},
+		m=make_m(x,y,z),
+		side=no_side,
+		model=all_models.trench1,
+		update=function(self)
+			local dz=cam.pos[3]-cam.pos[3]%(2*trench_scale)
+			local z=i*trench_scale+dz
+			self.pos[3],self.m[15]=z,z
+			return true
+		end,
+		draw=draw_actor
+	}
+	add(actors,t)
+end
+function init_trench(n)
+	for i=-n,n do
+		make_trench(i)
+	end
+end
+
+-- radio message
 local cur_msg
-local all_msgs=json_parse'{"attack1":{"spr":12,"title":"ackbar","txt":"clear tie squadrons","dly":300,"can_skip":true},"help":{"spr":10,"title":"red leader","txt":"help!","dly":300}}'
+local all_msgs=json_parse'{"attack1":{"spr":12,"title":"ackbar","txt":"clear tie squadrons","dly":300,"can_skip":true},"help":{"spr":10,"rnd":{"title":["red leader","alpha","delta wing"]},"txt":"help!","dly":300}}'
 function make_msg(msg)
 	local m=clone(all_msgs[msg])
 	m.t=time_t+m.dly
@@ -1277,11 +1276,11 @@ function update_msg()
 end
 function draw_msg()
 	local y=2	
-	rectfill(32,y,128-32,y+18,0)
-	rect(32,y,128-32,y+18,1)
+	rectfill(32,y,49,y+18,0)
+	rect(32,y,49,y+18,1)
 	spr(cur_msg.spr,33,y+1,2,2)
-	print(cur_msg.title,50,y+3,9)
-	print(cur_msg.txt,50,y+10,7)
+	print(cur_msg.title,51,y+3,9)
+	print(cur_msg.txt,51,y+10,7)
 	if time_t%4==0 then
 		fillp(0b1111000011110000.1)
 		rectfill(33,y,49,y+23,0)
@@ -1465,16 +1464,25 @@ function draw_radar()
 		if a!=plyr then
 			local x,y,z,w=radar_cam:project(a.pos[1],a.pos[2],a.pos[3])
 			if z>0 then
-				pset(x,y,8)
+				pset(x,y,a.waypt and 10 or 8)
    end
 		end
 	end
-	local x,y,z,w=radar_cam:project(waypt.pos[1],waypt.pos[2],waypt.pos[3])
-	if z>0 then
-		pset(x,y,10)
- end
 	
 	clip()
+	-- draw waypoints
+	for _,a in pairs(actors) do
+		if a.waypt then
+ 		local x,y,z,w=cam:project(a.pos[1],a.pos[2],a.pos[3])
+ 		if z>0 and w<4 then
+ 			x,y=mid(x,4,124),mid(y-2*w,4,124)
+ 			spr(41,x-4,y-4)
+ 		 local d=flr(10*sqrt(sqr_dist(a.pos,plyr.pos)))/10
+ 		 print(d.."nm",x-4,y-10,9)		
+			end
+		end
+	end
+	
 	-- draw lock
 	if plyr.target then
 		local p=plyr.target.pos
@@ -1499,6 +1507,9 @@ function draw_radar()
 		spr(42,x,y)
 	end
 
+ -- shield
+ spr(74,39,104,2,2)
+ 
 	if game_mode==1 and plyr.pos[2]<10 then
 		local h=tostr(flr(10*plyr.pos[2])/10)
 		local dy=12*(plyr.pos[2]/10)
@@ -1531,7 +1542,7 @@ function start_screen:update()
 	if btnp(1) then
 		game_mode+=1
 	end
-	game_mode=mid(game_mode,0,2)
+	game_mode=mid(game_mode,0,1)
 	
 	if not self.starting and (btnp(4) or btnp(5)) then
 		-- avoid start reentrancy
@@ -1540,8 +1551,6 @@ function start_screen:update()
 		futures_add(function()
 			wait_async(30)
 			game_screen:init()
-			make_msg("attack1")
-			spawn_t=time_t+cur_msg.dly
 			cur_screen=game_screen
 			start_screen.starting=false
 		end)
@@ -1573,8 +1582,6 @@ function start_screen:draw()
 		print("space",48,96,12)
 	elseif game_mode==1 then
 		print("ground",48,96,12)
-	else
-		print("trench",48,96,12)
 	end
 	if (starting and time_t%2==0) or time_t%24<12 then	
 		print("press start",44,118,11)
@@ -1647,12 +1654,13 @@ function game_screen:init()
 	actors={}
 	npc_count=0
 	plyr=make_plyr(0,0,0)
-	waypt=make_part("waypoint",{0,0,24})
 	
-	if game_mode==1 then
+	if game_mode==0 then
+		make_msg("attack1")
+		spawn_t=time_t+cur_msg.dly			
+	elseif game_mode==1 then
 		init_ground()
 		init_trench(8)
-	elseif game_mode==2 then
 	end
 end
 
@@ -1693,8 +1701,6 @@ function game_screen:update()
 		end
 	elseif game_mode==1 then
 		update_ground()
-	elseif game_mode==2 then
-		update_trench()
 	end
 
 	zbuf_filter(actors)
@@ -1824,11 +1830,11 @@ __gfx__
 aaa99999888888888888400000000000000000000000000000000004000000000000000000000000000000000000000000000012990000000000000000000000
 aaaaaaaa999998888888840000000000000000000000000000000004400000000000000000000000000000066000000000000124499000000000000000000000
 5aaaaaaaaaaaa9999988884000000000000000000000000000000000000000000000000000000000000011566666000000000124449000000000000000000000
-05599999aaaaaaaaaa99999511111111111111111111111111111111111111110000045499400000000111577666600000000242449000000000000000000000
-000488889999999aaaaaaaaa62222222222222222222222222222226622222220090549454940900001115577777660000002424944900000000000000000000
-00004488888888899aaaa99995111111111111111111111111111115111111110445444945495440001115577777760000044442494440000000000000000000
-000000448888888889aa98888840000000000000000000000000000400000000044544dffd445440001d999dd999d7000049a444944a94000000000000000000
-000000004888888889aa98888884000000000000000000000000000400000040054544ffff4455400019999999979700004a04400940a4000000000000000000
+05599999aaaaaaaaaa99999511111111111111111111111111111111111111110000045499400000000111577666600000000242449000000000070000000000
+000488889999999aaaaaaaaa62222222222222222222222222222226622222220090549454940900001115577777660000002424944900000000070000000000
+00004488888888899aaaa999951111111111111111111111111111151111111104454449454954400011155777777600000444424944400000b07770b0000000
+000000448888888889aa98888840000000000000000000000000000400000000044544dffd445440001d999dd999d7000049a444944a940000b00000b0000000
+000000004888888889aa98888884000000000000000000000000000400000040054544ffff4455400019999999979700004a04400940a400000bbbbb00000000
 00000000044888889aaa9888888840000000000000000000000000004000004000504f0ff0f4050000199999999996000029a404404a92000000000000000000
 00000000000448889aa98888888884000000000000000000000000000444444000005ffffff50000000d999ff999d00000024444444420000000000000000000
 0000000000000449aaa98888888888400000000000000000000000000000000000000ffffff00000000dffffffffd00000000240042000000000000000000000
@@ -1838,41 +1844,41 @@ aaaaaaaa999998888888840000000000000000000000000000000004400000000000000000000000
 00000000000000122100448888888888884000000000000000000000000000000006776677776000000000000000000000666655666666000000000000000000
 000000000000012221000048888888888884000000000000000000000000000088000000aaaaaaaa000000000000000000000000000000000000000000000000
 000000000000012210000004488888888888400000000000000000000000000080000000a000000a000000000000000000000000000000000000000000000000
-000000000000122210000000044888888888840000000000000000000000000000000000a000000a000aa0000000000000000000000000000000000000000000
-0000000000001221000000000004488888888840000000000000000000000000000000000a0000a000aaaa00000bbbbbbbbb0000000000000000000000000000
-0000000000112221000000000000048888888884000000000000000000000000000000000a0000a000aaaa0000b000000000b000000000000000000000000000
-00000001112222100000000000000044888888884000000000000000000000000000000000a00a00000aa0000b00bbbbbbb00b00000000000000000000000000
-00001112222222110000000000000000448888888400000000000000000000000000000000a00a00000000000b0b0000000b0b00000000000000000000000000
-011122222222221210000000000000000048888888400000000000000000000000000000000aa000000000000b0b0070000b0b00000000000000000000000000
-12222222222211222100000000000000000448888884000000000000000000000000000000000000000000000000007000000000000000000000000000000000
-22222222211122222210000000000000000004488888444444444444444444440000000000000000000000000b0b0777000b0b00000000000000000000000000
-22222221122222222221000000000000000048888888888888888888888888880000000000000000000000000b0b0000000b0b00000000000000000000000000
-22221112222222222222100000000000000488888888888888888888888888880000000000000000000000000b00bbbbbbb00b00000000000000000000000000
-211122222222222222222111111111111159999999999999999999999999999900000000000000000000000000b000000000b000000000000000000000000000
-1222222222222222222221222222222226aaaaaa666666666666666666666666000000000000000000000000000bbbbbbbbb0000000000000000000000000000
+000000000000122210000000044888888888840000000000000000000000000000000000a000000a000aa000000bbbbb00000000000bbbbb0000000000000000
+0000000000001221000000000004488888888840000000000000000000000000000000000a0000a000aaaa0000b00000b000000000b00000b000000000000000
+0000000000112221000000000000048888888884000000000000000000000000000000000a0000a000aaaa0000b00700b000000000b00700b000000000000000
+00000001112222100000000000000044888888884000000000000000000000000000000000a00a00000aa0000000070000000000000007000000000000000000
+00001112222222110000000000000000448888888400000000000000000000000000000000a00a0000000000b0b07770b0b0000000b07770b000000000000000
+011122222222221210000000000000000048888888400000000000000000000000000000000aa00000000000b0b00000b0b0000000b00000b000000000000000
+1222222222221122210000000000000000044888888400000000000000000000000000000000000000000000b00bbbbb00b00000000bbbbb0000000000000000
+22222222211122222210000000000000000004488888444444444444444444440000000000000000000000000b0000000b000000000000000000000000000000
+222222211222222222210000000000000000488888888888888888888888888800000000000000000000000000bbbbbbb0000000000000000000000000000000
+22221112222222222222100000000000000488888888888888888888888888880000000000000000000000000000000000000000000000000000000000000000
+21112222222222222222211111111111115999999999999999999999999999990000000000000000000000000000000000000000000000000000000000000000
+1222222222222222222221222222222226aaaaaa6666666666666666666666660000000000000000000000000000000000000000000000000000000000000000
 222222222222222222221222222222226aaaaaa6aaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000
 22222222222222222221221111111115999999599555555555555555555555550000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000048888884884888888888888888888888880000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000488888848848888888888888888888888880000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000004888888488488888888888888888888888880000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000048888884884888888888888888888444444440000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000004488888848848888888888888888884888888880000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000448888888488488888888888888888884888888880000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000004888888884884888444444444444888848888888880000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000448888888848848884888888888888488848888888880000000000000000000000000000000000000000000000000000000000000000
-00000000000000000044888888888488488884888888888888488844444444440000000000000000000000000000000000000000000000000000000000000000
-00000000000000000488888888884884888884888888888888488488888888880000000000000000000000000000000000000000000000000000000000000000
-00000000000000044888888888848848888884888888888888488488888888880000000000000000000000000000000000000000000000000000000000000000
-00000000000004488888888888488488888884888888888888488488888888880000000000000000000000000000000000000000000000000000000000000000
-00000000000448888888888884884888888884888888888888488488888888880000000000000000000000000000000000000000000000000000000000000000
-10000000004888888888888848848888888884888888888888488488888888880000000000000000000000000000000000000000000000000000000000000000
-21000000448888888888888488488888888884888888888888488488888888880000000000000000000000000000000000000000000000000000000000000000
-22100044888888888888884884888888888884888888888888488488888888880000000000000000000000000000000000000000000000000000000000000000
-22214488888888888888848848888888888884888888888888488488888888880000000000000000000000000000000000000000000000000000000000000000
-22269888888888888888488488888888888884888888888888488488888888880000000000000000000000000000000000000000000000000000000000000000
-266aa988888888888884884888888888888884888888888888488488888888880000000000000000000000000000000000000000000000000000000000000000
-6aaaaa98888888888848848888888888888888444444444444888488888888880000000000000000000000000000000000000000000000000000000000000000
-aaaaaaa9888888888488488888888888888888888888888888888488888888880000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000004888888488488888888888888888888888000000000000000000bbbbbbb000000000000000000000000000000000000000
+000000000000000000000000000004888888488488888888888888888888888800000000000000000b0000000b00000000000000000000000000000000000000
+00000000000000000000000000004888888488488888888888888888888888880000000000000000b00bbbbb00b0000000000000000000000000000000000000
+00000000000000000000000000048888884884888888888888888888444444440000000000000000b0b00000b0b0000000000000000000000000000000000000
+00000000000000000000000004488888848848888888888888888884888888880000070000000000b0b00700b0b0000000000000000000000000000000000000
+00000000000000000000000448888888488488888888888888888884888888880000070000000000000007000000000000000000000000000000000000000000
+00000000000000000000004888888884884888444444444444488848888888880000777000000000b0b07770b0b0000000000000000000000000000000000000
+00000000000000000000448888888848848884888888888888848848888888880000000000000000b0b00000b0b0000000000000000000000000000000000000
+00000000000000000044888888888488488884888888888888848844444444440000000000000000b00bbbbb00b0000000000000000000000000000000000000
+000000000000000004888888888848848888848888888888888484888888888800000000000000000b0000000b00000000000000000000000000000000000000
+0000000000000004488888888884884888888488888888888884848888888888000000000000000000bbbbbbb000000000000000000000000000000000000000
+00000000000004488888888888488488888884888888888888848488888888880000000000000000000000000000000000000000000000000000000000000000
+00000000000448888888888884884888888884888888888888848488888888880000000000000000000000000000000000000000000000000000000000000000
+10000000004888888888888848848888888884888888888888848488888888880000000000000000000000000000000000000000000000000000000000000000
+21000000448888888888888488488888888884888888888888848488888888880000000000000000000000000000000000000000000000000000000000000000
+22100044888888888888884884888888888884888888888888848488888888880000000000000000000000000000000000000000000000000000000000000000
+22214488888888888888848848888888888884888888888888848488888888880000000000000000000000000000000000000000000000000000000000000000
+22269888888888888888488488888888888884888888888888848488888888880000000000000000000000000000000000000000000000000000000000000000
+266aa988888888888884884888888888888884888888888888848488888888880000000000000000000000000000000000000000000000000000000000000000
+6aaaaa98888888888848848888888888888884888888888888848488888888880000000000000000000000000000000000000000000000000000000000000000
+aaaaaaa9888888888488488888888888888888444444444444488488888888880000000000000000000000000000000000000000000000000000000000000000
 aaaaaaaa988888884884888888888888888888888888888888888488888888880000000000000000000000000000000000000000000000000000000000000000
 aaaaaaaaa98888848848884444444444444444444444444888888488888888880000000000000000000000000000000000000000000000000000000000000000
 aaaaaaaaaa9888488488848888888888888888888888888488888488888888880000000000000000000000000000000000000000000000000000000000000000
