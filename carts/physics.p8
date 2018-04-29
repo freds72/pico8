@@ -74,6 +74,10 @@ end
 function v_cross(a,b)
 	return a.x*b.y-a.y*b.x
 end
+function vec:ortho(a)
+	a=a or 1
+	return vec(-a*self.y,a*self.x)
+end
 
 function vec:tostr()
 	return "("..self.x..","..self.y..")"
@@ -133,9 +137,12 @@ end
 function is_gt(a,b)
 	return a>=b*0.95+a*0.01
 end
-
+function sqr(a)
+	return a*a
+end
 -- global vectors
-local v_gravity=vec(0,0)
+local v_gravity=vec(0,-9)
+local k_dt=1/60
 
 function project(v)
 	return 64+v.x,64-v.y
@@ -168,7 +175,7 @@ function make_cube(r,d)
 			local x0,y0=project(self:apply(m))
 			local x1,y1=project(self:apply(m+4*n))
 			line(x0,y0,x1,y1,8)
-			--print(i,x1+2,y1,8)
+			print(i,x1+2,y1,8)
 		end,
 		draw=function(self)
 			local v=self.v[#self.v]
@@ -277,9 +284,9 @@ local bodies={}
 function make_body(shape,x,y)
 	local b={
 		shape=shape,
-		pos=vec(x,y),
-		v=vec(0,0),
-		force=vec(0,0),
+		pos=vec(x,y),		
+		v=vec(0,0), -- velocity
+		f=vec(0,0), -- force
 		i=0,
 		ii=0,
 		m=1,
@@ -290,21 +297,33 @@ function make_body(shape,x,y)
 		angularv=0,
 		torque=0,
 		angle=0,
-		apply_forces=function(self,dt)
-			if(self.im==0) return
-			self.v+=(self.im*self.force+v_gravity)*dt*0.5
-			self.angularv += self.torque*self.ii*dt*0.5
+		-- static body
+		static=function(self)
+			self.i,self.ii=0,0
+			self.m,self.im=0,0
 		end,
-		apply_v=function(self,dt)
+		apply_force=function(f)
+			self.f+=f
+		end,
+		apply_impulse=function(self,impulse,c)
+			self.v+=self.im*impulse
+			self.angularv+=self.ii*v_cross(c,impulse)
+		end,
+		integrate_forces=function(self,dt)
+			if(self.im==0) return
+			self.v+=(self.im*self.f+v_gravity)*dt*0.5
+			self.angularv+=self.torque*self.ii*dt*0.5
+		end,
+		integrate_v=function(self,dt)
 			if(self.im==0) return
 			self.pos+=dt*self.v
 			self.angle+=dt*self.angularv
 			self.shape:rotate(self.angle)
 			
-			self:apply_forces(dt)
+			self:integrate_forces(dt)
 		end,
 		reset=function(self)
-			self.force=vec(0,0)
+			self.f=vec(0,0)
 			self.torque=0
 		end
 	}
@@ -315,11 +334,12 @@ end
 -- game loop
 local mousex,mousey=0,0
 local body_a,body_b
+local manifolds={}
 function _init()
 	poke(0x5f2d,1)
-	body_a=make_body(make_cube(10,1),15,5)
-	body_b=make_body(make_cube(10,1),-15,5)	
-	body_b.angle=0.2
+	body_a=make_body(make_cube(12,5),15,5)
+	body_a:static()
+	body_b=make_body(make_cube(10,5),-15,5)	
 end
 
 function _draw()
@@ -331,18 +351,24 @@ function _draw()
 	rectfill(0,0,30,9,1)
 	print(flr(100*stat(2)).."%",2,2,7)
 
-	local manifold={}
-	poly2poly(manifold,body_b.shape,body_a.shape)
-	for _,cp in pairs(manifold.contacts) do
-		local x,y=project(cp)
-		circfill(x,y,2,8)
+	for _,m in pairs(manifolds) do
+		for _,cp in pairs(m.contacts) do
+			local x,y=project(cp)
+			circfill(x,y,2,8)
+		end
 	end
 			
+	--[[
 	local d,i=body_b.shape:leastpenetration(body_a.shape)
 	if d<=0 then
 		body_b.shape:draw_face(i)
 	end
-
+	d,i=body_a.shape:leastpenetration(body_b.shape)
+	if d<=0 then
+		body_a.shape:draw_face(i)
+	end
+ ]]
+ 
 	spr(2,mousex,mousey)
 end
 
@@ -355,10 +381,41 @@ function _update60()
 		body_b.v=vec(0,0)
 	end
 		
-	for _,b in pairs(bodies) do
-		b:apply_forces(1/60)
-		b:apply_v(1/60)
-		b:reset()
+	manifolds={}
+	-- find contact points
+	for i=1,#bodies do
+		local a=bodies[i]
+		for j=i+1,#bodies do
+			local b=bodies[j]
+			if (a.im==0 and b.im==0)==false then
+				local m=make_manifold(a,b)
+				if #m.contacts>0 then
+					add(manifolds,m)
+				end
+			end
+		end
+	end
+	
+	for _,a in pairs(bodies) do
+		a:integrate_forces(k_dt)
+	end
+	
+	for i=1,10 do
+		for _,m in pairs(manifolds) do
+			m:apply_impulse()
+		end
+	end
+
+	for _,a in pairs(bodies) do
+		a:integrate_v(k_dt)
+ end
+ 
+	for _,m in pairs(manifolds) do
+		m:fix_pos()
+	end
+
+	for _,a in pairs(bodies) do
+		a:reset()
 	end
 end
 
@@ -386,8 +443,8 @@ function face_clip(n,c,f)
 end
 
 function poly2poly(m,a,b)
-	m.contacts={}
-	
+	m.contacts,m.penetration={},0
+
 	local pa,fa=a:leastpenetration(b)
 	if(pa>0) return
 	
@@ -416,12 +473,10 @@ function poly2poly(m,a,b)
 	if(face_clip(-sn,negside,incf)<2) return
 	if(face_clip(-sn,posside,incf)<2) return
 	
-	m.n=flip==true and -refn or refn		
-	
-	
+	m.n=flip==true and -refn or refn
+		
 	local cp=0
 	local sep=v_dot(refn,incf[1])-refc
-	m.penetration=0
 	if sep<=0 then
 		cp+=1
 		add(m.contacts,incf[1])
@@ -437,6 +492,80 @@ function poly2poly(m,a,b)
 	end
 end
 
+-->8
+-- manifold
+local k_slop,k_pct=0.05,0.4
+
+function make_manifold(a,b)
+	local m={
+		a=a,
+		b=b,
+		e=min(a.restituion,b.restitution),
+		sf=sqrt(a.sfriction*b.sfriction),
+		df=sqrt(a.dfriction*b.dfriction),
+		apply_impulse=function(self)
+  	-- infinite mass?
+  	if a.im+b.im==0 then
+  		a.v,b.v=vec(0,0),vec(0,0)
+  		return
+  	end
+  	
+  	for _,c in pairs(self.contacts) do
+  		local ra,rb=c-a.pos,c-b.pos
+  		local rv=b.v+rb:ortho(b.angularv)-(a.v+ra:ortho(a.angularv))
+  		
+				local cv=v_dot(rv,self.n)
+				-- separating?
+				if(cv>0) return
+				
+				local racn,rbcn=v_cross(ra,self.n),v_cross(rb,self.n)
+				local invmass=a.im+b.im+sqr(racn)*a.ii+sqr(rbcn)*b.ii
+				
+				local j=-(1+self.e)*cv
+				j/=invmass			
+				j/=#self.contacts
+				
+				-- apply
+				local impulse=j*self.n
+				a:apply_impulse(-impulse,ra)
+				b:apply_impulse(impulse,rb)
+				
+				-- friction
+				rv=b.v+rb:ortho(b.angularv)-(a.v+ra:ortho(a.angularv))
+				local t=rv-v_dot(rv,self.n)*self.n
+				t:normz()
+				
+			 local jt=-v_dot(rv,t)
+			 jt/=invmass	
+			 jt/=#self.contacts
+			 if(abs(jt)<0.001) return
+			 		
+			 local timpulse
+			 if abs(jt)<j*self.sf then
+			 	timpulse=t*jt
+			 else
+			 	timpulse=t*-j*self.df
+ 		 end
+				a:apply_impulse(-timpulse,ra)
+				b:apply_impulse(timpulse,rb)
+  	end
+		end,
+		fix_pos=function(self)
+			local c=(max(self.penetration-k_slop,0)/(a.im+b.im))*k_pct*self.n
+			a.pos-=a.im*c
+			b.pos+=b.im*c			
+		end	
+	}
+	poly2poly(m,a.shape,b.shape)
+	for _,c in pairs(m.contacts) do
+		local ra,rb=c-a.pos,c-b.pos
+		local rv=b.v+rb:ortho(b.angularv)-(a.v+ra:ortho(a.angularv))
+		if rv:lensqr()<(k_dt*v_gravity):lensqr() + 0.001 then
+			m.e=0
+		end	
+	end
+	return m
+end
 __gfx__
 00000000000000007777000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000005577007000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
