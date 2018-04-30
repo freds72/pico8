@@ -293,7 +293,7 @@ function make_body(shape,x,y)
 		im=1,
 		sfriction=0.5,
 		dfriction=0.3,
-		restit=0.2,
+		restiutiont=0.2,
 		angularv=0,
 		torque=0,
 		angle=0,
@@ -307,7 +307,7 @@ function make_body(shape,x,y)
 		end,
 		apply_impulse=function(self,impulse,c)
 			self.v+=self.im*impulse
-			self.angularv+=self.ii*v_cross(c,impulse)
+			self.angularv+=mid(self.ii*v_cross(c,impulse),-1,1)
 		end,
 		integrate_forces=function(self,dt)
 			if(self.im==0) return
@@ -337,9 +337,10 @@ local body_a,body_b
 local manifolds={}
 function _init()
 	poke(0x5f2d,1)
-	body_a=make_body(make_cube(12,5),15,5)
+	body_a=make_body(make_cube(12,50),15,5)
 	body_a:static()
-	body_b=make_body(make_cube(10,5),-15,5)	
+	body_b=make_body(make_cube(10,5),-1,25)
+	body_b.angle=0.3
 end
 
 function _draw()
@@ -352,12 +353,31 @@ function _draw()
 	print(flr(100*stat(2)).."%",2,2,7)
 
 	for _,m in pairs(manifolds) do
-		for _,cp in pairs(m.contacts) do
-			local x,y=project(cp)
-			circfill(x,y,2,8)
+		m:draw()
+	end
+	
+	local a,b=body_a.shape,body_b.shape
+	local pa,fa=a:leastpenetration(b)
+	if pa<=0 then
+		local pb,fb=b:leastpenetration(a)
+		if pb<=0 then
+			local ref,inc,i,flip=a,b,fa,false
+			if not is_gt(pa,pb) then
+				ref,inc,i,flip=b,a,fb,true
+			end
+	
+			local incf=ref:incidentface(inc,i)
+			local x0,y0=project(incf[1])
+			local x1,y1=project(incf[2])
+			line(x0,y0,x1,y1,9)
+			
+			x0,y0=project(ref.body.pos)
+			x1,y1=project(inc.body.pos)
+			print("ref",x0-8,y0,1)
+			print("inc",x1-8,y1,1)
 		end
 	end
-			
+	
 	--[[
 	local d,i=body_b.shape:leastpenetration(body_a.shape)
 	if d<=0 then
@@ -367,8 +387,7 @@ function _draw()
 	if d<=0 then
 		body_a.shape:draw_face(i)
 	end
- ]]
- 
+	]]
 	spr(2,mousex,mousey)
 end
 
@@ -376,7 +395,7 @@ function _update60()
 	mousex,mousey=stat(32),stat(33)
 
 	if stat(34)==1 then
-		body_b.pos=unproject(mousex,mousey)
+		body_b.pos=unproject(mousex-32,mousey)
 		body_b:reset()
 		body_b.v=vec(0,0)
 	end
@@ -522,7 +541,7 @@ function make_manifold(a,b)
 				local invmass=a.im+b.im+sqr(racn)*a.ii+sqr(rbcn)*b.ii
 				
 				local j=-(1+self.e)*cv
-				j/=invmass			
+				j/=invmass
 				j/=#self.contacts
 				
 				-- apply
@@ -553,8 +572,24 @@ function make_manifold(a,b)
 		fix_pos=function(self)
 			local c=(max(self.penetration-k_slop,0)/(a.im+b.im))*k_pct*self.n
 			a.pos-=a.im*c
-			b.pos+=b.im*c			
-		end	
+			b.pos+=b.im*c
+		end,
+		draw=function(self)
+			-- mid point
+			local v=vec(0,0)
+			color(12)
+			for _,cp in pairs(self.contacts) do
+				local x,y=project(cp)
+				circfill(x,y,2)
+				v+=cp
+			end
+			if #self.contacts>0 then
+				v/=#self.contacts
+				local x0,y0=project(v)
+				local x1,y1=project(v+4*self.n)
+				line(x0,y0,x1,y1)
+			end
+		end
 	}
 	poly2poly(m,a.shape,b.shape)
 	for _,c in pairs(m.contacts) do
