@@ -1,6 +1,28 @@
 pico-8 cartridge // http://www.pico-8.com
 version 16
 __lua__
+-- physics "ImpulseEngine"
+-- by freds72
+
+--[[     
+	Copyright (c) 2013 Randy Gaul http://RandyGaul.net
+
+    This software is provided 'as-is', without any express or implied
+    warranty. In no event will the authors be held liable for any damages
+    arising from the use of this software.
+
+    Permission is granted to anyone to use this software for any purpose,
+    including commercial applications, and to alter it and redistribute it
+    freely, subject to the following restrictions:
+      1. The origin of this software must not be misrepresented; you must not
+         claim that you wrote the original software. If you use this software
+         in a product, an acknowledgment in the product documentation would be
+         appreciated but is not required.
+      2. Altered source versions must be plainly marked as such, and must not be
+         misrepresented as being the original software.
+      3. This notice may not be removed or altered from any source distribution.
+ ]]
+
 -- math
 local vec={}
 vec.__index=vec
@@ -149,7 +171,7 @@ end
 
 -- global vectors
 local v_gravity=vec(0,-98)
-local k_dt=1/60
+local k_pi,k_dt=3.14,1/60
 -- arbitrary air friction
 local k_friction=0.97
 
@@ -162,10 +184,55 @@ end
 
 
 -->8
+-- shapes
+local k_polykind,k_circlekind=0x1,0x2
+
+-- circle shape
+function make_circle(radius,density)
+	local c={
+		kind=k_circlekind,
+		r=radius,
+		-- local to world
+		apply=function(self,v)
+			return v+self.body.pos
+		end,
+		rotate=function(self,angle)
+		end,
+		init=function(self,b)
+			b.m=k_pi*radius*radius*density
+			b.im=1/b.m
+			b.i=b.m*radius*radius
+			b.ii=1/b.i
+
+			self.body=b
+		end,
+		contains=function(self,v)
+			v-=self.body.pos
+			if(v:lensqr()<radius*radius) return true
+			return false
+		end,
+		draw=function(self,selected)
+			local x,y=project(self.body.pos)
+			local c=self.body.m==0 and 5 or 7
+			if selected then
+				fillp(0x5a5a)
+				c+=0x90
+			end
+			circ(x,y,self.r,c)
+			-- Render line within circle so orientation is visible
+			local u=mat:make_r(self.body.angle)
+			local x1,y1=project(self:apply(u*vec(0.8*self.r,0)))
+			line(x,y,x1,y1)
+			fillp()
+		end
+	}
+	return c
+end
+
 -- polygon shape
 function make_polygon(v,d)
 	local c={
-		kind=1, --polygon
+		kind=k_polykind, --polygon
 		u=mat(),
 		v=v,
 		-- local to world
@@ -372,16 +439,20 @@ local show_debug=false
 local manifolds={}
 -- 
 function make_rnd_body(x,y)
-	local v={}
-	local n,r=rndlerp(3,6),rndlerp(10,15)
-	local angle,da=0,1/n
-	for i=1,n do
-		add(v,vec(r*cos(angle),-r*sin(angle)))
-		angle+=da
-	end
+	if rnd()>0.5 then
+		local v={}
+		local n,r=rndlerp(3,6),rndlerp(10,15)
+		local angle,da=0,1/n
+		for i=1,n do
+			add(v,vec(r*cos(angle),-r*sin(angle)))
+			angle+=da
+		end
 
-	b=make_body(make_polygon(v,1),x,y)
-	b.angle=rnd()
+		local b=make_body(make_polygon(v,1),x,y)
+		b.angle=rnd()
+	else
+		local b=make_body(make_circle(rndlerp(5,10),1),x,y)
+	end
 end
 function _init()
 	poke(0x5f2d,1)
@@ -392,7 +463,7 @@ function _init()
 			vec(-r,r),
 			vec(-r,-r),
 			vec(r,-r)}
-	local b=make_body(make_polygon(v,1),15,5)
+	local b=make_body(make_circle(12,1),15,5)
 	b:static()
 
  v={
@@ -516,6 +587,79 @@ end
 -->8
 -- collision resolution
 
+function circle2circle(m,a,b)
+	-- calculate translational vector, which is normal
+	local n=b.pos-a.pos
+	local d=n:lensqr()
+	local r=a.shape.r+b.shape.r
+	-- not in contact
+	if(d>=r*r) return
+	
+	-- real distance
+	d=sqrt(d)
+	if d==0 then
+		m.penetration,m.n=a.shape.r,vec(1,0)
+		add(m.contacts,a.pos)
+	else
+		m.penetration,m.n=r-d,n/d
+		add(m.contacts,a.shape.r*m.n+a.pos)
+	end
+end
+
+function circle2poly(m,a,b)
+	-- get shapes
+	a,b=a.shape,b.shape
+
+	-- Transform circle center to Polygon model space
+	local center=b.u:transpose()*(a.body.pos-b.body.pos)
+
+	-- Find edge with minimum penetration
+  	-- Exact concept as using support points in Polygon vs Polygon
+	local separation,ni=-32000
+	for i=1,#b.v do
+		local s=v_dot(b.n[i], center-b.v[i])
+		if(s>a.r) return
+		if s>separation then
+			separation,ni=s,i
+		end
+	end
+
+	-- Grab face's vertices
+	local v1,v2=b.v[ni],b.v[ni-1==0 and #b.v or ni-1]
+
+	-- Check to see if center is within polygon
+	if separation<0.001 then
+		m.n=-(b.u*b.n[ni])
+		add(m.contacts,a.r*m.n+a.body.pos)
+		m.penetration=a.r
+		return
+	end
+
+	-- Determine which voronoi region of the edge center of circle lies within
+	local d1,d2=v_dot(center-v1,v2-v1),v_dot(center-v2,v1-v2)
+	m.penetration=a.r-separation
+	if d1<=0 then
+		local n=v1-center
+		if(n:lensqr()>a.r*a.r) return
+		n=b.u*n
+		n:normz()
+		m.n=n
+		add(m.contacts,b.u*v1+b.body.pos)
+	elseif d2<=0 then
+		local n=v2-center
+		if(n:lensqr()>a.r*a.r) return
+		n=b.u*n
+		n:normz()
+		m.n=n
+		add(m.contacts,b.u*v2+b.body.pos)
+	else
+		local n=b.n[ni]
+		if(v_dot(center-v1,n)>a.r) return
+		m.n=-(b.u*n)
+		add(m.contacts,a.r*m.n+a.body.pos)
+	end
+end
+
 function face_clip(n,c,f)
 	local sp,out=0,{f[1],f[2]}
 	
@@ -537,7 +681,7 @@ function face_clip(n,c,f)
 end
 
 function poly2poly(m,a,b)
-	m.contacts,m.penetration={},0
+	a,b=a.shape,b.shape
 
 	--check for a separating axis with a's face planes
 	local pa,fa=a:leastpenetration(b)
@@ -605,11 +749,25 @@ end
 -- penetration allowance
 -- penetration percentage to correct
 local k_slop,k_pct=0.05,0.4
-
+-- compute id
+function shape2shape(k1,k2)
+	return bor(k1,shl(k2,4))
+end
+-- dispatch table to shape/shape collision
+local dispatch={	
+	[shape2shape(k_polykind,k_polykind)]=poly2poly,
+	[shape2shape(k_circlekind,k_circlekind)]=circle2circle,
+	[shape2shape(k_circlekind,k_polykind)]=circle2poly,
+	[shape2shape(k_polykind,k_circlekind)]=function(m,a,b) 
+		circle2poly(m,b,a) if(m.n) m.n=-m.n
+	end
+}
 function make_manifold(a,b)
 	local m={
 		a=a,
 		b=b,
+		contacts={},
+		penetration=0,
 		apply_impulse=function(self)
   	-- early out and positional correct if both objects have infinite mass
   	if abs(a.im+b.im)<0.001 then
@@ -685,20 +843,20 @@ function make_manifold(a,b)
 			self.sf=sqrt(a.sfriction*b.sfriction)
 			self.df=sqrt(a.dfriction*b.dfriction)
 				
-  	for _,c in pairs(self.contacts) do
-  		local ra,rb=c-a.pos,c-b.pos
-  		local rv=b.v+rb:ortho(b.angularv)-(a.v+ra:ortho(a.angularv))
-  		-- determine if we should perform a resting collision or not
+			for _,c in pairs(self.contacts) do
+				local ra,rb=c-a.pos,c-b.pos
+				local rv=b.v+rb:ortho(b.angularv)-(a.v+ra:ortho(a.angularv))
+				-- determine if we should perform a resting collision or not
 				-- the idea is if the only thing moving this object is gravity,
-    -- then the collision should be performed without any restitution
-  		if rv:lensqr()<(k_dt*v_gravity):lensqr()+0.001 then
-  			self.e=0
-  		end	
-  	end		
+				-- then the collision should be performed without any restitution
+				if rv:lensqr()<(k_dt*v_gravity):lensqr()+0.001 then
+					self.e=0
+				end	
+			end		
 		end
 	}
 	-- solve
-	poly2poly(m,a.shape,b.shape)
+	dispatch[shape2shape(a.shape.kind,b.shape.kind)](m,a,b)
 	return m
 end
 -->8
