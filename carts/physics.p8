@@ -140,8 +140,15 @@ end
 function sqr(a)
 	return a*a
 end
+function lerp(a,b,t)
+	return a*(1-t)+b*t
+end
+function rndlerp(a,b)
+	return lerp(b,a,1-rnd())
+end
+
 -- global vectors
-local v_gravity=vec(0,-9)
+local v_gravity=vec(0,-98)
 local k_dt=1/60
 
 function project(v)
@@ -153,16 +160,12 @@ end
 
 
 -->8
--- cube shape
-function make_cube(r,d)
+-- polygon shape
+function make_polygon(v,d)
 	local c={
 		kind=1, --polygon
 		u=mat(),
-		v={
-			vec(r,r),
-			vec(-r,r),
-			vec(-r,-r),
-			vec(r,-r)},
+		v=v,
 		-- local to world
 		apply=function(self,v)
 			return self.u*v+self.body.pos
@@ -170,25 +173,35 @@ function make_cube(r,d)
 		rotate=function(self,angle)
 			self.u=mat:make_r(angle)
 		end,
+	 inside=function(self,v0)
+	 	for i=1,#self.v do
+	 		local v=v0-self.v[i]
+	 		if(v_dot(self.n[i],v)>0) return false
+	 	end
+	 	return true
+	 end,
 		draw_normal=function(self,v0,v1,i)
 			local n,m=self.n[i],0.5*(v0+v1)
 			local x0,y0=project(self:apply(m))
 			local x1,y1=project(self:apply(m+4*n))
 			line(x0,y0,x1,y1,8)
-			print(i,x1+2,y1,8)
+			-- print(i,x1+2,y1,8)
 		end,
-		draw=function(self)
+		draw=function(self,c,debug)
 			local v=self.v[#self.v]
 			local x,y=project(self:apply(v))
+			color(self.body.m==0 and 5 or c)
 			for i=1,#self.v do
 				local v1=self.v[i]
 				local x1,y1=project(self:apply(v1))
-				line(x,y,x1,y1,7)
-				self:draw_normal(v,v1,i)
+				line(x,y,x1,y1)
+				if debug then
+					self:draw_normal(v,v1,i)
+				end
 				x,y=x1,y1
 				v=v1
 			end
-		end,
+		end,		
 		draw_face=function(self,i)
 			local v0,v1=self.v[i-1==0 and #self.v or i-1],self.v[i]
 			local x0,y0=project(self:apply(v0))
@@ -203,7 +216,7 @@ function make_cube(r,d)
 				local v1=self.v[k]
 				local n=v-v1
 				n:normz()
-				add(self.n,vec(-n.y,n.x))
+				add(self.n,n:ortho())
 				v=v1
 			end
 			
@@ -214,13 +227,20 @@ function make_cube(r,d)
 			local inv3=1/3
 			
 			for k=1,#self.v do
-				local v1,v2=self.v[k],self.v[(k%#self.v)+1]
-				local tarea=0.5*v_cross(v1,v2)
+			 -- triangle vertices, third vertex implied as (0, 0)
+				local v1,v2=self.v[k-1==0 and #self.v or k-1],self.v[k]
+				local d=v_cross(v1,v2)
+				local tarea=0.5*d
 				area+=tarea
 				c+=tarea*inv3*(v1+v2)
 				
 				local x,y=v1.x*v1.x+v2.x*v1.x+v2.x*v2.x,v1.y*v1.y+v2.y*v1.y+v2.y*v2.y
-				i+=0.25*inv3*(x+y)
+				i+=0.25*inv3*d*(x+y)
+			end
+			-- translate vertices to centroid (make the centroid (0, 0)
+			c*=1/area
+			for k=1,#self.v do
+				self.v[k]-=c
 			end
 			
 			b.m=d*area
@@ -291,8 +311,8 @@ function make_body(shape,x,y)
 		ii=0,
 		m=1,
 		im=1,
-		sfriction=0.5,
-		dfriction=0.3,
+		sfriction=0.4,
+		dfriction=0.2,
 		restiutiont=0.2,
 		angularv=0,
 		torque=0,
@@ -323,7 +343,7 @@ function make_body(shape,x,y)
 			self:integrate_forces(dt)
 		end,
 		reset=function(self)
-			self.f=vec(0,0)
+			self.f[1],self.f[2]=0,0
 			self.torque=0
 		end
 	}
@@ -332,74 +352,105 @@ function make_body(shape,x,y)
 end
 -->8
 -- game loop
+local time_t=0
 local mousex,mousey=0,0
-local body_a,body_b
+-- selected body
+local sel_body
+local show_debug=false
 local manifolds={}
 function _init()
 	poke(0x5f2d,1)
-	body_a=make_body(make_cube(12,50),15,5)
-	body_a:static()
-	body_b=make_body(make_cube(10,5),-1,25)
-	body_b.angle=0.3
+	local r=10
+	local v={
+			vec(r,r),
+			vec(-r,r),
+			vec(-r,-r),
+			vec(r,-r)}
+	local b=make_body(make_polygon(v,1),15,5)
+	b:static()
+
+ v={
+			vec(63,5),
+			vec(-64,5),
+			vec(-64,-5),
+			vec(63,-5)}
+	b=make_body(make_polygon(v,1),0,-30)
+	b:static()
+	
+	v={}
+	local n,r=rndlerp(3,6),rndlerp(10,15)
+	local angle,da=0,1/n
+	for i=1,n do
+		add(v,vec(r*cos(angle),-r*sin(angle)))
+		angle+=da
+	end
+
+	sel_body=make_body(make_polygon(v,1),0,35)
+	sel_body.angle=rnd()
 end
 
+local cpu_stats={}
 function _draw()
 	cls()
 	for _,b in pairs(bodies) do
-		b.shape:draw()
-	end
-	
-	rectfill(0,0,30,9,1)
-	print(flr(100*stat(2)).."%",2,2,7)
-
-	for _,m in pairs(manifolds) do
-		m:draw()
-	end
-	
-	local a,b=body_a.shape,body_b.shape
-	local pa,fa=a:leastpenetration(b)
-	if pa<=0 then
-		local pb,fb=b:leastpenetration(a)
-		if pb<=0 then
-			local ref,inc,i,flip=a,b,fa,false
-			if not is_gt(pa,pb) then
-				ref,inc,i,flip=b,a,fb,true
-			end
-	
-			local incf=ref:incidentface(inc,i)
-			local x0,y0=project(incf[1])
-			local x1,y1=project(incf[2])
-			line(x0,y0,x1,y1,9)
-			
-			x0,y0=project(ref.body.pos)
-			x1,y1=project(inc.body.pos)
-			print("ref",x0-8,y0,1)
-			print("inc",x1-8,y1,1)
+		local c=sel_body==b and 9 or 7
+		b.shape:draw(c)
+		if show_debug then
+			local x,y=project(b.pos)
+			print(b.shape.isref==true and "ref" or "inc",x-8,y,1)
 		end
 	end
 	
-	--[[
-	local d,i=body_b.shape:leastpenetration(body_a.shape)
-	if d<=0 then
-		body_b.shape:draw_face(i)
+	-- 
+	rectfill(0,0,127,9,1)
+	local cpu=flr(100*stat(1))
+	cpu_stats[time_t%128+1]=cpu
+	for i=1,128 do
+		local c,s=11,cpu_stats[(time_t+i)%128+1]
+		if s then
+			if(s>100) c=8 s=100
+			pset(i-1,9-9*s/100,c)
+		end
 	end
-	d,i=body_a.shape:leastpenetration(body_b.shape)
-	if d<=0 then
-		body_a.shape:draw_face(i)
+	print(cpu.."%",2,2,7)
+
+	if show_debug then
+ 	for _,m in pairs(manifolds) do
+ 		m:draw()
+ 	end
 	end
-	]]
+	
 	spr(2,mousex,mousey)
 end
 
 function _update60()
 	mousex,mousey=stat(32),stat(33)
-
-	if stat(34)==1 then
-		body_b.pos=unproject(mousex-32,mousey)
-		body_b:reset()
-		body_b.v=vec(0,0)
+	
+	-- world mouse coords
+	local mw=unproject(mousex,mousey)
+	
+	if stat(34)==2 then
+ 	sel_body=nil
+ 	for _,b in pairs(bodies) do
+ 		if b.shape:inside(mw) then
+ 			sel_body=b
+ 			break
+ 		end
+ 	end
+ end
+ 	
+	if sel_body and stat(34)==1 then
+		sel_body.pos=mw
+		sel_body:reset()
+		sel_body.v=vec(0,0)
+		sel_body.angularv=0
 	end
 		
+	if btnp(4) then
+		show_debug=not show_debug
+	end
+	
+	-- resolve collisions
 	manifolds={}
 	-- find contact points
 	for i=1,#bodies do
@@ -419,6 +470,10 @@ function _update60()
 		a:integrate_forces(k_dt)
 	end
 	
+	for _,m in pairs(manifolds) do
+		m:init()
+	end
+
 	for i=1,10 do
 		for _,m in pairs(manifolds) do
 			m:apply_impulse()
@@ -436,6 +491,8 @@ function _update60()
 	for _,a in pairs(bodies) do
 		a:reset()
 	end
+	
+	time_t+=1
 end
 
 -->8
@@ -464,33 +521,47 @@ end
 function poly2poly(m,a,b)
 	m.contacts,m.penetration={},0
 
+	--check for a separating axis with a's face planes
 	local pa,fa=a:leastpenetration(b)
-	if(pa>0) return
+	if(pa>=0) return
 	
+	--check for a separating axis with b's face planes
 	local pb,fb=b:leastpenetration(a)
-	if(pb>0) return
+	if(pb>=0) return
 	
-	local ref,inc,i,flip=a,b,fa,false
-	if not is_gt(pa,pb) then
+	-- always point from a to b
+	local ref,inc,i,flip
+	-- determine which shape contains reference face
+	if is_gt(pa,pb) then
+		ref,inc,i,flip=a,b,fa,false
+	else
 		ref,inc,i,flip=b,a,fb,true
 	end
+	-- debug
+	ref.isref,inc.isref=true,false
 	
 	local incf=ref:incidentface(inc,i)
 	
+	-- setup reference face vertices
 	local v1,v2=ref.v[i],ref.v[i-1==0 and #ref.v or i-1]
+	-- transform vertices to world space
 	v1,v2=ref:apply(v1),ref:apply(v2)
 	
+	-- calculate reference face side normal in world space
 	local sn=v2-v1
 	sn:normz()
 	
 	local refn=vec(-sn.y,sn.x)
 
-	-- dist
+	-- ax + by = c
+  	-- c is distance from origin
 	local refc=v_dot(refn,v1)
 	local negside,posside=-v_dot(sn,v1),v_dot(sn,v2)
 		
+	-- clip incident face to reference face side planes
+	-- due to floating point error, possible to not have required points
 	if(face_clip(-sn,negside,incf)<2) return
-	if(face_clip(-sn,posside,incf)<2) return
+	if(face_clip(sn,posside,incf)<2) return
 	
 	m.n=flip==true and -refn or refn
 		
@@ -513,58 +584,65 @@ end
 
 -->8
 -- manifold
+-- penetration allowance
+-- penetration percentage to correct
 local k_slop,k_pct=0.05,0.4
 
 function make_manifold(a,b)
 	local m={
 		a=a,
 		b=b,
-		e=min(a.restituion,b.restitution),
-		sf=sqrt(a.sfriction*b.sfriction),
-		df=sqrt(a.dfriction*b.dfriction),
 		apply_impulse=function(self)
-  	-- infinite mass?
-  	if a.im+b.im==0 then
+  	-- early out and positional correct if both objects have infinite mass
+  	if abs(a.im+b.im)<0.001 then
   		a.v,b.v=vec(0,0),vec(0,0)
   		return
   	end
   	
   	for _,c in pairs(self.contacts) do
+  		-- calculate radii from center of mass to contact
   		local ra,rb=c-a.pos,c-b.pos
+  		-- relative velocity
   		local rv=b.v+rb:ortho(b.angularv)-(a.v+ra:ortho(a.angularv))
   		
+  		-- relative velocity along the normal
 				local cv=v_dot(rv,self.n)
-				-- separating?
+				--  do not resolve if velocities are separating
 				if(cv>0) return
 				
 				local racn,rbcn=v_cross(ra,self.n),v_cross(rb,self.n)
 				local invmass=a.im+b.im+sqr(racn)*a.ii+sqr(rbcn)*b.ii
 				
+				-- calculate impulse scalar
 				local j=-(1+self.e)*cv
 				j/=invmass
 				j/=#self.contacts
 				
-				-- apply
+				-- apply impulse
 				local impulse=j*self.n
 				a:apply_impulse(-impulse,ra)
 				b:apply_impulse(impulse,rb)
 				
-				-- friction
+				-- friction impulse
 				rv=b.v+rb:ortho(b.angularv)-(a.v+ra:ortho(a.angularv))
 				local t=rv-v_dot(rv,self.n)*self.n
 				t:normz()
 				
+				-- j tangent magnitude
 			 local jt=-v_dot(rv,t)
 			 jt/=invmass	
 			 jt/=#self.contacts
-			 if(abs(jt)<0.001) return
+			 -- don't apply tiny friction impulses
+			 if(abs(jt)<0.01) return
 			 		
+			 -- coulomb's law
 			 local timpulse
 			 if abs(jt)<j*self.sf then
 			 	timpulse=t*jt
 			 else
 			 	timpulse=t*-j*self.df
  		 end
+ 		 -- apply friction impulse
 				a:apply_impulse(-timpulse,ra)
 				b:apply_impulse(timpulse,rb)
   	end
@@ -575,30 +653,34 @@ function make_manifold(a,b)
 			b.pos+=b.im*c
 		end,
 		draw=function(self)
-			-- mid point
-			local v=vec(0,0)
-			color(12)
 			for _,cp in pairs(self.contacts) do
 				local x,y=project(cp)
-				circfill(x,y,2)
-				v+=cp
+				circfill(x,y,2,8)
+				local x1,y1=project(cp+4*self.n)
+				line(x,y,x1,y1,11)
 			end
-			if #self.contacts>0 then
-				v/=#self.contacts
-				local x0,y0=project(v)
-				local x1,y1=project(v+4*self.n)
-				line(x0,y0,x1,y1)
-			end
+		end,
+		init=function(self)
+			-- calculate average restitution
+			self.e=min(a.restitution,b.restitution)
+			--  calculate static and dynamic friction
+			self.sf=sqrt(a.sfriction*b.sfriction)
+			self.df=sqrt(a.dfriction*b.dfriction)
+				
+  	for _,c in pairs(self.contacts) do
+  		local ra,rb=c-a.pos,c-b.pos
+  		local rv=b.v+rb:ortho(b.angularv)-(a.v+ra:ortho(a.angularv))
+  		-- determine if we should perform a resting collision or not
+				-- the idea is if the only thing moving this object is gravity,
+    -- then the collision should be performed without any restitution
+  		if rv:lensqr()<(k_dt*v_gravity):lensqr()+0.01 then
+  			self.e=0
+  		end	
+  	end		
 		end
 	}
+	-- solve
 	poly2poly(m,a.shape,b.shape)
-	for _,c in pairs(m.contacts) do
-		local ra,rb=c-a.pos,c-b.pos
-		local rv=b.v+rb:ortho(b.angularv)-(a.v+ra:ortho(a.angularv))
-		if rv:lensqr()<(k_dt*v_gravity):lensqr() + 0.001 then
-			m.e=0
-		end	
-	end
 	return m
 end
 __gfx__
