@@ -171,7 +171,7 @@ end
 
 -- global vectors
 local v_gravity=vec(0,-98)
-local k_pi,k_dt=3.14,1/60
+local k_pi,k_dt=3.1416,1/60
 -- arbitrary air friction
 local k_friction=0.97
 
@@ -197,6 +197,7 @@ function make_circle(radius,density)
 			return v+self.body.pos
 		end,
 		rotate=function(self,angle)
+			-- useless for circles
 		end,
 		init=function(self,b)
 			b.m=k_pi*radius*radius*density
@@ -380,7 +381,7 @@ local bodies={}
 function make_body(shape,x,y)
 	local b={
 		shape=shape,
-		pos=vec(x,y),		
+		pos=vec(x,y),
 		v=vec(0,0), -- velocity
 		f=vec(0,0), -- force
 		i=0,
@@ -421,7 +422,7 @@ function make_body(shape,x,y)
 			self:integrate_forces(dt)
 		end,
 		reset=function(self)
-			self.f[1],self.f[2]=0,0
+			self.f=vec(0,0)
 			self.torque=0
 		end
 	}
@@ -432,6 +433,7 @@ end
 -- game loop
 local time_t=0
 local mousex,mousey,mdrag,mouserb
+local ctx_menu
 -- selected body
 local sel_body
 local show_debug=false
@@ -490,10 +492,14 @@ function _draw()
 	draw_stats()
 
 	if show_debug then
- 	for _,m in pairs(manifolds) do
- 		m:draw()
- 	end
+	 	for _,m in pairs(manifolds) do
+	 		m:draw()
+	 	end
 	end
+	if ctx_menu then
+		ctx_menu:draw()
+	end
+	
 	spr(mdrag and 3 or 2,mousex,mousey)
 end
 
@@ -506,6 +512,17 @@ function _update60()
 	mdrag=false
 	if lmb then
 		mdrag=(mx==mousex and my==mousey)==true and false or true
+		if ctx_menu then
+			ctx_menu=nil
+		else
+			ctx_menu=make_menu({
+				{txt="grav.",
+				get=function() return k_gravity.y end,
+				set=function(inc)
+					k_gravity.y+=inc
+				end}
+			},mx,my)
+		end
 	end
 	
 	-- not already dragging?
@@ -535,52 +552,57 @@ function _update60()
 		show_debug=not show_debug
 	end
 	
-	-- resolve collisions
-	manifolds={}
-	-- find contact points
-	for i=1,#bodies do
-		local a=bodies[i]
-		for j=i+1,#bodies do
-			local b=bodies[j]
-			if (a.im==0 and b.im==0)==false then
-				local m=make_manifold(a,b)
-				if #m.contacts>0 then
-					add(manifolds,m)
+	if ctx_menu then
+		ctx_menu:update()
+	else
+		-- resolve collisions
+		manifolds={}
+		-- find contact points
+		for i=1,#bodies do
+			local a=bodies[i]
+			for j=i+1,#bodies do
+				local b=bodies[j]
+				if (a.im==0 and b.im==0)==false then
+					local m=make_manifold(a,b)
+					if #m.contacts>0 then
+						add(manifolds,m)
+					end
 				end
 			end
 		end
-	end
-	
-	for _,a in pairs(bodies) do
-		a:integrate_forces(k_dt)
-	end
-	
-	for _,m in pairs(manifolds) do
-		m:init()
-	end
-
-	for i=1,10 do
-		for _,m in pairs(manifolds) do
-			m:apply_impulse()
+		
+		for _,a in pairs(bodies) do
+			a:integrate_forces(k_dt)
 		end
-	end
-
-	for _,a in pairs(bodies) do
-		a:integrate_v(k_dt)
- end
- 
-	for _,m in pairs(manifolds) do
-		m:fix_pos()
-	end
-
-	for _,a in pairs(bodies) do
-		a:reset()
-	 -- kill body outside screen
-	 local x,y=project(a.pos)
-	 if(x<-10 or x>140 or y>140) del(bodies,a)
+		
+		for _,m in pairs(manifolds) do
+			m:init()
+		end
+	
+		for i=1,10 do
+			for _,m in pairs(manifolds) do
+				m:apply_impulse()
+			end
+		end
+	
+		for _,a in pairs(bodies) do
+			a:integrate_v(k_dt)
+	 end
+	 
+		for _,m in pairs(manifolds) do
+			m:fix_pos()
+		end
+	
+		for _,a in pairs(bodies) do
+			a:reset()
+		 -- kill body outside screen
+		 local x,y=project(a.pos)
+		 if(x<-10 or x>140 or y>140) del(bodies,a)
+		end
+		
+		time_t+=1
 	end
 	
-	time_t+=1
 	mousex,mousey,mouserb=mx,my,rmb
 end
 
@@ -860,7 +882,7 @@ function make_manifold(a,b)
 	return m
 end
 -->8
--- stats
+-- stats & menus
 local cpu_stats={}
 
 function draw_stats()
@@ -877,6 +899,37 @@ function draw_stats()
 	end
 	print(cpu.."%",2,2,7)
 end
+
+function make_menu(mnu,x,y)
+	local m={
+		items=mnu,
+		x=x,
+		y=y,
+		draw=function(self,mx,my)
+			local x0,y0=self.x,self.y
+			for i=1,#self.items do
+				local item=self.items[i]
+				local s=item.txt..": "..(flr(100*item.get())/100)
+				local x1=x0+5*#s+2
+				rectfill(x0,y0,x1,y0+8,1)
+				print(s,x0+1,y0+1,7)
+				if mx>x1 and mx<x1+8 and my>y0 and my<y0+8 
+					pal(14,8)
+				else
+					pal(14,1)
+				end
+				spr(7,x1,y0)
+				x1+=8
+				spr(8,x1,y0)
+				y0+=8
+			end
+		end,
+		update=function(self)
+		end
+	}
+	return 
+end
+
 __gfx__
 00000000000000007777000077777700007000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000006677007000000070000700777770000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000

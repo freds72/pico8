@@ -1328,7 +1328,36 @@ function control_plyr(self)
 	local m=m_from_q(plyr.q)
 	local fwd={m[9],m[10],m[11]}
 	v_add(plyr.pos,fwd,plyr.acc+plyr.boost)
-	-- todo: collision w/ ground
+	-- ground collision?
+	local cv,ca
+	if plyr.pos[2]<0 then
+		if game_mode==1 then
+			if plyr.pos[1]>6 then
+				cv,ca=v_up,-0.1
+				plyr.pos[1]=6
+			elseif plyr.pos[1]<-6 then
+				cv,ca=v_up,0.1
+				plyr.pos[1]=-6
+			elseif plyr.pos[2]<-6 then
+				cv,ca=v_right,0.1
+				plyr.pos[2]=-6
+			else
+				cv,ca=v_right,0.1
+				plyr.pos[2]=0
+			end
+		end
+	end
+	-- apply collision response
+	if cv then
+		m_inv(m)
+		cv=v_clone(cv)
+		o_x_v(m,cv)
+		q=make_q(cv,ca)
+		q_x_q(plyr.q,q)
+		m=m_from_q(plyr.q)
+		fwd={m[9],m[10],m[11]}
+	end
+	
 	m_set_pos(m,plyr.pos)
 	plyr.m=m
 
@@ -1657,7 +1686,7 @@ function game_screen:init()
 	
 	if game_mode==0 then
 		make_msg("attack1")
-		spawn_t=time_t+cur_msg.dly			
+		spawn_t=time_t+cur_msg.dly
 	elseif game_mode==1 then
 		init_ground()
 		init_trench(8)
