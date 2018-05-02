@@ -251,7 +251,6 @@ end
 
 function sqr_dist(a,b)
 	local dx,dy,dz=b[1]-a[1],b[2]-a[2],b[3]-a[3]
-	local scale=1
 	if abs(dx)>128 or abs(dy)>128 or abs(dz)>128 then
 		return 32000
 	end
@@ -405,18 +404,6 @@ function q_x_q(a,b)
 	a[3]=qaz*qbw+qaw*qbz+qax*qby-qay*qbx
 	a[4]=qaw*qbw-qax*qbx-qay*qby-qaz*qbz
 end
-function v_x_q(v,q)
-	local x,y,z=v[1],v[2],v[3]
-	local qx,qy,qz,qw=q[1],q[2],q[3],q[4]
-	-- calculate quat*vector
-	local ix,iy,iz,iw=qw*x+qy*z-qz*y,qw*y+qz*x-qx*z,qw*z+qx*y-qy*x,-qx*x-qy*y-qz*z
-	
-	-- calculate result*inverse quat	
-	return {
-		ix*qw+iw*-qx+iy*-qz-iz*-qy,
-		iy*qw+iw*-qy+iz*-qx-ix*-qz,
-		iz*qw+iw*-qz+ix*-qy-iy*-qx}
-end
 function m_from_q(q)
 	local x,y,z,w=q[1],q[2],q[3],q[4]
 	local x2,y2,z2=x+x,y+y,z+z
@@ -552,19 +539,15 @@ function unpack_models()
 	-- how many models?
 	local n=unpack_int()
 	for m=1,n do
- 	local name=unpack_string()
- 	local scale=unpack_int()
- 	local model={}
+ 	local model,name,scale={},unpack_string(),unpack_int()
  	-- vertices
- 	n=unpack_int()
- 	model.v={}
+ 	model.v,n={},unpack_int()
  	for i=1,n do
  		local v={unpack_float(scale),unpack_float(scale),unpack_float(scale)}
  		add(model.v,v)
  	end
  	-- faces
- 	n=unpack_int()
- 	model.f={}
+ 	model.f,n={},unpack_int()
  	for i=1,n do
  		local f={unpack_int(),unpack_int()}
  		for k=1,f[2] do
@@ -573,16 +556,14 @@ function unpack_models()
  		add(model.f,f)
  	end
  	-- normals
- 	n=unpack_int()
- 	model.n={}
+ 	model.n,n={},unpack_int()
  	for i=1,n do
  		local v={unpack_float(),unpack_float(),unpack_float()}
  		add(model.n,v)
  	end
  	
  	-- edges
- 	n=unpack_int()
- 	model.e={}
+ 	model.e,n={},unpack_int()
  	for i=1,n do
  		local e={
  			unpack_int(), -- start
@@ -1263,10 +1244,11 @@ end
 
 -- radio message
 local cur_msg
-local all_msgs=json_parse'{"attack1":{"spr":12,"title":"ackbar","txt":"clear tie squadrons","dly":300,"can_skip":true},"help":{"spr":10,"rnd":{"title":["red leader","alpha","delta wing"]},"txt":"help!","dly":300}}'
+local all_msgs=json_parse'{"attack1":{"spr":12,"title":"ackbar","txt":"clear tie squadrons","dly":300,"can_skip":true},"help":{"spr":10,"rnd":{"title":["red leader","alpha","delta wing"]},"txt":"help!","dly":300},"low_hp":{"spr":76,"title":"r2d2","txt":"..--..-..","dly":120,"sfx":4,"rnd":{"repeat_dly":[600,900]}}}'
 function make_msg(msg)
 	local m=clone(all_msgs[msg])
 	m.t=time_t+m.dly
+	if (m.sfx) sfx(m.sfx)
  cur_msg=m
 end
 
@@ -1306,12 +1288,13 @@ local cam_rear=false
 function control_plyr(self)
 	local pitch,roll=0,0
 	
-	plyr.energy=min(plyr.energy+0.05,1)
+	plyr.energy=min(plyr.energy+0.01,1)
 	-- refill shield + proton
 	if plyr.energy==1 and plyr.energy_t<time_t then
 		plyr.proton_ammo=min(plyr.proton_ammo+1,4)
 		plyr.hp=min(plyr.hp+1,5)
 		plyr.energy_t=time_t+120
+		plyr.energy=0
 	end
 	
 	if(btn(0)) roll=-1 turn_t+=1
@@ -1464,6 +1447,8 @@ function draw_stars()
 end
 
 local plane_m=make_m()
+local shield_spr=json_parse'[72,14,45,43,74]'
+
 function draw_radar()
  clip(54,105,22,22)
 	m_set_pos(plane_m,plyr.pos)
@@ -1520,8 +1505,11 @@ function draw_radar()
 	end
 
  -- shield
- spr(74,39,104,2,2)
- 
+ spr(shield_spr[max(plyr.hp,1)],39,104,2,2)
+ if plyr.hp!=5 and time_t%4<2 then
+	 spr(shield_spr[max(plyr.hp+1,1)],39,104,2,2)
+	end
+	 
 	if game_mode==1 and plyr.pos[2]<10 then
 		local h=tostr(flr(10*plyr.pos[2])/10)
 		local dy=12*(plyr.pos[2]/10)
@@ -1679,6 +1667,7 @@ end
 function make_mission()
 end
 
+local low_hp_t=0
 function game_screen:update()
 	zbuf_clear()
 	
@@ -1688,6 +1677,10 @@ function game_screen:update()
 	
 	if plyr then
 		control_plyr(plyr)
+		if plyr.hp<2 and low_hp_t<time_t and rnd()>0.95 then
+			make_msg("low_hp")
+			low_hp_t=time_t+cur_msg.repeat_dly
+		end
 	end
 	cam:update()
 	radar_cam:update()
@@ -1940,7 +1933,7 @@ __sfx__
 000100002c060350503b0403e0403365029060216501e0501665015040116400d0400b6300a030076300803007630060300463004030036300263002640016400164001640016300163001630016300163001620
 000100003c5503755034550315502f5502b5502565024550206501f5301b620185201161010550096500655004650036500265004550036500b50008500065000350001500015000000000000000000000000000
 00020000026500a650146501765019650196501765015650126500e6500d6500b6500a65007650036400565004650026500165001650016500165001650026500265002650036500365003650036500265002650
-000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0004000032450334602c4603235033460333602e3502e3502b450343402d4302c320333203a3203d330363302033025330224302f4302e33021350243402644026330284202632035430203301c320364201b320
 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
