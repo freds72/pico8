@@ -1285,6 +1285,33 @@ local mousex,mousey=0,0
 local dist=0
 local sel_actor,sel_t=1,0
 local cam_rear=false
+
+function is_solid(pos,q,scale)
+	local m=m_from_q(q)
+	local fwd={m[9],m[10],m[11]}
+	v_add(pos,fwd,scale*0.5)
+
+	-- ground collision?
+	if pos[2]<0 then
+		if game_mode==1 then
+			if pos[1]>6 then
+				pos[1]=6
+				return true
+			elseif pos[1]<-6 then
+				pos[1]=-6
+				return true
+			elseif pos[2]<-6 then
+				pos[2]=-6
+				return true
+			else
+				pos[2]=0
+				return true
+			end
+		end
+	end
+	return false
+end
+
 function control_plyr(self)
 	local pitch,roll=0,0
 	
@@ -1309,57 +1336,40 @@ function control_plyr(self)
 	else
 		turn_t=0
 	end
+	local tmp_q,tmp_pos=q_clone(plyr.q),v_clone(plyr.pos)
 	local r=turn_t/8
 	local q=make_q(v_up,(1-r)*roll/128)
-	q_x_q(plyr.q,q)
+	q_x_q(tmp_q,q)
 	q=make_q(v_fwd,-r*roll/128)
-	q_x_q(plyr.q,q)
-	self.roll*=0.9
+	q_x_q(tmp_q,q)
+	if is_solid(tmp_pos,tmp_q,plyr.acc+plyr.boost) then
+		-- restore orientation
+		tmp_q,tmp_pos=q_clone(plyr.q),v_clone(plyr.pos)
+	end
+	--plyr.q=q_clone(tmp_q)
 	
 	if pitch!=0 then
 	 self.pitch-=pitch/396
 	 self.pitch=mid(self.pitch,-1/256,1/256)
 	end
 	local q=make_q(v_right,self.pitch)
-	q_x_q(plyr.q,q)
-	self.pitch*=0.9
+	q_x_q(tmp_q,q)
+	if is_solid(tmp_pos,tmp_q,plyr.acc+plyr.boost) then
+		-- restore orientation
+		tmp_q,tmp_pos=q_clone(plyr.q),v_clone(plyr.pos)
+	end
 	
 	-- update pos
+	plyr.q,plyr.pos=tmp_q,tmp_pos
 	local m=m_from_q(plyr.q)
 	local fwd={m[9],m[10],m[11]}
-	v_add(plyr.pos,fwd,plyr.acc+plyr.boost)
-	-- ground collision?
-	local cv,ca
-	if plyr.pos[2]<0 then
-		if game_mode==1 then
-			if plyr.pos[1]>6 then
-				cv,ca=v_up,-0.1
-				plyr.pos[1]=6
-			elseif plyr.pos[1]<-6 then
-				cv,ca=v_up,0.1
-				plyr.pos[1]=-6
-			elseif plyr.pos[2]<-6 then
-				cv,ca=v_right,0.1
-				plyr.pos[2]=-6
-			else
-				cv,ca=v_right,0.1
-				plyr.pos[2]=0
-			end
-		end
-	end
-	-- apply collision response
-	if cv then
-		m_inv(m)
-		cv=v_clone(cv)
-		o_x_v(m,cv)
-		q=make_q(cv,ca)
-		q_x_q(plyr.q,q)
-		m=m_from_q(plyr.q)
-		fwd={m[9],m[10],m[11]}
-	end
-	
+	--v_add(plyr.pos,fwd,plyr.acc+plyr.boost)
 	m_set_pos(m,plyr.pos)
 	plyr.m=m
+
+	-- damping
+	self.roll*=0.9
+	self.pitch*=0.9
 
 	-- boost 
 	if btn(4) then
