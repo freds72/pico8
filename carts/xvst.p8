@@ -93,10 +93,9 @@ function json_parse(str, pos, end_delim)
 	end
 end
 
--- 0: chase
--- 1: cockpit
--- 2: orbit
-local cam_mode,cam,radar_cam=0
+-- false: chase
+-- true: cockpit
+local cockpit_view,cam,radar_cam=false
 local plyr
 local spawn_t=0
 local actors,npc_count={},0
@@ -286,6 +285,12 @@ local v_fwd,v_right,v_up={0,0,1},{1,0,0},{0,1,0}
 
 function v_clone(v)
 	return {v[1],v[2],v[3]}
+end
+function v_lerp(a,b,t)
+	return {
+		lerp(a[1],b[1],t),
+		lerp(a[2],b[2],t),
+		lerp(a[3],b[3],t)}
 end
 function v_dot(a,b)
 	return a[1]*b[1]+a[2]*b[2]+a[3]*b[3]
@@ -842,35 +847,23 @@ _g.hit_flying_npc=function(self,dmg,actor)
 		self.target=plyr
 	end
 end
-local all_npcs=json_parse'{"xwing":{"hp":8,"acc":0.2,"g":0,"overg_t":0,"model":"xwing","side":"good_side","update":"update_flying_npc","hit":"hit_npc"},"tie":{"hp":4,"acc":0.2,"g":0,"overg_t":0,"model":"tie","side":"bad_side","update":"update_flying_npc","hit":"hit_flying_npc"},"turret":{"hp":2,"model":"turret","side":"bad_side","update":"update_ground_npc","hit":"hit_npc"},"generator":{"waypt":true,"hp":2,"model":"junk2","side":"bad_side","update":"nop","hit":"hit_npc"}}'
+local all_npcs=json_parse'{"plyr":{"score":0,"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"acc":0.2,"model":"xwing","roll":0,"pitch":0,"laser_i":0,"fire_t":0,"lock_t":0,"proton_ammo":4,"side":"good_side"},"xwing":{"hp":8,"acc":0.2,"g":0,"overg_t":0,"model":"xwing","side":"good_side","update":"update_flying_npc","hit":"hit_npc"},"tie":{"hp":4,"acc":0.2,"g":0,"overg_t":0,"model":"tie","side":"bad_side","update":"update_flying_npc","hit":"hit_flying_npc"},"turret":{"hp":2,"model":"turret","side":"bad_side","update":"update_ground_npc","hit":"hit_npc"},"generator":{"waypt":true,"hp":2,"model":"junk2","side":"bad_side","update":"nop","hit":"hit_npc"}}'
 		
 function make_plyr(x,y,z)
-	local p={
-		score=0,
-		hp=5,
-		energy=1,
-		energy_t=0,
-		boost=0,
-		acc=0.2,
-		model=all_models.xwing,
+	local p=clone(all_npcs["plyr"],{
 		pos={x,y,z},
 		q=make_q(v_fwd,0),
-		roll=0,
-		pitch=0,
-		laser_i=0,
-		fire_t=0,
-		lock_t=0,
-		proton_ammo=4,
-		side=good_side,
 		hit=function(self,dmg)
+			if(self.safe_t>time_t) return
 			self.hp-=dmg
+			self.safe_t=time_t+8
 			screen_shake(rnd(),rnd(),2)
 		end,
 		fire=make_laser,
 		fire_proton=make_proton,
 		die=die_plyr,
 		draw=function(self,x,y,z,w)
-			if cam_mode==1 then
+			if cockpit_view then
 				return
 			end
 			draw_model(self.model,self.m,x,y,z,w)
@@ -878,7 +871,8 @@ function make_plyr(x,y,z)
 		update=function(self)
 			return true
 		end
-	}
+	})
+	p.model=all_models[p.model]
 	add(actors,p)
 	return p
 end
@@ -1284,34 +1278,38 @@ local turn_t=0
 local mousex,mousey=0,0
 local dist=0
 local sel_actor,sel_t=1,0
-local cam_rear=false
+local rear_view=false
 
-function is_solid(pos,q,scale)
-	local m=m_from_q(q)
-	local fwd={m[9],m[10],m[11]}
-	v_add(pos,fwd,scale*0.5)
-
+function plyr_ground_col(pos)
 	-- ground collision?
 	if pos[2]<0 then
 		if game_mode==1 then
+			local r=rnd()*0.5
 			if pos[1]>6 then
-				pos[1]=6
-				return true
+				pos[1]=5.5-r
 			elseif pos[1]<-6 then
-				pos[1]=-6
-				return true
+				pos[1]=-5.5+r
 			elseif pos[2]<-6 then
-				pos[2]=-6
-				return true
+				pos[2]=-5.5+r
+			elseif pos[2]>-6 then
+				-- between trench walls
+				return false
 			else
-				pos[2]=0
-				return true
+				pos[2]=r
 			end
+			-- take damage
+			plyr:hit(1)
+			return true
 		end
 	end
 	return false
 end
 
+local view_offsets={
+	[false]={0,2,-8},
+	[true]={0,0,0}
+}
+local view_offset=v_clone(view_offsets[cockpit_view])
 function control_plyr(self)
 	local pitch,roll=0,0
 	
@@ -1336,34 +1334,26 @@ function control_plyr(self)
 	else
 		turn_t=0
 	end
-	local tmp_q,tmp_pos=q_clone(plyr.q),v_clone(plyr.pos)
 	local r=turn_t/8
 	local q=make_q(v_up,(1-r)*roll/128)
-	q_x_q(tmp_q,q)
+	q_x_q(plyr.q,q)
 	q=make_q(v_fwd,-r*roll/128)
-	q_x_q(tmp_q,q)
-	if is_solid(tmp_pos,tmp_q,plyr.acc+plyr.boost) then
-		-- restore orientation
-		tmp_q,tmp_pos=q_clone(plyr.q),v_clone(plyr.pos)
-	end
-	--plyr.q=q_clone(tmp_q)
+	q_x_q(plyr.q,q)
 	
 	if pitch!=0 then
 	 self.pitch-=pitch/396
 	 self.pitch=mid(self.pitch,-1/256,1/256)
 	end
 	local q=make_q(v_right,self.pitch)
-	q_x_q(tmp_q,q)
-	if is_solid(tmp_pos,tmp_q,plyr.acc+plyr.boost) then
-		-- restore orientation
-		tmp_q,tmp_pos=q_clone(plyr.q),v_clone(plyr.pos)
-	end
+	q_x_q(plyr.q,q)
 	
 	-- update pos
-	plyr.q,plyr.pos=tmp_q,tmp_pos
 	local m=m_from_q(plyr.q)
 	local fwd={m[9],m[10],m[11]}
-	--v_add(plyr.pos,fwd,plyr.acc+plyr.boost)
+	v_add(plyr.pos,fwd,plyr.acc+plyr.boost)
+	-- ground collision
+	plyr_ground_col(plyr.pos)
+	-- update model to world matrix
 	m_set_pos(m,plyr.pos)
 	plyr.m=m
 
@@ -1380,48 +1370,33 @@ function control_plyr(self)
 	
 	-- cam modes
 	if btnp(0,1) then
-		cam_mode+=1
-		cam_mode%=3
+		futures_add(function()
+			local next_view=not cockpit_view
+			wait_async(30,function(i)
+				view_offset=v_lerp(
+					view_offsets[cockpit_view],
+					view_offsets[next_view],
+					smoothstep(i/30))
+				return true	
+			end)
+			cockpit_view=next_view
+		end)
 	end
 	-- behind look?
-	cam_rear=false
+	rear_view=false
 	if btn(2,1) then
-		cam_rear=true
+		rear_view=true
 	end
 	
 	-- update radar cam
 	radar_cam.pos=m_x_xyz(plyr.m,0,12,-24)
 	radar_cam.q=q_clone(plyr.q)
-	if cam_mode==0 then
-		cam.pos=m_x_xyz(plyr.m,0,2,-8)
-		--v_add(cam.pos,plyr.pos,-1)
-		cam.q=q_clone(plyr.q)
-	elseif cam_mode==1 then
-		cam.pos=v_clone(plyr.pos)
-		local q=q_clone(plyr.q)
-		if cam_rear==true then
-			q_x_q(q,make_q(v_up,0.5))
-		end
-		cam.q=q
-	else
-		local x,y=stat(32),stat(33)
-		local dx,dy=mousex-x,mousey-y
-		local q=make_q(v_up,dx/128)
-		q_x_q(cam.q,q)
-		--local q=make_q({0,0,1},dy/128)
-		--q_x_q(cam.q,q)
-		local m=m_from_q(cam.q)
-		dist+=dy/2
-		dist=min(dist,-2)
-		cam.pos=m_x_xyz(m,0,2,dist)
-		if stat(34)==1 and sel_t<time_t then
-			sel_actor+=1
-			sel_t=time_t+8
-		end
-		local a=actors[sel_actor%#actors+1]
-		v_add(cam.pos,a.pos)
-		mousex,mousey=x,y
+	cam.pos=m_x_xyz(plyr.m,view_offset[1],view_offset[2],view_offset[3])
+	q=q_clone(plyr.q)
+	if rear_view==true then
+		q_x_q(q,make_q(v_up,0.5))
 	end
+	cam.q=q
 	
 	-- find nearest enemy (360)
 	local min_dist,target=32000
@@ -1767,8 +1742,8 @@ function game_screen:draw()
 	end
 		
 	-- cam modes
-	if cam_mode==1 then
-	 if cam_rear==false then
+	if cockpit_view then
+	 if rear_view==false then
 	  
 			-- cockpit
 			set_layer(false)
@@ -1804,7 +1779,7 @@ function game_screen:draw()
  		rectfill(0,64,127,127,0)
  		rect(19,64,108,125,1)
  	end
- elseif cam_mode==0 then
+ else
  	draw_radar()
  end
  
