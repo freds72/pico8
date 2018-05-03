@@ -95,7 +95,7 @@ end
 
 -- false: chase
 -- true: cockpit
-local cockpit_view,cam,radar_cam=false
+local cockpit_view,rear_view,cam,radar_cam=false,false
 local plyr
 local spawn_t=0
 local actors,npc_count={},0
@@ -641,6 +641,7 @@ function draw_model(model,m,x,y,z,w)
 end
 
 function die_plyr(self)
+	set_view(false)
 	make_part("blast",plyr.pos)
 	-- clear
 	for s in all(scores) do
@@ -657,12 +658,13 @@ function die_plyr(self)
 		dset(i,scores[i].key)
 	end
 	last_score=plyr.score
-	-- 
-	plyr.disabled=true
-	del(actors,plyr)
-	plyr=nil
-	cur_screen=gameover_screen
-	futures_add(function()
+	--
+	futures_add(function()				
+		plyr.disabled=true
+		wait_async(60)
+		del(actors,plyr)
+		plyr=nil
+		cur_screen=gameover_screen
 		wait_async(240,function()
 			if btnp(4) or btnp(5) then
 				return false
@@ -855,15 +857,19 @@ function make_plyr(x,y,z)
 		q=make_q(v_fwd,0),
 		hit=function(self,dmg)
 			if(self.safe_t>time_t) return
-			self.hp-=dmg
 			self.safe_t=time_t+8
+			self.energy=0
+			self.hp-=dmg
+			if self.hp<=0 then
+					self:die()
+			end
 			screen_shake(rnd(),rnd(),2)
 		end,
 		fire=make_laser,
 		fire_proton=make_proton,
 		die=die_plyr,
 		draw=function(self,x,y,z,w)
-			if cockpit_view then
+			if cockpit_view or plyr.disabled then
 				return
 			end
 			draw_model(self.model,self.m,x,y,z,w)
@@ -1275,41 +1281,51 @@ function draw_msg()
 end
 
 local turn_t=0
-local mousex,mousey=0,0
-local dist=0
-local sel_actor,sel_t=1,0
-local rear_view=false
 
 function plyr_ground_col(pos)
 	-- ground collision?
-	if pos[2]<0 then
-		if game_mode==1 then
-			local r=rnd()*0.5
-			if pos[1]>6 then
-				pos[1]=5.5-r
-			elseif pos[1]<-6 then
-				pos[1]=-5.5+r
-			elseif pos[2]<-6 then
-				pos[2]=-5.5+r
-			elseif pos[2]>-6 then
-				-- between trench walls
-				return false
-			else
-				pos[2]=r
+	if pos[2]<0 then		
+		local r,col=rnd()*0.4,false
+		if abs(pos[1])<=6 then
+			if pos[1]>=5.9 then
+				pos[1],col=5.5-r,true
+			elseif pos[1]<=-5.9 then
+				pos[1],col=-5.5+r,true
 			end
-			-- take damage
-			plyr:hit(1)
-			return true
+			if pos[2]<-6 then
+				pos[2],col=-5.5+r,true
+			end
+			-- between trench walls?
+			if(not col) return false			
+		else
+			pos[2]=r
 		end
+		-- take damage
+		plyr:hit(1)
+		return true
 	end
 	return false
 end
 
-local view_offsets={
-	[false]={0,2,-8},
-	[true]={0,0,0}
-}
-local view_offset=v_clone(view_offsets[cockpit_view])
+local view_offsets=json_parse'[[0,2,-8],[0,0,0]]'
+local view_offset=v_clone(view_offsets[cockpit_view and 2 or 1])
+function set_view(target_view)
+ -- nothing to do?
+	if(cockpit_view==target_view) return
+	futures_add(function()
+		local c=cockpit_view
+		cockpit_view=false
+		wait_async(30,function(i)
+			view_offset=v_lerp(
+				view_offsets[c and 2 or 1],
+				view_offsets[target_view and 2 or 1],
+				smoothstep(i/30))
+			return true
+		end)
+		cockpit_view=target_view
+	end)
+end
+
 function control_plyr(self)
 	local pitch,roll=0,0
 	
@@ -1318,8 +1334,7 @@ function control_plyr(self)
 	if plyr.energy==1 and plyr.energy_t<time_t then
 		plyr.proton_ammo=min(plyr.proton_ammo+1,4)
 		plyr.hp=min(plyr.hp+1,5)
-		plyr.energy_t=time_t+120
-		plyr.energy=0
+		plyr.energy,plyr.energy_t=0,time_t+120
 	end
 	
 	if(btn(0)) roll=-1 turn_t+=1
@@ -1352,7 +1367,9 @@ function control_plyr(self)
 	local fwd={m[9],m[10],m[11]}
 	v_add(plyr.pos,fwd,plyr.acc+plyr.boost)
 	-- ground collision
-	plyr_ground_col(plyr.pos)
+	if game_mode==1 then
+		plyr_ground_col(plyr.pos)
+	end
 	-- update model to world matrix
 	m_set_pos(m,plyr.pos)
 	plyr.m=m
@@ -1364,23 +1381,12 @@ function control_plyr(self)
 	-- boost 
 	if btn(4) then
 		self.boost=min(self.boost+0.01,0.1)
-	else
-		self.boost*=0.98
 	end
+	self.boost*=0.98
 	
 	-- cam modes
 	if btnp(0,1) then
-		futures_add(function()
-			local next_view=not cockpit_view
-			wait_async(30,function(i)
-				view_offset=v_lerp(
-					view_offsets[cockpit_view],
-					view_offsets[next_view],
-					smoothstep(i/30))
-				return true	
-			end)
-			cockpit_view=next_view
-		end)
+		set_view(not cockpit_view)
 	end
 	-- behind look?
 	rear_view=false
@@ -1391,12 +1397,6 @@ function control_plyr(self)
 	-- update radar cam
 	radar_cam.pos=m_x_xyz(plyr.m,0,12,-24)
 	radar_cam.q=q_clone(plyr.q)
-	cam.pos=m_x_xyz(plyr.m,view_offset[1],view_offset[2],view_offset[3])
-	q=q_clone(plyr.q)
-	if rear_view==true then
-		q_x_q(q,make_q(v_up,0.5))
-	end
-	cam.q=q
 	
 	-- find nearest enemy (360)
 	local min_dist,target=32000
@@ -1689,13 +1689,22 @@ function game_screen:update()
 		update_msg()
 	end
 	
-	if plyr then
+	if plyr and not plyr.disabled then
 		control_plyr(plyr)
 		if plyr.hp<2 and low_hp_t<time_t and rnd()>0.95 then
 			make_msg("low_hp")
 			low_hp_t=time_t+cur_msg.repeat_dly
 		end
 	end
+	if plyr then	
+		cam.pos=m_x_xyz(plyr.m,view_offset[1],view_offset[2],view_offset[3])
+		q=q_clone(plyr.q)
+		if rear_view==true then
+			q_x_q(q,make_q(v_up,0.5))
+		end
+		cam.q=q
+	end	
+	
 	cam:update()
 	radar_cam:update()
 
