@@ -1,26 +1,26 @@
 pico-8 cartridge // http://www.pico-8.com
 version 16
 __lua__
--- physics "ImpulseEngine"
+-- physics "impulseengine"
 -- by freds72
 
 --[[     
-	Copyright (c) 2013 Randy Gaul http://RandyGaul.net
+	copyright (c) 2013 randy gaul http://randygaul.net
 
-    This software is provided 'as-is', without any express or implied
-    warranty. In no event will the authors be held liable for any damages
+    this software is provided 'as-is', without any express or implied
+    warranty. in no event will the authors be held liable for any damages
     arising from the use of this software.
 
-    Permission is granted to anyone to use this software for any purpose,
+    permission is granted to anyone to use this software for any purpose,
     including commercial applications, and to alter it and redistribute it
     freely, subject to the following restrictions:
-      1. The origin of this software must not be misrepresented; you must not
-         claim that you wrote the original software. If you use this software
+      1. the origin of this software must not be misrepresented; you must not
+         claim that you wrote the original software. if you use this software
          in a product, an acknowledgment in the product documentation would be
          appreciated but is not required.
-      2. Altered source versions must be plainly marked as such, and must not be
+      2. altered source versions must be plainly marked as such, and must not be
          misrepresented as being the original software.
-      3. This notice may not be removed or altered from any source distribution.
+      3. this notice may not be removed or altered from any source distribution.
  ]]
 
 -- math
@@ -174,6 +174,9 @@ local v_gravity=vec(0,-98)
 local k_pi,k_dt=3.1416,1/60
 -- arbitrary air friction
 local k_friction=0.97
+-- penetration allowance
+-- penetration percentage to correct
+local k_slop,k_pct=0.05,0.4
 
 function project(v)
 	return 64+v.x,64-v.y
@@ -188,10 +191,11 @@ end
 local k_polykind,k_circlekind=0x1,0x2
 
 -- circle shape
-function make_circle(radius,density)
+function make_circle(radius,d)
 	local c={
 		kind=k_circlekind,
 		r=radius,
+		density=d,
 		-- local to world
 		apply=function(self,v)
 			return v+self.body.pos
@@ -200,12 +204,24 @@ function make_circle(radius,density)
 			-- useless for circles
 		end,
 		init=function(self,b)
-			b.m=k_pi*radius*radius*density
+			b.m=k_pi*radius*radius*d
 			b.im=1/b.m
 			b.i=b.m*radius*radius
 			b.ii=1/b.i
 
 			self.body=b
+		end,
+		update_density=function(self)
+			local b=self.body
+			if self.density<=0 then
+				b:static()
+				self.density=0
+				return
+			end
+			b.m=k_pi*radius*radius*self.density
+			b.im=1/b.m
+			b.i=b.m*radius*radius
+			b.ii=1/b.i
 		end,
 		contains=function(self,v)
 			v-=self.body.pos
@@ -220,7 +236,7 @@ function make_circle(radius,density)
 				c+=0x90
 			end
 			circ(x,y,self.r,c)
-			-- Render line within circle so orientation is visible
+			-- render line within circle so orientation is visible
 			local u=mat:make_r(self.body.angle)
 			local x1,y1=project(self:apply(u*vec(0.8*self.r,0)))
 			line(x,y,x1,y1)
@@ -236,6 +252,7 @@ function make_polygon(v,d)
 		kind=k_polykind, --polygon
 		u=mat(),
 		v=v,
+		density=d,
 		-- local to world
 		apply=function(self,v)
 			return self.u*v+self.body.pos
@@ -327,6 +344,33 @@ function make_polygon(v,d)
 			
 			self.body=b
 		end,
+	update_density=function(self)
+			local b=self.body
+			if self.density<=0 then
+				b:static()
+				self.density=0
+				return
+			end
+			local area=0
+			local i=0
+			local inv3=1/3
+			
+			for k=1,#self.v do
+			 -- triangle vertices, third vertex implied as (0, 0)
+				local v1,v2=self.v[k-1==0 and #self.v or k-1],self.v[k]
+				local d=v_cross(v1,v2)
+				local tarea=0.5*d
+				area+=tarea
+				
+				local x,y=v1.x*v1.x+v2.x*v1.x+v2.x*v2.x,v1.y*v1.y+v2.y*v1.y+v2.y*v2.y
+				i+=0.25*inv3*d*(x+y)
+			end
+			
+			b.m=self.density*area
+			b.im=1/b.m
+			b.i=i*self.density
+			b.ii=1/b.i
+		end,
 		support=function(self,d)
 			local maxp,maxv=-32000
 			for i=1,#self.v do
@@ -398,8 +442,9 @@ function make_body(shape,x,y)
 		static=function(self)
 			self.i,self.ii=0,0
 			self.m,self.im=0,0
+			self.shape.density=0
 		end,
-		apply_force=function(f)
+		apply_force=function(self,f)
 			self.f+=f
 		end,
 		apply_impulse=function(self,impulse,c)
@@ -432,7 +477,7 @@ end
 -->8
 -- game loop
 local time_t=0
-local mousex,mousey,mdrag,mouserb
+local mousex,mousey,mdrag,mouserb,mouselb
 local ctx_menu
 -- selected body
 local sel_body
@@ -497,7 +542,7 @@ function _draw()
 	 	end
 	end
 	if ctx_menu then
-		ctx_menu:draw()
+		ctx_menu:draw(mousex,mousey)
 	end
 	
 	spr(mdrag and 3 or 2,mousex,mousey)
@@ -512,17 +557,6 @@ function _update60()
 	mdrag=false
 	if lmb then
 		mdrag=(mx==mousex and my==mousey)==true and false or true
-		if ctx_menu then
-			ctx_menu=nil
-		else
-			ctx_menu=make_menu({
-				{txt="grav.",
-				get=function() return k_gravity.y end,
-				set=function(inc)
-					k_gravity.y+=inc
-				end}
-			},mx,my)
-		end
 	end
 	
 	-- not already dragging?
@@ -545,6 +579,74 @@ function _update60()
 	end
 		
 	if rmb and rmb!=mouserb then
+	 -- close menu
+		if ctx_menu then
+			ctx_menu=nil
+		elseif not sel_body then
+			ctx_menu=make_menu({
+				{txt="grav.",
+				get=function() return v_gravity.y end,
+				set=function(inc)
+					v_gravity.y-=inc
+				end},
+				{txt="pen. k",
+				get=function() return k_slop end,
+				set=function(inc)
+					k_slop+=inc/100
+				end},
+				{txt="pen. %",
+				get=function() return k_pct end,
+				set=function(inc)
+					k_pct+=inc/100
+					k_pct=mid(k_pct,0,1)
+				end},
+				{txt="clear all",
+					c=8,
+					spr=4,
+					action=function()
+						bodies={}
+						ctx_menu=nil
+					end
+				}
+			},mx,my)
+		else
+			local b=sel_body
+				ctx_menu=make_menu({
+				{txt="dens",
+					get=function() return b.shape.density end,
+					set=function(inc)
+						b.shape.density+=inc/10
+						b.shape:update_density()
+					end},
+				{txt="restit",
+					get=function() return b.restitution end,
+					set=function(inc)
+						b.restitution+=inc/100
+						b.restitution=mid(b.restitution,0,1)
+					end},
+				{txt="s.fric",
+					get=function() return b.sfriction end,
+					set=function(inc)
+						b.sfriction+=inc/100
+					end},
+				{txt="d.fric",
+					get=function() return b.dfriction end,
+					set=function(inc)
+						b.dfriction+=inc/100
+					end},
+				{txt="delete",
+					c=8,
+					spr=4,
+					action=function()
+						del(bodies,b)
+						ctx_menu=nil
+					end
+				}			
+			},mx,my)
+		end
+	end
+	
+	if not ctx_menu and not sel_body and lmb and lmb!=mouselb then
 		make_rnd_body(mw.x,mw.y)
 	end
 	
@@ -553,7 +655,7 @@ function _update60()
 	end
 	
 	if ctx_menu then
-		ctx_menu:update()
+		ctx_menu:update(mousex,mousey,lmb and lmb!=mouselb)
 	else
 		-- resolve collisions
 		manifolds={}
@@ -600,10 +702,10 @@ function _update60()
 		 if(x<-10 or x>140 or y>140) del(bodies,a)
 		end
 		
-		time_t+=1
 	end
 	
-	mousex,mousey,mouserb=mx,my,rmb
+	time_t+=1
+	mousex,mousey,mouselb,mouserb=mx,my,lmb,rmb
 end
 
 -->8
@@ -632,11 +734,11 @@ function circle2poly(m,a,b)
 	-- get shapes
 	a,b=a.shape,b.shape
 
-	-- Transform circle center to Polygon model space
+	-- transform circle center to polygon model space
 	local center=b.u:transpose()*(a.body.pos-b.body.pos)
 
-	-- Find edge with minimum penetration
-  	-- Exact concept as using support points in Polygon vs Polygon
+	-- find edge with minimum penetration
+  	-- exact concept as using support points in polygon vs polygon
 	local separation,ni=-32000
 	for i=1,#b.v do
 		local s=v_dot(b.n[i], center-b.v[i])
@@ -646,10 +748,10 @@ function circle2poly(m,a,b)
 		end
 	end
 
-	-- Grab face's vertices
+	-- grab face's vertices
 	local v1,v2=b.v[ni],b.v[ni-1==0 and #b.v or ni-1]
 
-	-- Check to see if center is within polygon
+	-- check to see if center is within polygon
 	if separation<0.001 then
 		m.n=-(b.u*b.n[ni])
 		add(m.contacts,a.r*m.n+a.body.pos)
@@ -657,7 +759,7 @@ function circle2poly(m,a,b)
 		return
 	end
 
-	-- Determine which voronoi region of the edge center of circle lies within
+	-- determine which voronoi region of the edge center of circle lies within
 	local d1,d2=v_dot(center-v1,v2-v1),v_dot(center-v2,v1-v2)
 	m.penetration=a.r-separation
 	if d1<=0 then
@@ -768,9 +870,6 @@ end
 
 -->8
 -- manifold
--- penetration allowance
--- penetration percentage to correct
-local k_slop,k_pct=0.05,0.4
 -- compute id
 function shape2shape(k1,k2)
 	return bor(k1,shl(k2,4))
@@ -900,44 +999,96 @@ function draw_stats()
 	print(cpu.."%",2,2,7)
 end
 
+function hover(x,y,mx,my)
+	return mx>x and mx<x+8 and my>y and my<y+8
+end
+
 function make_menu(mnu,x,y)
 	local m={
 		items=mnu,
 		x=x,
 		y=y,
+		click_t=0,
+		scale=1,
 		draw=function(self,mx,my)
 			local x0,y0=self.x,self.y
 			for i=1,#self.items do
 				local item=self.items[i]
-				local s=item.txt..": "..(flr(100*item.get())/100)
-				local x1=x0+5*#s+2
-				rectfill(x0,y0,x1,y0+8,1)
-				print(s,x0+1,y0+1,7)
-				if mx>x1 and mx<x1+8 and my>y0 and my<y0+8 
-					pal(14,8)
+				local x1=x0+52+2
+				if item.action then
+ 				local s=item.txt
+ 				rectfill(x0,y0,x1+15,y0+8,1)				
+ 				rectfill(x0,y0,x1+15,y0+7,item.c or 5)
+ 				print(s,x0+1,y0+1,7)	
+ 				pal(14,hover(x1,y0,mx,my) and 8 or 1)
+ 				spr(item.spr,x1,y0)
+ 				y0+=8
+ 				pal()
 				else
-					pal(14,1)
-				end
-				spr(7,x1,y0)
-				x1+=8
-				spr(8,x1,y0)
+ 				local s=item.txt..": "..(flr(100*item.get())/100)
+ 				rectfill(x0,y0,x1+15,y0+8,1)				
+ 				rectfill(x0,y0,x1+15,y0+7,5)
+ 				print(s,x0+1,y0+1,7)				
+ 				pal(14,hover(x1,y0,mx,my) and 8 or 1)
+ 				spr(6,x1,y0)
+ 				x1+=8
+ 				pal(14,hover(x1,y0,mx,my) and 8 or 1)				
+ 				spr(5,x1,y0)				
+ 				y0+=8
+ 				pal()
+ 			end
+			end			
+		end,
+		update=function(self,mx,my,click)
+			if(not click) return 
+			
+			local x0,y0=self.x,self.y
+			for i=1,#self.items do
+				local item=self.items[i]
+				local x1=x0+52+2
+				if item.action then
+ 				if hover(x1,y0,mx,my) then
+ 					item.action()
+ 				end					
+ 				y0+=8
+				else
+ 				local s=item.txt..": "..(flr(100*item.get())/100)
+ 				local inc
+ 				if hover(x1,y0,mx,my) then
+ 					inc=-1
+ 				end
+ 				x1+=8
+ 				if hover(x1,y0,mx,my) then
+ 					inc=1
+ 				end
+ 				if inc then
+ 					-- rapid click?
+ 					if self.click_t>time_t then
+ 						self.scale+=1
+ 						self.scale=min(self.scale,10)
+ 					else
+ 						self.scale=1
+ 					end
+ 					inc*=self.scale
+ 					item.set(inc)
+ 					self.click_t=time_t+15
+ 				end
+ 			end
 				y0+=8
 			end
-		end,
-		update=function(self)
-		end
+		end			
 	}
-	return 
+	return m
 end
 
 __gfx__
-00000000000000007777000077777700007000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000006677007000000070000700777770000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00700700066677707077000070770700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00077000066677707077000070770700777770000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00077000077766600000000070000700707070000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00700700077766600000000077777700707070000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000007766000000000000000000777770000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000007777000077777700000700007777777077777770088888000000000000000000000000000000000000000000000000000000000000000000
+00000000006677007000000070000700077777007eeeee707eeeee7088eee8800000000000000000000000000000000000000000000000000000000000000000
+007007000666777070770000707707000eeeee007ee7ee707eeeee708e8e8e800000000000000000000000000000000000000000000000000000000000000000
+00077000066677707077000070770700077777007e777e707e777e708ee8ee800000000000000000000000000000000000000000000000000000000000000000
+0007700007776660000000007000070007e7e7007ee7ee707eeeee708e8e8e800000000000000000000000000000000000000000000000000000000000000000
+0070070007776660000000007777770007e7e7007eeeee707eeeee7088eee8800000000000000000000000000000000000000000000000000000000000000000
+00000000007766000000000000000000077777007777777077777770088888000000000000000000000000000000000000000000000000000000000000000000
 __label__
 11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
 11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
