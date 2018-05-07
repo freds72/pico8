@@ -1138,8 +1138,18 @@ local ground_scale=4
 function draw_ground(self)
 	if(cam.pos[2]<0) return
 	
-	ground_scale=mid(flr(cam.pos[2]/16+0.5),2,16)
-	ground_scale*=ground_scale
+	ground_scale=4*mid(flr(cam.pos[2]/32+0.5),1,4)
+	if ground_scale==1600 then
+		local x,y,z,w=cam:project(0,0,0)
+		if z>0 then
+ 		local r=128*w
+ 		circfill(64,64,r,0)
+ 		circ(64,64,r,3)
+ 	end
+		draw_stars()
+		return
+	end
+	--ground_scale*=ground_scale
 	local v={}
 	local x0,z0=cam.pos[1],cam.pos[3]
 	local dx,dy=x0%ground_scale,z0%ground_scale
