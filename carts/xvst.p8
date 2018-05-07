@@ -96,10 +96,10 @@ end
 -- false: chase
 -- true: cockpit
 local cockpit_view,rear_view,cam,radar_cam=false,false
+-- player
 local plyr
 local spawn_t=0
-local actors,ground_actors,npc_count={},{},0
-local parts={}
+local actors,ground_actors,parts,npc_count={},{},{},0
 local scores,last_score={},0
 local cur_screen
 -- 0: space
@@ -112,12 +112,8 @@ local game_screen={
 	starting=false
 }
 local gameover_screen={}
-local bench_screen={
-	angle=0.12,
-	dist=-4,
-	sel_actor=0
-}
-function nop() end
+
+function nop() return true end
 
 -- futures
 function futures_update(futures)
@@ -685,7 +681,7 @@ _g.die_vent=function(self)
 	local tgt={
 		pos={0,64,0},
 		draw=nop,
-		update=function() return true end,
+		update=nop,
 		waypt=true}
 	add(actors,tgt)
 	futures_add(function()
@@ -699,7 +695,7 @@ _g.die_vent=function(self)
 		end)
 		if escape then
 			make_msg("victory2")
-			local wing=make_npc({0,50,0},v_up,all_actors["mfalcon"])
+			local wing=make_npc({0,56,0},v_up,all_actors["mfalcon"])
 			wing.target=plyr
 			plyr_playing=false
 			set_view(false)
@@ -707,13 +703,12 @@ _g.die_vent=function(self)
 			--rear_view=true
 			--game_mode=3
 			wait_async(60)
-			make_part("novablast",{0,0,0})
+			make_part("novae",{0,0,0})
 			-- todo: gameover
 		else
 			plyr:die()
 		end
 	end)
-	-- todo death star blast
 end
 
 -- offset: position relative to other pos
@@ -881,7 +876,7 @@ _g.hit_flying_npc=function(self,dmg,actor)
 		self.target=plyr
 	end
 end
-local all_actors=json_parse'{"plyr":{"score":0,"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"acc":0.2,"model":"xwing","roll":0,"pitch":0,"laser_i":0,"fire_t":0,"lock_t":0,"proton_t":0,"proton_ammo":4,"side":"good_side","die":"die_plyr"},"xwing":{"hp":8,"acc":0.2,"g":0,"overg_t":0,"model":"xwing","side":"good_side","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"tie":{"hp":4,"acc":0.2,"g":0,"overg_t":0,"model":"tie","side":"bad_side","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","update":"update_ground_npc","hit":"hit_npc","die":"die_actor"},"generator":{"waypt":true,"hp":2,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":2,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_vent"},"mfalcon":{"hp":8,"acc":0.4,"g":0,"overg_t":0,"model":"mfalcon","side":"good_side","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"}}'
+local all_actors=json_parse'{"plyr":{"score":0,"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"acc":0.2,"model":"xwing","roll":0,"pitch":0,"laser_i":0,"fire_t":0,"lock_t":0,"proton_t":0,"proton_ammo":4,"side":"good_side","die":"die_plyr"},"xwing":{"hp":8,"acc":0.2,"g":0,"overg_t":0,"model":"xwing","side":"good_side","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"tie":{"hp":4,"acc":0.2,"g":0,"overg_t":0,"model":"tie","side":"bad_side","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","update":"update_ground_npc","hit":"hit_npc","die":"die_actor"},"generator":{"waypt":true,"hp":2,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":2,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_vent"},"mfalcon":{"hp":8,"acc":0.4,"g":0,"overg_t":0,"model":"mfalcon","side":"good_side","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":}'
 		
 function make_plyr(x,y,z)
 	local p=clone(all_actors["plyr"],{
@@ -892,7 +887,7 @@ function make_plyr(x,y,z)
 			self.safe_t=time_t+8
 			self.energy=0
 			self.hp-=dmg
-			if self.hp<=0 then
+			if self.hp<=0 ant not self.disabled then
 					self:die()
 			end
 			screen_shake(rnd(),rnd(),2)
@@ -905,9 +900,7 @@ function make_plyr(x,y,z)
 			end
 			draw_model(self.model,self.m,x,y,z,w)
 		end,
-		update=function(self)
-			return true
-		end
+		update=nop
 	})
 	p.model=all_models[p.model]
 	add(actors,p)
@@ -974,8 +967,8 @@ _g.update_blast=function(self)
 	if self.frame==8 then
 		self.kind=5
 		self.dr=-0.2
-		for i=1,6+rnd(6) do
-			local v=make_rnd_v(rnd(4))
+		for i=1,self.sparks do
+			local v=make_rnd_v(rnd(self.r))
 			v_add(v,self.pos)
 			make_part("spark",v)
 		end
@@ -1067,7 +1060,7 @@ _g.draw_part=function(self,x,y,z,w)
 	end
 end
 
-local all_parts=json_parse'{"laser":{"rnd":{"dly":[80,110]},"acc":0.8,"kind":0,"update":"update_blt","draw":"draw_part","die":"die_blt"},"flash":{"kind":1,"rnd":{"r":[0.3,0.5],"dly":[6,10]},"dr":-0.05},"trail":{"kind":1,"rnd":{"r":[0.2,0.3],"dly":[12,24]},"dr":-0.02},"blast":{"frame":0,"sfx":3,"kind":1,"c":7,"rnd":{"r":[2.5,3],"dly":[8,12]},"dr":-0.04,"update":"update_blast"},"proton":{"rnd":{"dly":[90,120]},"frame":0,"acc":0.6,"kind":3,"update":"update_proton","draw":"draw_part","die":"die_blt"},"spark":{"kind":6,"dr":0,"r":1,"rnd":{"dly":[24,38]}}}'
+local all_parts=json_parse'{"laser":{"rnd":{"dly":[80,110]},"acc":0.8,"kind":0,"update":"update_blt","draw":"draw_part","die":"die_blt"},"flash":{"kind":1,"rnd":{"r":[0.3,0.5],"dly":[6,10]},"dr":-0.05},"trail":{"kind":1,"rnd":{"r":[0.2,0.3],"dly":[12,24]},"dr":-0.02},"blast":{"frame":0,"sfx":3,"kind":1,"c":7,"rnd":{"r":[2.5,3],"dly":[8,12],"sparks":[6,12]},"dr":-0.04,"update":"update_blast"},"novae":{"frame":0,"sfx":3,"kind":1,"c":7,"r":30,"rnd":{"dly":[8,12],"sparks":[30,40]},"dr":-0.04,"update":"update_blast"},"proton":{"rnd":{"dly":[90,120]},"frame":0,"acc":0.6,"kind":3,"update":"update_proton","draw":"draw_part","die":"die_blt"},"spark":{"kind":6,"dr":0,"r":1,"rnd":{"dly":[24,38]}}}'
 
 function make_laser(self,target)
 	if(self.fire_t>time_t) return false
@@ -1133,51 +1126,43 @@ function make_part(part,p,c)
 	return pt
 end
 
-local ground_colors={1,5,5,1}
+local ground_colors={1,5,6}
 local ground_scale=4
 function draw_ground(self)
 	if(cam.pos[2]<0) return
 	
-	ground_scale=4*mid(flr(cam.pos[2]/32+0.5),1,4)
-	if ground_scale==1600 then
-		local x,y,z,w=cam:project(0,0,0)
-		if z>0 then
- 		local r=128*w
- 		circfill(64,64,r,0)
- 		circ(64,64,r,3)
- 	end
+	local scale=4*mid(flr(cam.pos[2]/32+0.5),1,4)
+	if scale==16 then
+		draw_deathstar(cam.pos[2]/24)
 		draw_stars()
 		return
 	end
-	--ground_scale*=ground_scale
+	scale*=scale
 	local v={}
 	local x0,z0=cam.pos[1],cam.pos[3]
-	local dx,dy=x0%ground_scale,z0%ground_scale
+	local dx,dy=x0%scale,z0%scale
 	
-	local c=5
 	for i=-8,8 do
-		local ii=ground_scale*i-dx+x0
+		local ii=scale*i-dx+x0
 		-- don't draw on trench
 		if abs(flr(ii-x0+cam.pos[1]))>=8 then
  		for j=-8,8 do
- 		 local jj=ground_scale*j-dy+z0
- 			local x,y,z=cam:project(ii,0,jj)
- 			if(z>0) pset(x,y,c)
+ 		 local jj=scale*j-dy+z0
+ 			local x,y,z,w=cam:project(ii,0,jj)
+ 			if z>0 then
+ 				pset(x,y,ground_colors[mid(flr(4*w),1,3)])
+ 			end
  		end
 		end
 	end
-	ground_scale=4
 end
 local turrets={}
-function make_turret(i,j,y,scalex,scaley)
-	scalex,scaley=scalex or ground_scale,scaley or ground_scale
-	
-	local x,z=i*scalex,j*scaley
+function make_turret(i,j,y)
+
+	local x,z=i*ground_scale,j*ground_scale
 	y=y or 0
 	local t={
 		hp=2,
-		scalex=scalex,
-		scaley=scaley,
 		pos={x,y,z},
 		m=make_m(x,y,z),
 		model=all_models.turret,
@@ -1187,7 +1172,8 @@ function make_turret(i,j,y,scalex,scaley)
 		fire=make_laser,
 		update=update_turret,
 		draw=draw_actor,
-		hit=_g.hit_npc
+		hit=_g.hit_npc,
+		die=_g.die_actor
 	}
 	turrets[i+j*128]=t
 	return t
@@ -1250,7 +1236,7 @@ function update_ground()
 end
 
 function update_turret(self,i,j)
-	self.pos[1],self.pos[3]=i*self.scalex,j*self.scaley
+	self.pos[1],self.pos[3]=i*ground_scale,j*ground_scale
 	local dx,dy=self.pos[1]-plyr.pos[1],self.pos[3]-plyr.pos[3]
 	-- in range?
 	local angle,m=1,self.m
@@ -1296,7 +1282,7 @@ end
 
 -- radio message
 local cur_msg
-local all_msgs=json_parse'{"attack1":{"spr":12,"title":"ackbar","txt":"clear tie squadrons","dly":300,"can_skip":true},"victory1":{"spr":104,"title":"han solo","txt":"get out of here son.\nquick!","dly":300},"victory2":{"spr":12,"title":"ackbar","txt":"victory!","dly":300},"help":{"spr":10,"rnd":{"title":["red leader","alpha","delta wing"]},"txt":"help!","dly":300},"low_hp":{"spr":76,"title":"r2d2","txt":"..--..-..","dly":120,"sfx":4,"rnd":{"repeat_dly":[600,900]}}}'
+local all_msgs=json_parse'{"attack1":{"spr":12,"title":"ackbar","txt":"clear tie squadrons","dly":300,"can_skip":true},"ground1":{"spr":12,"title":"ackbar","txt":"destroy shield\ngenerators","dly":300,"can_skip":true},"victory1":{"spr":104,"title":"han solo","txt":"get out of here son.\nquick!","dly":300},"victory2":{"spr":12,"title":"ackbar","txt":"victory!","dly":300},"victory3":{"spr":10,"lipsc":8,"title":"leia","txt":"the rebellion thanks you\nget to the base","dly":300,"can_skip":true},"help":{"spr":10,"rnd":{"title":["red leader","alpha","delta wing"]},"txt":"help!","dly":300},"low_hp":{"spr":76,"title":"r2d2","txt":"..--..-..","dly":120,"sfx":4,"rnd":{"repeat_dly":[600,900]}}}'
 function make_msg(msg)
 	local m=clone(all_msgs[msg])
 	m.t=time_t+m.dly
@@ -1311,7 +1297,7 @@ function update_msg()
 	end
 end
 function draw_msg()
-	local y=2	
+	local y=2
 	rectfill(32,y,49,y+18,0)
 	rect(32,y,49,y+18,1)
 	spr(cur_msg.spr,33,y+1,2,2)
@@ -1320,15 +1306,16 @@ function draw_msg()
 	if time_t%4==0 then
 		fillp(0b1111000011110000.1)
 		rectfill(33,y,49,y+23,0)
-		fillp()			
+		fillp()
  end
 	
+	local c=cur_msg.lipsc or 0
 	if time_t%64>50 then
-		rectfill(40,y+13,41,y+14,0)
+		rectfill(40,y+13,41,y+14,c)
 	elseif time_t%64>30 then
-		line(40,y+13,41,y+13,0)
+		line(40,y+13,41,y+13,c)
  elseif time_t%64>15 then
-	 line(39,y+13,42,y+13,0)
+		line(39,y+13,42,y+13,c)
  end
 end
 
@@ -1482,9 +1469,11 @@ function control_plyr(self)
 	end	
 end
 
+-- deathstar
 local ds_m=make_m()
-function draw_deathstar()
-	m_set_pos(ds_m,{cam.pos[1],cam.pos[2],6+cam.pos[3]})
+function draw_deathstar(offset)
+	offset=offset or 6
+	m_set_pos(ds_m,{cam.pos[1],cam.pos[2],offset+cam.pos[3]})
 	draw_model(all_models.deathstar,ds_m)
 end
 
@@ -1670,51 +1659,6 @@ function gameover_screen:draw()
 	end
 end
 
--- bench screen
---[[
-function bench_screen:init()
-	time_t=0
-	parts={}
-	actors={}
-	for i=0,1 do
-		for j=0,1 do
-			local a=make_junk(2*i,2*j,all_models.junk1)
-			a.update=function() return true end
-			add(actors,a)
-		end
-	end
-end
-function bench_screen:update()
-	zbuf_clear()
-	
-	local x,y=0,0
-	
-	if(btn(0)) x=-1
-	if(btn(1)) x=1
-	if(btn(2)) y=-1
-	if(btn(3)) y=1
-	
-	self.angle+=0.01*x
-	cam.q=make_q(v_up,self.angle)
-	--local q=make_q({0,0,1},dy/128)
-	--q_x_q(cam.q,q)
-	local m=m_from_q(cam.q)
-	self.dist=min(self.dist-y/2,-2)
-	cam.pos=m_x_xyz(m,0,2,self.dist)
-	if btnp(4) then
-		self.sel_actor+=1
-	end
-	local a=actors[(self.sel_actor%#actors)+1]
-	v_add(cam.pos,a.pos)
-
-	cam:update()
-	zbuf_filter(actors)
-end
-function bench_screen:draw()
-	zbuf_draw()
-	print("actors:"..#actors,2,9,7)
-end
-]]
 
 -- play loop
 function game_screen:init()
@@ -1727,6 +1671,7 @@ function game_screen:init()
 		make_msg("attack1")
 		spawn_t=time_t+cur_msg.dly
 	elseif game_mode==1 then
+		make_msg("ground1")
 		init_ground()
 		init_trench(8)
 	end
