@@ -99,8 +99,11 @@ local cockpit_view,rear_view,cam,radar_cam=false,false
 -- player
 local plyr
 local spawn_t=0
-local actors,ground_actors,parts,npc_count={},{},{},0
+local actors,ground_actors,parts,npc_count,all_parts={},{},{},0
 local scores,last_score={},0
+-- ground constants
+local ground_scale,ground_colors=4,{1,5,6}
+
 local cur_screen
 -- 0: space
 -- 1: surface
@@ -695,7 +698,7 @@ _g.die_vent=function(self)
 		end)
 		if escape then
 			make_msg("victory2")
-			local wing=make_npc({0,56,0},v_up,all_actors["mfalcon"])
+			local wing=make_npc({0,56,0},v_up,"mfalcon")
 			wing.target=plyr
 			plyr_playing=false
 			set_view(false)
@@ -849,7 +852,7 @@ _g.update_flying_npc=function(self)
 
 	-- fire solution?
 	local fwd={m[9],m[10],m[11]}
-	if can_fire and self.fire_t<time_t and in_cone(self.pos,self.target.pos,fwd,0.92,24) then
+	if self.model.wp and can_fire and self.fire_t<time_t and in_cone(self.pos,self.target.pos,fwd,0.92,24) then
  		-- must be in sight for some time
  		if self.lock_t>0 then
  			self.lock_t=24
@@ -876,7 +879,88 @@ _g.hit_flying_npc=function(self,dmg,actor)
 		self.target=plyr
 	end
 end
-local all_actors=json_parse'{"plyr":{"score":0,"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"acc":0.2,"model":"xwing","roll":0,"pitch":0,"laser_i":0,"fire_t":0,"lock_t":0,"proton_t":0,"proton_ammo":4,"side":"good_side","die":"die_plyr"},"xwing":{"hp":8,"acc":0.2,"g":0,"overg_t":0,"model":"xwing","side":"good_side","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"tie":{"hp":4,"acc":0.2,"g":0,"overg_t":0,"model":"tie","side":"bad_side","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","update":"update_ground_npc","hit":"hit_npc","die":"die_actor"},"generator":{"waypt":true,"hp":2,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":2,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_vent"},"mfalcon":{"hp":8,"acc":0.4,"g":0,"overg_t":0,"model":"mfalcon","side":"good_side","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":}'
+
+_g.update_turret=function(self,i,j)
+	self.pos[1],self.pos[3]=i*ground_scale,j*ground_scale
+	local dx,dy=self.pos[1]-plyr.pos[1],self.pos[3]-plyr.pos[3]
+	-- in range?
+	local angle,m=1,self.m
+	if dx*dx+dy*dy<64 then
+		angle=atan2(dx,dy)-0.25
+		local q=make_q(v_up,angle)
+		m=m_from_q(q)
+		self.m=m
+	end
+	m_set_pos(m,self.pos)
+	
+	if abs(angle)<0.2 then
+		self:fire(plyr.pos)
+		self.fire_t=time_t+self.model.wp.dly
+	end	
+	return true
+end
+_g.update_junk=function(self,i,j)
+	self.pos[1],self.pos[3]=i*ground_scale,j*ground_scale
+	m_set_pos(self.m,self.pos)
+end
+_g.fire_laser=function(self,target)
+	if(self.fire_t>time_t) return false
+	
+	local wp=self.model.wp
+	local i=self.laser_i%#wp.pos+1
+	-- rebase laser in world space
+	local p=v_clone(wp.pos[i])
+	m_x_v(self.m,p)
+	-- direction override?
+	local v
+	if target then
+		v=v_clone(target)
+		v_add(v,p,-1)
+		v_normz(v) 
+	else
+		v=v_clone(wp.n[i])
+		o_x_v(self.m,v)
+	end
+	self.laser_i+=1
+	-- laser colors
+	local c=self.side==good_side and 11 or 8
+	local pt=add(parts,clone(all_parts["laser"],{
+			actor=self, -- laser owner
+			pos=p,
+			u=v,
+			c=c,
+			side=self.side,
+			dmg=wp.dmg}))
+	pt.t=time_t+pt.dly
+	self.fire_t=time_t+wp.dly
+	if (wp.sfx) sfx(wp.sfx)
+	make_part("flash",p,c)
+	return true
+end
+
+_g.make_proton=function(self,target)
+	local wp=self.model.proton_wp
+	-- rebase wp in world space
+	local p=v_clone(wp.pos)
+	m_x_v(self.m,p)
+	-- fire direction in world space
+	v=v_clone(wp.n)
+	o_x_v(self.m,v)
+
+	local pt=add(parts,clone(all_parts["proton"],{
+		-- proton owner
+		actor=self,
+		target=target,
+		pos=p,
+		u=v,
+		side=self.side,
+		dmg=wp.dmg}))
+	pt.t=time_t+pt.dly
+	if (wp.sfx) sfx(wp.sfx)
+	make_part("flash",p,c)
+end
+
+local all_actors=json_parse'{"plyr":{"update":"nop","score":0,"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"acc":0.2,"model":"xwing","roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"fire_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","die":"die_plyr"},"xwing":{"hp":8,"acc":0.2,"g":0,"overg_t":0,"model":"xwing","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"fire_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"tie":{"hp":4,"acc":0.2,"g":0,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"fire_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"generator":{"waypt":true,"hp":2,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":2,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_vent"},"mfalcon":{"hp":8,"acc":0.4,"g":0,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","fire_t":0,"laser_i":0,"fire":"fire_laser","update":"update_turret","hit":"hit_npc","die":"die_npc"},"ground_junk":{"hp":2,"rnd":{"model":["junk1","junk1","junk2"]},"side":"bad_side","update":"update_junk","hit":"hit_npc","die":"die_npc"}}'
 		
 function make_plyr(x,y,z)
 	local p=clone(all_actors["plyr"],{
@@ -887,20 +971,17 @@ function make_plyr(x,y,z)
 			self.safe_t=time_t+8
 			self.energy=0
 			self.hp-=dmg
-			if self.hp<=0 ant not self.disabled then
-					self:die()
+			if self.hp<=0 then
+				self:die()
 			end
 			screen_shake(rnd(),rnd(),2)
 		end,
-		fire=make_laser,
-		fire_proton=make_proton,
 		draw=function(self,x,y,z,w)
 			if cockpit_view or plyr.disabled then
 				return
 			end
 			draw_model(self.model,self.m,x,y,z,w)
-		end,
-		update=nop
+		end
 	})
 	p.model=all_models[p.model]
 	add(actors,p)
@@ -910,20 +991,15 @@ end
 function make_npc(p,v,src)
 	npc_count+=1
 	_id+=1
-	local a={
+	src=all_actors[src]
+	-- instance
+	local a=clone(src,{
 		id=_id,
-		model=all_models[src.model],
 		pos=v_clone(p),
 		q=make_q(v,0),
-		wander_t=0,
-		lock_t=0,
-		fire_t=0,
-		laser_i=0,
-		fire=make_laser,
+		model=all_models[src.model],
 		draw=draw_actor
-	}
-	-- instance
-	clone(src,a)
+	})
 	-- init orientation
 	local m=m_from_q(a.q)
 	m_set_pos(m,p)
@@ -1060,64 +1136,7 @@ _g.draw_part=function(self,x,y,z,w)
 	end
 end
 
-local all_parts=json_parse'{"laser":{"rnd":{"dly":[80,110]},"acc":0.8,"kind":0,"update":"update_blt","draw":"draw_part","die":"die_blt"},"flash":{"kind":1,"rnd":{"r":[0.3,0.5],"dly":[6,10]},"dr":-0.05},"trail":{"kind":1,"rnd":{"r":[0.2,0.3],"dly":[12,24]},"dr":-0.02},"blast":{"frame":0,"sfx":3,"kind":1,"c":7,"rnd":{"r":[2.5,3],"dly":[8,12],"sparks":[6,12]},"dr":-0.04,"update":"update_blast"},"novae":{"frame":0,"sfx":3,"kind":1,"c":7,"r":30,"rnd":{"dly":[8,12],"sparks":[30,40]},"dr":-0.04,"update":"update_blast"},"proton":{"rnd":{"dly":[90,120]},"frame":0,"acc":0.6,"kind":3,"update":"update_proton","draw":"draw_part","die":"die_blt"},"spark":{"kind":6,"dr":0,"r":1,"rnd":{"dly":[24,38]}}}'
-
-function make_laser(self,target)
-	if(self.fire_t>time_t) return false
-	
-	local wp=self.model.wp
-	local i=self.laser_i%#wp.pos+1
-	-- rebase laser in world space
-	local p=v_clone(wp.pos[i])
-	m_x_v(self.m,p)
-	-- direction override?
-	local v
-	if target then
-		v=v_clone(target)
-		v_add(v,p,-1)
-		v_normz(v) 
-	else
-		v=v_clone(wp.n[i])
-		o_x_v(self.m,v)
-	end
-	self.laser_i+=1
-	-- laser colors
-	local c=self.side==good_side and 11 or 8
-	local pt=add(parts,clone(all_parts["laser"],{
-			actor=self, -- laser owner
-			pos=p,
-			u=v,
-			c=c,
-			side=self.side,
-			dmg=wp.dmg}))
-	pt.t=time_t+pt.dly
-	self.fire_t=time_t+wp.dly
-	if (wp.sfx) sfx(wp.sfx)
-	make_part("flash",p,c)
-	return true
-end
-
-function make_proton(self,target)
-	local wp=self.model.proton_wp
-	-- rebase wp in world space
-	local p=v_clone(wp.pos)
-	m_x_v(self.m,p)
-	-- fire direction in world space
-	v=v_clone(wp.n)
-	o_x_v(self.m,v)
-
-	local pt=add(parts,clone(all_parts["proton"],{
-		-- proton owner
-		actor=self,
-		target=target,
-		pos=p,
-		u=v,
-		side=self.side,
-		dmg=wp.dmg}))
-	pt.t=time_t+pt.dly
-	if (wp.sfx) sfx(wp.sfx)
-	make_part("flash",p,c)
-end
+all_parts=json_parse'{"laser":{"rnd":{"dly":[80,110]},"acc":0.8,"kind":0,"update":"update_blt","draw":"draw_part","die":"die_blt"},"flash":{"kind":1,"rnd":{"r":[0.3,0.5],"dly":[6,10]},"dr":-0.05},"trail":{"kind":1,"rnd":{"r":[0.2,0.3],"dly":[12,24]},"dr":-0.02},"blast":{"frame":0,"sfx":3,"kind":1,"c":7,"rnd":{"r":[2.5,3],"dly":[8,12],"sparks":[6,12]},"dr":-0.04,"update":"update_blast"},"novae":{"frame":0,"sfx":3,"kind":1,"c":7,"r":30,"rnd":{"dly":[8,12],"sparks":[30,40]},"dr":-0.04,"update":"update_blast"},"proton":{"rnd":{"dly":[90,120]},"frame":0,"acc":0.6,"kind":3,"update":"update_proton","draw":"draw_part","die":"die_blt"},"spark":{"kind":6,"dr":0,"r":1,"rnd":{"dly":[24,38]}}}'
 
 function make_part(part,p,c)
 	local pt=add(parts,clone(all_parts[part],{c=c or 7,pos=v_clone(p)}))
@@ -1126,18 +1145,16 @@ function make_part(part,p,c)
 	return pt
 end
 
-local ground_colors={1,5,6}
-local ground_scale=4
 function draw_ground(self)
 	if(cam.pos[2]<0) return
 	
 	local scale=4*mid(flr(cam.pos[2]/32+0.5),1,4)
 	if scale==16 then
-		draw_deathstar(cam.pos[2]/24)
+		draw_deathstar(12/(cam.pos[2]/24))
 		draw_stars()
 		return
 	end
-	scale*=scale
+	--scale*=scale
 	local v={}
 	local x0,z0=cam.pos[1],cam.pos[3]
 	local dx,dy=x0%scale,z0%scale
@@ -1146,56 +1163,27 @@ function draw_ground(self)
 		local ii=scale*i-dx+x0
 		-- don't draw on trench
 		if abs(flr(ii-x0+cam.pos[1]))>=8 then
- 		for j=-8,8 do
- 		 local jj=scale*j-dy+z0
- 			local x,y,z,w=cam:project(ii,0,jj)
- 			if z>0 then
- 				pset(x,y,ground_colors[mid(flr(4*w),1,3)])
- 			end
- 		end
+			for j=-8,8 do
+				local jj=scale*j-dy+z0
+				local x,y,z,w=cam:project(ii,0,jj)
+				if z>0 then
+					pset(x,y,ground_colors[mid(flr(4*w),1,3)])
+				end
+			end
 		end
 	end
 end
 local turrets={}
-function make_turret(i,j,y)
-
-	local x,z=i*ground_scale,j*ground_scale
-	y=y or 0
-	local t={
-		hp=2,
+function make_ground_actor(i,j,src,y)
+	local x,y,z=i*ground_scale,y or 0,j*ground_scale
+	local a=clone(all_actors[src],{
 		pos={x,y,z},
 		m=make_m(x,y,z),
-		model=all_models.turret,
-		side=bad_side,
-		fire_t=0,
-		laser_i=0,
-		fire=make_laser,
-		update=update_turret,
-		draw=draw_actor,
-		hit=_g.hit_npc,
-		die=_g.die_actor
-	}
-	turrets[i+j*128]=t
-	return t
-end
-function make_junk(i,j,model)
-	local x,y,z=i*ground_scale,0,j*ground_scale
-	local t={
-		pos={x,y,z},
-		m=make_m(x,y,z),
-		side=any_side,
-		model=model,
-		hp=1,
-		die=_g.die_actor,
-		hit=_g.hit_npc,
-		update=function(self,i,j)
-			self.pos[1],self.pos[3]=i*ground_scale,j*ground_scale
-			m_set_pos(self.m,self.pos)
-		end,
 		draw=draw_actor
-	}
-	turrets[i+j*128]=t
-	return t
+	})
+	a.model=all_models[a.model]
+	turrets[i+j*128]=a
+	return a
 end
 
 function init_ground()
@@ -1203,19 +1191,17 @@ function init_ground()
 		for j=0,127 do
 			local r=rnd()
 			if r>0.995 then
-				make_turret(i,j)
-			elseif r>0.995 then
-				make_junk(i,j,all_models.junk1)
-			elseif r>0.95 then
-				make_junk(i,j,all_models.junk2)
+				make_ground_actor(i,j,"turret")
+			elseif r>0.99 then
+				make_ground_actor(i,j,"ground_junk")
 			end
 		end
 	end
-	make_npc({256,7,256},v_up,all_actors.generator)
-	make_npc({-256,7,256},v_up,all_actors.generator)
-	make_npc({-256,7,-256},v_up,all_actors.generator)
-	make_npc({256,7,-256},v_up,all_actors.generator)
-	make_npc({0,-6,128},v_up,all_actors.vent)
+	make_npc({256,7,256},v_up,"generator")
+	make_npc({-256,7,256},v_up,"generator")
+	make_npc({-256,7,-256},v_up,"generator")
+	make_npc({256,7,-256},v_up,"generator")
+	make_npc({0,-6,128},v_up,"vent")
 end
 
 function update_ground()
@@ -1233,27 +1219,6 @@ function update_ground()
 			end
 		end
 	end
-end
-
-function update_turret(self,i,j)
-	self.pos[1],self.pos[3]=i*ground_scale,j*ground_scale
-	local dx,dy=self.pos[1]-plyr.pos[1],self.pos[3]-plyr.pos[3]
-	-- in range?
-	local angle,m=1,self.m
-	if dx*dx+dy*dy<64 then
-		angle=atan2(dx,dy)-0.25
-		local q=make_q(v_up,angle)
-		m=m_from_q(q)
-		self.m=m
-	end
-	m_set_pos(m,self.pos)
-	
-	if abs(angle)<0.2 then
-		self:fire(plyr.pos)
-		self.fire_t=time_t+self.model.wp.dly
-	end
-	
-	return true
 end
 
 local trench_scale=6
@@ -1301,8 +1266,8 @@ function draw_msg()
 	rectfill(32,y,49,y+18,0)
 	rect(32,y,49,y+18,1)
 	spr(cur_msg.spr,33,y+1,2,2)
-	print(cur_msg.title,51,y+3,9)
-	print(cur_msg.txt,51,y+10,7)
+	print(cur_msg.title,51,y,9)
+	print(cur_msg.txt,51,y+7,7)
 	if time_t%4==0 then
 		fillp(0b1111000011110000.1)
 		rectfill(33,y,49,y+23,0)
@@ -1711,13 +1676,13 @@ function game_screen:update()
 			local target=plyr
 			-- friendly npc?
 			if rnd()>0.8 then
-				target=make_npc(p,v,all_actors.xwing)
+				target=make_npc(p,v,"xwing")
 				make_msg("help")
 				v_add(p,v,10)
 			end
 			-- spawn new enemy
 			for i=1,flr(2+rnd(2)) do
-				local a=make_npc(p,v,all_actors.tie)
+				local a=make_npc(p,v,"tie")
 				a.target=target
 				--target=a
 				v_add(p,v,10)
