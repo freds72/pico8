@@ -453,9 +453,11 @@ function draw_actor(self,x,y,z,w)
 	-- distance culling
 	if w>1 then
 		draw_model(self.model,self.m,x,y,z,w)
+		--[[
 		if self.model.r then
 			circ(x,y,self.model.r*w,7)
 		end
+		]]
 	end
 	-- debug
 	--[[
@@ -1835,7 +1837,7 @@ local cpu_stats={}
 function draw_stats()
 	-- 
 	fillp(0b1000100010001111)
-	rectfill(0,0,127,9,1)
+	rectfill(0,0,127,9,0x10)
 	fillp()
 	local cpu,mem=flr(100*stat(1)),flr(100*(stat(0)/2048))
 	cpu_stats[time_t%128+1]={cpu,mem}

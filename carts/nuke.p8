@@ -387,9 +387,9 @@ end
 function rspr(sx,sy,x,y,a)
 	local ca,sa=cos(a),sin(a)
 	local ddx0,ddy0,srcx,srcy=ca,sa
-	ca*=4
-	sa*=4
-	local dx0,dy0,c=sa-ca+4.5,-ca-sa+4.5
+	ca*=3.5
+	sa*=3.5
+	local dx0,dy0,c=sa-ca+4,-ca-sa+4
 	for ix=0,7 do
 		srcx,srcy=dx0,dy0
 		for iy=0,7 do
