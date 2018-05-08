@@ -436,7 +436,7 @@ function m_set_pos(m,v)
 end
 
 -- models
-local all_models=json_parse'{"plane":{"c":3},"title":{"c":10},"deathstar":{"c":3},"turret":{"c":8,"r":0.5,"wp":{"sfx":1,"dmg":1,"dly":12,"pos":[[-0.2,0.8,0.65],[0.2,0.8,0.65]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"proton_wp":{"dmg":4,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":2,"dmg":1,"dly":8,"pos":[[2,1,1.6],[2,-1,1.6],[-2,-1,1.6],[-2,1,1.6]],"n":[]}},"tie":{"c":5,"r":1,"wp":{"sfx":1,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"junk2":{"c":3,"r":3},"generator":{"c":6,"r":1},"mfalcon":{"c":5},"vent":{"c":5,"r":1}}'
+local all_models=json_parse'{"plane":{"c":3},"title":{"c":10},"deathstar":{"c":3},"turret":{"c":8,"r":1.1,"wp":{"sfx":1,"dmg":1,"dly":12,"pos":[[-0.2,0.8,0.65],[0.2,0.8,0.65]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"proton_wp":{"dmg":4,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":2,"dmg":1,"dly":8,"pos":[[2,1,1.6],[2,-1,1.6],[-2,-1,1.6],[-2,1,1.6]],"n":[]}},"tie":{"c":5,"r":1,"wp":{"sfx":1,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"junk1":{"c":3,"r":1.2},"junk2":{"c":3,"r":1.2},"generator":{"c":6,"r":2},"mfalcon":{"c":5},"vent":{"c":5,"r":1}}'
 local _id=0
 local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]'
 
@@ -453,6 +453,9 @@ function draw_actor(self,x,y,z,w)
 	-- distance culling
 	if w>1 then
 		draw_model(self.model,self.m,x,y,z,w)
+		if self.model.r then
+			circ(x,y,self.model.r*w,7)
+		end
 	end
 	-- debug
 	--[[
@@ -885,12 +888,12 @@ _g.update_turret=function(self,i,j)
 	local dx,dy=self.pos[1]-plyr.pos[1],self.pos[3]-plyr.pos[3]
 	-- in range?
 	local angle,m=1,self.m
-	if dx*dx+dy*dy<64 then
+	--if dx*dx+dy*dy<64 then
 		angle=atan2(dx,dy)-0.25
 		local q=make_q(v_up,angle)
 		m=m_from_q(q)
 		self.m=m
-	end
+	--end
 	m_set_pos(m,self.pos)
 	
 	if abs(angle)<0.2 then
@@ -960,7 +963,7 @@ _g.make_proton=function(self,target)
 	make_part("flash",p,c)
 end
 
-local all_actors=json_parse'{"plyr":{"update":"nop","score":0,"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"acc":0.2,"model":"xwing","roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"fire_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","die":"die_plyr"},"xwing":{"hp":8,"acc":0.2,"g":0,"overg_t":0,"model":"xwing","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"fire_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"tie":{"hp":4,"acc":0.2,"g":0,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"fire_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"generator":{"waypt":true,"hp":2,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":2,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_vent"},"mfalcon":{"hp":8,"acc":0.4,"g":0,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","fire_t":0,"laser_i":0,"fire":"fire_laser","update":"update_turret","hit":"hit_npc","die":"die_npc"},"ground_junk":{"hp":2,"rnd":{"model":["junk1","junk1","junk2"]},"side":"bad_side","update":"update_junk","hit":"hit_npc","die":"die_npc"}}'
+local all_actors=json_parse'{"plyr":{"update":"nop","score":0,"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"acc":0.2,"model":"xwing","roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"fire_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","die":"die_plyr"},"xwing":{"hp":8,"acc":0.2,"g":0,"overg_t":0,"model":"xwing","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"fire_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"tie":{"hp":4,"acc":0.2,"g":0,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"fire_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"generator":{"waypt":true,"hp":2,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":2,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_vent"},"mfalcon":{"hp":8,"acc":0.4,"g":0,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","fire_t":0,"laser_i":0,"fire":"fire_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"rnd":{"model":["junk1","junk1","junk2"]},"side":"bad_side","update":"update_junk","hit":"hit_npc","die":"die_actor"}}'
 		
 function make_plyr(x,y,z)
 	local p=clone(all_actors["plyr"],{
@@ -1192,7 +1195,7 @@ function init_ground()
 			local r=rnd()
 			if r>0.995 then
 				make_ground_actor(i,j,"turret")
-			elseif r>0.99 then
+			elseif r>0.98 then
 				make_ground_actor(i,j,"ground_junk")
 			end
 		end
@@ -1408,14 +1411,25 @@ function control_plyr(self)
 	for _,a in pairs(actors) do
 		if band(a.side,plyr.side)==0 then
 			local d=sqr_dist(a.pos,plyr.pos)
-			if d<min_dist then
+			if d<min_dist and in_cone(plyr.pos,a.pos,fwd,0.996,64) then
 				min_dist=d
 				target=a
 			end
+			if(d<1.5) plyr:hit(1)
+		end
+	end
+	for _,a in pairs(ground_actors) do
+		if band(a.side,plyr.side)==0 then
+			local d=sqr_dist(a.pos,plyr.pos)
+			if d<min_dist and in_cone(plyr.pos,a.pos,fwd,0.996,64) then
+				min_dist=d
+				target=a
+			end
+			if(d<1.5) plyr:hit(1)
 		end
 	end
 	plyr.target=target
-	if target and pitch==0 and roll==0 and in_cone(plyr.pos,target.pos,fwd,0.8,48) then
+	if target then
 		plyr.lock_t+=1
 	else
 		plyr.lock_t=0
@@ -1428,9 +1442,9 @@ function control_plyr(self)
 	end
 		
 	if btnp(5) then
-	 -- todo: improve laser efficiency!!
-		plyr:fire()
-		plyr.energy=max(plyr.energy-0.1,0)
+	 -- improve laser efficiency!!
+		plyr.energy=max(plyr.energy-0.1)
+		if(plyr.energy>0) plyr:fire(target and target.pos or nil)
 	end	
 end
 
@@ -1773,8 +1787,7 @@ function _draw()
 
 	time_dt=0
 	
-	rectfill(0,0,30,8,1)
-	print(stat(1),2,2,7)
+	if(draw_stats) draw_stats()
 end
 
 
@@ -1798,7 +1811,7 @@ function _init()
 	local wp=all_models.xwing.wp
 	for i=1,#wp.pos do
 		local v=v_clone(wp.pos[i])
-		v={-v[1],-v[2],64-v[3]}
+		v={-v[1],-v[2],48-v[3]}
 		v_normz(v)
 		add(wp.n,v)
 	end
@@ -1814,6 +1827,38 @@ function _init()
 	cur_screen=start_screen
 end
 
+-->8
+-- stats
+--[[
+local cpu_stats={}
+
+function draw_stats()
+	-- 
+	fillp(0b1000100010001111)
+	rectfill(0,0,127,9,1)
+	fillp()
+	local cpu,mem=flr(100*stat(1)),flr(100*(stat(0)/2048))
+	cpu_stats[time_t%128+1]={cpu,mem}
+	for i=1,128 do
+		local s=cpu_stats[(time_t+i)%128+1]
+		if s then
+			-- cpu
+			local c,sy=11,s[1]
+			if(sy>100) c=8 sy=100
+			pset(i-1,9-9*sy/100,c)
+		 -- mem
+			c,sy=12,s[2]
+			if(sy>90) c=8 sy=100
+			pset(i-1,9-9*sy/100,c)
+		end
+	end
+	if time_t%120>60 then
+		print("cpu:"..cpu.."%",2,2,7)
+	else
+		print("mem:"..mem.."%",2,2,7)
+	end
+end
+]]
 __gfx__
 99988888888888888884000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000
 aaa99999888888888888400000000000000000000000000000000004000000000000000000000000000000000000000000000012990000000000000000000000
