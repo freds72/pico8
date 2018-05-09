@@ -97,7 +97,7 @@ end
 -- true: cockpit
 local cockpit_view,rear_view,cam,radar_cam=false,false
 -- player
-local plyr
+local plyr_playing,plyr=true
 local spawn_t=0
 local actors,ground_actors,parts,npc_count,all_parts={},{},{},0
 local scores,last_score={},0
@@ -640,8 +640,6 @@ function draw_model(model,m,x,y,z,w)
 end
 
 _g.die_plyr=function(self)
-	set_view(false)
-	make_part("blast",plyr.pos)
 	-- clear
 	for s in all(scores) do
 		s.islast=false
@@ -658,8 +656,15 @@ _g.die_plyr=function(self)
 	end
 	last_score=plyr.score
 	--
+	set_view(false)
 	futures_add(function()
+		plyr_playing=false
+		wait_async(60)
+		wait_async(90,function(i)
+			q_x_q(plyr.q,make_q(v_fwd,i/90))
+		end)
 		plyr.disabled=true
+		make_part("blast",plyr.pos)
 		wait_async(60)
 		del(actors,plyr)
 		plyr=nil
@@ -872,6 +877,8 @@ _g.update_flying_npc=function(self)
 end
 
 _g.hit_npc=function(self,dmg)
+	-- avoid reentrancy
+	if(self.disabled) return
 	self.hp-=dmg
 	if self.hp<=0 then
 		self:die()
@@ -908,7 +915,7 @@ _g.update_junk=function(self,i,j)
 	self.pos[1],self.pos[3]=i*ground_scale,j*ground_scale
 	m_set_pos(self.m,self.pos)
 end
-_g.fire_laser=function(self,target)
+_g.make_laser=function(self,target)
 	if(self.fire_t>time_t) return false
 	
 	local wp=self.model.wp
@@ -965,14 +972,14 @@ _g.make_proton=function(self,target)
 	make_part("flash",p,c)
 end
 
-local all_actors=json_parse'{"plyr":{"update":"nop","score":0,"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"acc":0.2,"model":"xwing","roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"fire_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","die":"die_plyr"},"xwing":{"hp":8,"acc":0.2,"g":0,"overg_t":0,"model":"xwing","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"fire_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"tie":{"hp":4,"acc":0.2,"g":0,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"fire_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"generator":{"waypt":true,"hp":2,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":2,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_vent"},"mfalcon":{"hp":8,"acc":0.4,"g":0,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","fire_t":0,"laser_i":0,"fire":"fire_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"rnd":{"model":["junk1","junk1","junk2"]},"side":"bad_side","update":"update_junk","hit":"hit_npc","die":"die_actor"}}'
+local all_actors=json_parse'{"plyr":{"score":0,"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"acc":0.2,"model":"xwing","roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","die":"die_plyr"},"xwing":{"hp":8,"acc":0.2,"g":0,"overg_t":0,"model":"xwing","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"tie":{"hp":4,"acc":0.2,"g":0,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"generator":{"waypt":true,"hp":2,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":2,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_vent"},"mfalcon":{"hp":8,"acc":0.4,"g":0,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"rnd":{"model":["junk1","junk1","junk2"]},"side":"bad_side","update":"update_junk","hit":"hit_npc","die":"die_actor"}}'
 		
 function make_plyr(x,y,z)
 	local p=clone(all_actors["plyr"],{
 		pos={x,y,z},
 		q=make_q(v_fwd,0),
 		hit=function(self,dmg)
-			if(self.safe_t>time_t) return
+			if(self.disabled or self.safe_t>time_t) return
 			self.safe_t=time_t+8
 			self.energy=0
 			self.hp-=dmg
@@ -982,10 +989,29 @@ function make_plyr(x,y,z)
 			screen_shake(rnd(),rnd(),2)
 		end,
 		draw=function(self,x,y,z,w)
-			if cockpit_view or plyr.disabled then
+			if cockpit_view then
 				return
 			end
 			draw_model(self.model,self.m,x,y,z,w)
+		end,
+		update=function(self)
+			-- energy
+			plyr.energy=min(plyr.energy+0.01,1)
+			-- refill shield + proton
+			if plyr.energy==1 and plyr.energy_t<time_t then
+				plyr.proton_ammo=min(plyr.proton_ammo+1,4)
+				plyr.hp=min(plyr.hp+1,5)
+				plyr.energy,plyr.energy_t=0,time_t+120
+			end
+	
+			-- damping
+			plyr.roll*=0.9
+			plyr.pitch*=0.9
+			plyr.boost*=0.98
+			
+			-- update radar cam
+			radar_cam.pos=m_x_xyz(self.m,0,12,-24)
+			radar_cam.q=q_clone(self.q)
 		end
 	})
 	p.model=all_models[p.model]
@@ -1039,8 +1065,7 @@ function make_cam(f,x0,y0)
 end
 
 _g.update_part=function(self)
-	if(self.t<time_t) return false
-	if(self.r<0) return false
+	if(self.t<time_t or self.r<0) return false
 	self.r+=self.dr
 	return true
 end
@@ -1335,22 +1360,34 @@ function set_view(target_view)
 	end)
 end
 
-function control_plyr(self)
-	local pitch,roll=0,0
-	
-	plyr.energy=min(plyr.energy+0.01,1)
-	-- refill shield + proton
-	if plyr.energy==1 and plyr.energy_t<time_t then
-		plyr.proton_ammo=min(plyr.proton_ammo+1,4)
-		plyr.hp=min(plyr.hp+1,5)
-		plyr.energy,plyr.energy_t=0,time_t+120
+function find_closest_tgt(fwd,objs,min_dist,target)
+	min_dist=min_dist or 32000
+	for _,a in pairs(objs) do
+		if a.hp and band(a.side,plyr.side)==0 then
+			local d=sqr_dist(a.pos,plyr.pos)
+			if d<min_dist and in_cone(plyr.pos,a.pos,fwd,0.996,64) then
+				min_dist=d
+				target=a
+			end
+			-- collision?
+			local r=plyr.model.r+a.model.r
+			if(d<r*r) plyr:hit(1)
+		end
 	end
+	return min_dist,target
+end
+
+function control_plyr(self)
+	if(not plyr_playing) return
+	
+	local pitch,roll=0,0
 	
 	if(btn(0)) roll=-1 turn_t+=1
 	if(btn(1)) roll=1 turn_t+=1
 	if(btn(2)) pitch=-1
 	if(btn(3)) pitch=1
 
+	-- flat turn
 	turn_t=min(turn_t,8)
 	if roll!=0 then
 		self.roll=-roll/256
@@ -1382,16 +1419,11 @@ function control_plyr(self)
 	-- update model to world matrix
 	m_set_pos(m,plyr.pos)
 	plyr.m=m
-
-	-- damping
-	self.roll*=0.9
-	self.pitch*=0.9
-
+	
 	-- boost 
 	if btn(4) then
-		self.boost=min(self.boost+0.01,0.1)
+		plyr.boost=min(plyr.boost+0.01,0.1)
 	end
-	self.boost*=0.98
 	
 	-- cam modes
 	if btnp(0,1) then
@@ -1403,33 +1435,10 @@ function control_plyr(self)
 		rear_view=true
 	end
 	
-	-- update radar cam
-	radar_cam.pos=m_x_xyz(plyr.m,0,12,-24)
-	radar_cam.q=q_clone(plyr.q)
+	-- find nearest enemy (in sight)
+	local min_dist,target=find_closest_tgt(fwd,actors)
+	min_dist,target=find_closest_tgt(fwd,ground_actors,min_dist,target)
 	
-	-- find nearest enemy (360)
-	local min_dist,target=32000
-	-- is lock stable?
-	for _,a in pairs(actors) do
-		if band(a.side,plyr.side)==0 then
-			local d=sqr_dist(a.pos,plyr.pos)
-			if d<min_dist and in_cone(plyr.pos,a.pos,fwd,0.996,64) then
-				min_dist=d
-				target=a
-			end
-			if(d<1.5) plyr:hit(1)
-		end
-	end
-	for _,a in pairs(ground_actors) do
-		if band(a.side,plyr.side)==0 then
-			local d=sqr_dist(a.pos,plyr.pos)
-			if d<min_dist and in_cone(plyr.pos,a.pos,fwd,0.996,64) then
-				min_dist=d
-				target=a
-			end
-			if(d<1.5) plyr:hit(1)
-		end
-	end
 	plyr.target=target
 	if target then
 		plyr.lock_t+=1
@@ -1444,7 +1453,6 @@ function control_plyr(self)
 	end
 		
 	if btnp(5) then
-	 -- improve laser efficiency!!
 		plyr.energy=max(plyr.energy-0.1)
 		if(plyr.energy>0) plyr:fire(target and target.pos or nil)
 	end	
@@ -1659,6 +1667,7 @@ function game_screen:init()
 end
 
 local low_hp_t=0
+local rear_q=make_q(v_up,0.5)
 function game_screen:update()
 	zbuf_clear()
 	
@@ -1666,7 +1675,7 @@ function game_screen:update()
 		update_msg()
 	end
 	
-	if plyr and not plyr.disabled then
+	if plyr then
 		control_plyr(plyr)
 		if plyr.hp<2 and low_hp_t<time_t and rnd()>0.95 then
 			make_msg("low_hp")
@@ -1677,7 +1686,7 @@ function game_screen:update()
 		cam.pos=m_x_xyz(plyr.m,view_offset[1],view_offset[2],rear_view and -view_offset[3] or view_offset[3])
 		q=q_clone(plyr.q)
 		if rear_view==true then
-			q_x_q(q,make_q(v_up,0.5))
+			q_x_q(q,rear_q)
 		end
 		cam.q=q
 	end
