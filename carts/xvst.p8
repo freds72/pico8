@@ -95,7 +95,7 @@ end
 
 -- false: chase
 -- true: cockpit
-local cockpit_view,rear_view,cam,radar_cam=false,false
+local cockpit_view,cam,radar_cam=false
 -- player
 local plyr_playing,plyr=true
 local spawn_t=0
@@ -436,7 +436,7 @@ function m_set_pos(m,v)
 end
 
 -- models
-local all_models=json_parse'{"plane":{"c":3},"title":{"c":10},"deathstar":{"c":3},"turret":{"c":8,"r":1.1,"wp":{"sfx":1,"dmg":1,"dly":12,"pos":[[-0.2,0.8,0.65],[0.2,0.8,0.65]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"proton_wp":{"dmg":4,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":2,"dmg":1,"dly":8,"pos":[[2,1,1.6],[2,-1,1.6],[-2,-1,1.6],[-2,1,1.6]],"n":[]}},"tie":{"c":5,"r":1,"wp":{"sfx":1,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"junk1":{"c":3,"r":1.2},"junk2":{"c":3,"r":1.2},"generator":{"c":6,"r":2},"mfalcon":{"c":5},"vent":{"c":5,"r":1}}'
+local all_models=json_parse'{"plane":{"c":3},"title":{"c":10},"deathstar":{"c":3},"turret":{"c":8,"r":1.1,"wp":{"sfx":1,"dmg":1,"dly":12,"pos":[[-0.2,0.8,0.65],[0.2,0.8,0.65]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"proton_wp":{"dmg":4,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":2,"dmg":1,"dly":8,"pos":[[2,1,1.6],[2,-1,1.6],[-2,-1,1.6],[-2,1,1.6]],"n":[]}},"tie":{"c":5,"r":1,"wp":{"sfx":1,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"junk1":{"c":3,"r":1.2},"junk2":{"c":3,"r":1.2},"generator":{"c":6,"r":2},"mfalcon":{"c":5},"vent":{"c":5,"r":1},"ywing":{"c":7,"r":1,"wp":{"sfx":1,"dmg":1,"dly":18,"pos":[[0.13,0,3.1],[-0.13,0,3.1]],"n":[[0,0,1],[0,0,1]]}}}'
 local _id=0
 local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]'
 
@@ -514,13 +514,6 @@ end
 
 -- unpack models
 local mem=0x2000
-function compute_cp(model)
-	model.cp={}
-	for i=1,#model.f do
-		local f=model.f[i]
-		add(model.cp,v_dot(model.n[i],model.v[f[1]]))
-	end
-end
 function unpack_int()
 	local i=peek(mem)
 	mem+=1
@@ -567,6 +560,13 @@ function unpack_models()
  		add(model.n,{unpack_float(),unpack_float(),unpack_float()})
  	end
  	
+ 	-- n.p cache	
+ 	model.cp={}
+		for i=1,#model.f do
+			local f=model.f[i]
+			add(model.cp,v_dot(model.n[i],model.v[f[1]]))
+		end
+		 	
  	-- edges
  	model.e,n={},unpack_int()
  	for i=1,n do
@@ -576,8 +576,7 @@ function unpack_models()
  			unpack_int()==1 and true or -1
  		})
  	end
- 	
- 	compute_cp(model)
+
 		-- merge with existing model
 		all_models[name]=clone(model,all_models[name])
 	end
@@ -640,6 +639,8 @@ function draw_model(model,m,x,y,z,w)
 end
 
 _g.die_plyr=function(self)
+	plyr.disabled=true
+
 	-- clear
 	for s in all(scores) do
 		s.islast=false
@@ -656,27 +657,40 @@ _g.die_plyr=function(self)
 	end
 	last_score=plyr.score
 	--
+	plyr_playing=false
+	cam.flip=false
 	set_view(false)
 	futures_add(function()
-		plyr_playing=false
-		wait_async(60)
+		wait_async(30)
+		-- stop tracking player
+		-- cam:track(nil)
+		
+		local death_q=make_q(v_fwd,rndlerp(-0.04,0.04))
+		local cam_acc=plyr.acc
 		wait_async(90,function(i)
-			q_x_q(plyr.q,make_q(v_fwd,i/90))
-		end)
-		plyr.disabled=true
+			q_x_q(plyr.q,death_q)
+			local fwd=update_plyr_pos()
+			--v_add(cam.pos,fwd,cam_acc)
+			cam_acc*=0.98
+			local p=make_rnd_v(0.5)
+			v_add(p,plyr.pos)
+			make_part("flash",p,rndlerp(8,10))
+			return true
+		end)		
 		make_part("blast",plyr.pos)
-		wait_async(60)
 		del(actors,plyr)
 		plyr=nil
+		wait_async(600)
 		cur_screen=gameover_screen
-		wait_async(240,function()
+		wait_async(600,function()
 			if btnp(4) or btnp(5) then
 				return false
 			end
 			return true
-		end)
+		end)		
 		-- "eat" btnp
 		yield()
+
 		cur_screen=start_screen
 	end)
 end
@@ -710,14 +724,25 @@ _g.die_vent=function(self)
 			make_msg("victory2")
 			local wing=make_npc({0,56,0},v_up,"mfalcon")
 			wing.target=plyr
-			plyr_playing=false
+			plyr_playing,cam.flip=false,true
 			set_view(false)
-			wait_async(16)
-			--rear_view=true
+			wait_async(30)
 			--game_mode=3
 			wait_async(60)
 			make_part("novae",{0,0,0})
-			-- todo: gameover
+		
+			-- game over
+			cur_screen=gameover_screen
+			wait_async(600,function()
+ 			if btnp(4) or btnp(5) then
+ 				return false
+ 			end
+ 			return true
+ 		end)		
+ 		-- "eat" btnp
+ 		yield()
+
+			cur_screen=start_screen
 		else
 			plyr:die()
 		end
@@ -770,7 +795,7 @@ end
 
 _g.update_flying_npc=function(self)
 	-- if npc still in range
-	if sqr_dist(self.pos,plyr.pos)>64*64 then
+	if plyr and sqr_dist(self.pos,plyr.pos)>64*64 then
 		npc_count-=1
 		spawn_t=time_t+60+rnd(60)
 		return false
@@ -893,6 +918,8 @@ _g.hit_flying_npc=function(self,dmg,actor)
 end
 
 _g.update_turret=function(self,i,j)
+	if(not plyr) return true
+	
 	self.pos[1],self.pos[3]=i*ground_scale,j*ground_scale
 	local dx,dy=self.pos[1]-plyr.pos[1],self.pos[3]-plyr.pos[3]
 	-- in range?
@@ -972,7 +999,7 @@ _g.make_proton=function(self,target)
 	make_part("flash",p,c)
 end
 
-local all_actors=json_parse'{"plyr":{"score":0,"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"acc":0.2,"model":"xwing","roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","die":"die_plyr"},"xwing":{"hp":8,"acc":0.2,"g":0,"overg_t":0,"model":"xwing","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"tie":{"hp":4,"acc":0.2,"g":0,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"generator":{"waypt":true,"hp":2,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":2,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_vent"},"mfalcon":{"hp":8,"acc":0.4,"g":0,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"rnd":{"model":["junk1","junk1","junk2"]},"side":"bad_side","update":"update_junk","hit":"hit_npc","die":"die_actor"}}'
+local all_actors=json_parse'{"plyr":{"score":0,"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"acc":0.2,"model":"xwing","roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","die":"die_plyr"},"patrol":{"hp":800,"acc":0.2,"g":0,"overg_t":0,"rnd":{"model":["ywing","ywing","ywing"]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"tie":{"hp":4,"acc":0.2,"g":0,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"generator":{"waypt":true,"hp":2,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":2,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_vent"},"mfalcon":{"hp":8,"acc":0.4,"g":0,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"rnd":{"model":["junk1","junk1","junk2"]},"side":"bad_side","update":"update_junk","hit":"hit_npc","die":"die_actor"}}'
 		
 function make_plyr(x,y,z)
 	local p=clone(all_actors["plyr"],{
@@ -1008,10 +1035,11 @@ function make_plyr(x,y,z)
 			plyr.roll*=0.9
 			plyr.pitch*=0.9
 			plyr.boost*=0.98
-			
+		
 			-- update radar cam
-			radar_cam.pos=m_x_xyz(self.m,0,12,-24)
-			radar_cam.q=q_clone(self.q)
+			radar_cam:track(m_x_xyz(plyr.m,0,12,-24),plyr.q)
+						
+			return true
 		end
 	})
 	p.model=all_models[p.model]
@@ -1022,15 +1050,14 @@ end
 function make_npc(p,v,src)
 	npc_count+=1
 	_id+=1
-	src=all_actors[src]
 	-- instance
-	local a=clone(src,{
+	local a=clone(all_actors[src],{
 		id=_id,
 		pos=v_clone(p),
 		q=make_q(v,0),
-		model=all_models[src.model],
 		draw=draw_actor
 	})
+	a.model=all_models[a.model]
 	-- init orientation
 	local m=m_from_q(a.q)
 	m_set_pos(m,p)
@@ -1038,15 +1065,25 @@ function make_npc(p,v,src)
 	return add(actors,a)
 end
 
+local rear_q=make_q(v_up,0.5)
 function make_cam(f,x0,y0)
 	x0,y0=x0 or 64,y0 or 64
-	return {
+	local c={
 		pos={0,0,3},
+		q=make_q(v_up,0),
 		focal=f,
-		q=make_q(v_fwd,0),
+		flip=false,
 		update=function(self)
 			self.m=m_from_q(self.q)
 			m_inv(self.m)
+		end,
+		track=function(self,pos,q)
+ 		self.pos=v_clone(pos)
+ 		if self.flip then
+ 		 q=q_clone(q)
+ 			q_x_q(q,rear_q)
+ 		end 		
+ 		self.q=q
 		end,
 		project=function(self,x,y,z)
 			-- world to view
@@ -1062,6 +1099,7 @@ function make_cam(f,x0,y0)
  			return x0+v[1]*w,y0-v[2]*w,v[3],w
 		end
 	}
+	return c
 end
 
 _g.update_part=function(self)
@@ -1343,9 +1381,11 @@ end
 
 local view_offsets=json_parse'[[0,2,-8],[0,0,0]]'
 local view_offset=v_clone(view_offsets[cockpit_view and 2 or 1])
+local view_changing=false
 function set_view(target_view)
  -- nothing to do?
-	if(cockpit_view==target_view) return
+	if(view_changing or cockpit_view==target_view) return
+	view_changing=true
 	futures_add(function()
 		local c=cockpit_view
 		cockpit_view=false
@@ -1356,7 +1396,7 @@ function set_view(target_view)
 				smoothstep(i/30))
 			return true
 		end)
-		cockpit_view=target_view
+		cockpit_view,view_changing=target_view,false
 	end)
 end
 
@@ -1375,6 +1415,18 @@ function find_closest_tgt(fwd,objs,min_dist,target)
 		end
 	end
 	return min_dist,target
+end
+
+function update_plyr_pos()
+	local m=m_from_q(plyr.q)
+	local fwd={m[9],m[10],m[11]}
+	v_add(plyr.pos,fwd,plyr.acc)
+	if game_mode==1 then
+		plyr_ground_col(plyr.pos)
+	end
+	m_set_pos(m,plyr.pos)
+	plyr.m=m
+	return fwd
 end
 
 function control_plyr(self)
@@ -1409,16 +1461,7 @@ function control_plyr(self)
 	q_x_q(plyr.q,q)
 	
 	-- update pos
-	local m=m_from_q(plyr.q)
-	local fwd={m[9],m[10],m[11]}
-	v_add(plyr.pos,fwd,plyr.acc+plyr.boost)
-	-- ground collision
-	if game_mode==1 then
-		plyr_ground_col(plyr.pos)
-	end
-	-- update model to world matrix
-	m_set_pos(m,plyr.pos)
-	plyr.m=m
+	local fwd=update_plyr_pos()
 	
 	-- boost 
 	if btn(4) then
@@ -1430,10 +1473,13 @@ function control_plyr(self)
 		set_view(not cockpit_view)
 	end
 	-- behind look?
-	rear_view=false
+	cam.flip=false
 	if btn(2,1) then
-		rear_view=true
+		cam.flip=true
 	end
+
+	-- update cam
+	cam:track(m_x_xyz(plyr.m,view_offset[1],view_offset[2],cam.flip and -view_offset[3] or view_offset[3]),plyr.q)
 	
 	-- find nearest enemy (in sight)
 	local min_dist,target=find_closest_tgt(fwd,actors)
@@ -1648,7 +1694,6 @@ function gameover_screen:draw()
 	end
 end
 
-
 -- play loop
 function game_screen:init()
 	time_t=0
@@ -1667,7 +1712,6 @@ function game_screen:init()
 end
 
 local low_hp_t=0
-local rear_q=make_q(v_up,0.5)
 function game_screen:update()
 	zbuf_clear()
 	
@@ -1682,18 +1726,7 @@ function game_screen:update()
 			low_hp_t=time_t+cur_msg.repeat_dly
 		end
 	end
-	if plyr then
-		cam.pos=m_x_xyz(plyr.m,view_offset[1],view_offset[2],rear_view and -view_offset[3] or view_offset[3])
-		q=q_clone(plyr.q)
-		if rear_view==true then
-			q_x_q(q,rear_q)
-		end
-		cam.q=q
-	end
 	
-	cam:update()
-	radar_cam:update()
-
 	if game_mode==0 then
 		if npc_count<=0 and spawn_t<time_t then
 			local p,v=make_rnd_pos_v(plyr,64)
@@ -1701,7 +1734,7 @@ function game_screen:update()
 			local target=plyr
 			-- friendly npc?
 			if rnd()>0.8 then
-				target=make_npc(p,v,"xwing")
+				target=make_npc(p,v,"patrol")
 				make_msg("help")
 				v_add(p,v,10)
 			end
@@ -1719,6 +1752,10 @@ function game_screen:update()
 
 	zbuf_filter(actors)
 	zbuf_filter(parts)
+	
+	-- must be done after update loop
+	cam:update()
+	radar_cam:update()
 end
 
 function game_screen:draw()
@@ -1737,44 +1774,47 @@ function game_screen:draw()
 	end
 		
 	-- cam modes
-	if cockpit_view then
-	 if rear_view==false then
-	  
-			-- cockpit
-			set_layer(false)
- 		spr(0,0,64,8,8)
- 		spr(0,64,64,8,8,true)
-			set_layer(true)
- 		spr(64,0,32,8,4)
- 		spr(64,64,32,8,4,true)
- 		pal()
- 		palt()
- 		
- 		-- radar
- 		draw_radar()
- 		-- hp
- 		local x=23
- 		local imax=flr(8*plyr.energy)
- 		for i=1,imax do
- 			rectfill(x,120,x+1,123,11)
- 			x+=3
- 		end
- 		for i=imax+1,8 do  
- 			rectfill(x,120,x+1,123,1)
- 			x+=3
- 		end
- 		-- engines
- 		local p=(plyr.acc+plyr.boost)/(0.3)
- 		rectfill(82,120,82+22*p,123,9)
- 	else
- 		set_layer(true)
- 		spr(0,0,32,8,4)
- 		spr(0,64,32,8,4,true)
- 		rectfill(0,64,127,127,0)
- 		rect(19,64,108,125,1)
- 	end
- else
- 	draw_radar()
+	if plyr then
+ 	if cockpit_view then
+ 	 if not cam.flip then
+ 	  
+ 			-- cockpit
+ 			set_layer(false)
+  		spr(0,0,64,8,8)
+  		spr(0,64,64,8,8,true)
+ 			set_layer(true)
+  		spr(64,0,32,8,4)
+  		spr(64,64,32,8,4,true)
+  		pal()
+  		palt()
+  		
+  		-- radar
+  		draw_radar()
+  		-- hp
+  		local x=23
+  		local imax=flr(8*plyr.energy)
+  		for i=1,imax do
+  			rectfill(x,120,x+1,123,11)
+  			x+=3
+  		end
+  		for i=imax+1,8 do  
+  			rectfill(x,120,x+1,123,1)
+  			x+=3
+  		end
+  		-- engines
+  		local p=(plyr.acc+plyr.boost)/(0.3)
+  		rectfill(82,120,82+22*p,123,9)
+  	else
+  		set_layer(true)
+  		spr(0,0,32,8,4)
+  		spr(0,64,32,8,4,true)
+  		rectfill(0,64,127,127,0)
+  		rect(19,64,108,125,1)
+  		pal()
+  	end
+  else
+  	draw_radar()
+  end
  end
  
 end
@@ -1967,9 +2007,29 @@ f7f24004f7b50803401408c51813402418d52823403428e53833404438f548434054480658534068
 21430313a0400133e243a196389696387979387979389627d908d908e8e8d90808d927080608080a0808080a0836e808d9e83608e80608082736082708d92708
 36080806d908273608270836270a0808e808d9e80836e8360843301000102000503000405000104000203000205000204000806000607000709000908000c080
 0090d000d0c000a0c000d0b000b0a00060a000b07000e0f00001f000e01100110100c0010011d00080f000e09000213100314100415100512100905100417000
-60310021800061710081910061910081710070710081b00091a000606100a1b100c1b100a1d100d1c100b0d100a1d000b1c000a0c10000000000000000000000
+60310021800061710081910061910081710070710081b00091a000606100a1b100c1b100a1d100d1c100b0d100a1d000b1c000a0c100504222419121100667d7
+2567682567d72a67682aa8d725a86825a8d72aa8682a98d7bd77d85a7838cdf697fa77d7bd9738cd98d85a1997faa818e5a818570a18e50a1857876826876887
+88682688688787a82687a88788a82688a8879a47480a97480a38489a88481b38481b97489a87a83ab7a83a18a89a48a8ea18a8eab7a89a47f40a97f40a38f49a
+88f41b38f41b97f49ab7446ac7446a08449a1844ba0844bac7449a47d10a97d10a38d19a88d11b38d11b97d16718e56718570618e50618577547480697480638
+48758848f43848f497487587a8d5b7a8d518a87548a82518a825b7a87547f40697f40638f47588f4f438f4f497f475b744a5c744a5084475184455084455c744
+7547d10697d10638d17588d1f438d1f497d1c708cd4808cdc7083e48083e93104020304010a040f0e021b170407090a0805040a0c020b030405080b010804060
+30c090c04031b161117040509141810140411151d030404071319180407081a1c1f040a1d001e0404060c1f071904051612101c140625282725140429282a281
+4022b262c2714032c27292614012a252b2d140a38393231240c363b303f140e343d3e222409373c3130240b353e3f2e140d333a3d22240644454230240842474
+03e140a40494e2124074346413f140941484f2d14054f3a4d2924025b415f3e24035052544c24055e44524a24015c46504d24045f43534b24065d45514426043
+5363738333f340a617072734408637e64714406657c66744409647f61724407667d63704405627b6574440a6d7c7e7244086f7a708044066188728344096e7b7
+f7144076089718f340562877d7b440779838a80540c7a888b8e440a7c868d8c44087e84898f440b7b878c8d44097d858e86460b607f6e6d6c69306080808f968
+0a0808080806080608080a0836d848081677080638364847d94847d9d84808d8360887f9080a0808080608080a0a0808060808e88619e88919560819b9081927
+891927861909460809c9080608080a080807c908074608278617e88617e88917460817c9081727891708080a278619278919b90819560819e88919e886190746
+0807c9080a080806080809c908094608e88617278617278917c90817460817e8891708080aa93010001020002040004030007030004080008070005070008060
+00605000105000602000019000f0b000a0f000b09000d0c000e0b000a0c00001c00090d000e0d000a0400001700030c000f00100a0e00080f000211110412110
+31411011311051610061810081710071510091a100a1c100c1b100b1910071b10091510061a100c18100e1d100f1e10002f100120200221200d1220042320052
+420062520072620082720032820022820032d100026200721200e1420052f100a29200b2a200c2b200d2c200e2d20092e200d19200e2220012d200c20200f1b2
+00a2e10003f200130300231300332300433300f24300a20300f2920043e200d2330023c200b21300635310736310837310938310a3931053a31063a210e2a310
+93d21073b210c3b310e3c310d3e310b3d31004f300140400241400342400443400f34400645400746400847400948400a4940054a40044a40054f30024840094
+3400046400741400c4b400d4c400e4d400f4e40005f400b40500f3b40005440034f400e4240014d400c40400251500352500453500554500655500156500c425
+0015b400650500f4550045e400d43500857510958510a59510b5a510c5b51075c51085c41005c510b5f41095d410f5d510e50610000000000000000000000000
 __map__
-0c090f100c1f131e1f0c1d011b80a080749e80699780628c806080806274806969807462808060808c62809769809e7480a080809e8c809797808c9e807398806d96806b90806d8a80738880798a807b90807996807683808a8380a0808000001b0201010302010403010504010605010706010807010908010a09010b0a010c
+0d090f100c1f131e1f0c1d011b80a080749e80699780628c806080806274806969807462808060808c62809769809e7480a080809e8c809797808c9e807398806d96806b90806d8a80738880798a807b90807996807683808a8380a0808000001b0201010302010403010504010605010706010807010908010a09010b0a010c
 0b010d0c010e0d010f0e01100f01011001121101131201141301151401161501171601181701111801051901191a011a1b0105152019160301188080a0698097608080698069808060978069a0808097809780a0a069a09760a08069a06980a06097a069a0a08097a09780b09372b08e6db08072b07280b06d8eb07293b0808e
 b08e110804120f11070604140d13050404160b15030204180917010104171012080704110e14060504130c16040304150a18020c04221b210b0a04241923090904232025100f04271e260e0d04281c220c0b04211a240a1004251f270f0e04261d280d12081a1b1c1d1e1f2019119e808c8c806262807474809e8c809e9e8074
 74806262808c6893767693988a939898937676936868938a98938a8a936880a080280201000302000403000504000605000706000807000108000a09000b0a000c0b000d0c000e0d000f0e00100f00091000070f00100800050d000e0600030b000c04000109000a020012110013120014130015140016150017160018170011
