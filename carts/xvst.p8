@@ -277,7 +277,7 @@ function make_v_cross(a,b)
 	local bx,by,bz=b[1],b[2],b[3]
 	return {ay*bz-az*by,az*bx-ax*bz,ax*by-ay*bx}
 end
-local v_fwd,v_right,v_up={0,0,1},{1,0,0},{0,1,0}
+local v_fwd,v_right,v_up,v_dwn={0,0,1},{1,0,0},{0,1,0},{0,-1,0}
 
 function v_clone(v)
 	return {v[1],v[2],v[3]}
@@ -676,22 +676,9 @@ _g.die_plyr=function(self)
 			v_add(p,plyr.pos)
 			make_part("flash",p,rndlerp(8,10))
 			return true
-		end)		
+		end)
 		make_part("blast",plyr.pos)
-		del(actors,plyr)
-		plyr=nil
-		wait_async(600)
-		cur_screen=gameover_screen
-		wait_async(600,function()
-			if btnp(4) or btnp(5) then
-				return false
-			end
-			return true
-		end)		
-		-- "eat" btnp
-		yield()
-
-		cur_screen=start_screen
+		wait_gameover(600)
 	end)
 end
 
@@ -702,57 +689,36 @@ _g.die_actor=function(self)
 	del(actors,self)
 end
 
+_g.update_exit=function(self)
+	if(not plyr) return false
+	if sqr_dist(self.pos,plyr.pos)<1 then
+		make_msg("victory2")
+		local wing=make_npc({0,56,0},v_up,"mfalcon")
+		wing.target=plyr
+		plyr_playing,cam.flip=false,true
+		set_view(false)
+		futures_add(function()
+			--game_mode=3
+			wait_async(600)
+			make_part("novae",{0,0,0})
+			-- game over
+			wait_gameover(600)
+		end)
+		return false
+	end
+	return true
+end
+
 _g.die_vent=function(self)
 	_g.die_actor(self)
 	make_msg("victory1")
-	local tgt={
-		pos={0,64,0},
-		draw=nop,
-		update=nop,
-		waypt=true}
-	add(actors,tgt)
-	futures_add(function()
-		local escape=false
-		wait_async(9000,function()
-			if sqr_dist(tgt.pos,plyr.pos)<1 then
-				escape=true
-				return false
-			end
-			return true
-		end)
-		if escape then
-			make_msg("victory2")
-			local wing=make_npc({0,56,0},v_up,"mfalcon")
-			wing.target=plyr
-			plyr_playing,cam.flip=false,true
-			set_view(false)
-			wait_async(30)
-			--game_mode=3
-			wait_async(60)
-			make_part("novae",{0,0,0})
-		
-			-- game over
-			cur_screen=gameover_screen
-			wait_async(600,function()
- 			if btnp(4) or btnp(5) then
- 				return false
- 			end
- 			return true
- 		end)		
- 		-- "eat" btnp
- 		yield()
-
-			cur_screen=start_screen
-		else
-			plyr:die()
-		end
-	end)
+	add(actors,clone(all_actors["exit"]))
 end
 
 -- offset: position relative to other pos
 function follow(pos,other,offset)
-	-- offset into world position
 	local v=v_clone(offset)
+	-- offset into world position
 	m_x_v(other.m,v)
 	-- line to target
 	v_add(v,pos,-1)
@@ -802,9 +768,7 @@ _g.update_flying_npc=function(self)
 	end
 	
 	-- force application point 
-	local acc=self.acc
-	local pos={0,0,1}
-	local m=self.m
+	local pos,m,acc={0,0,1},self.m,self.acc
 	m_x_v(m,pos)
 	-- forces
 	local force={acc*m[9],acc*m[10],acc*m[11]}
@@ -844,7 +808,7 @@ _g.update_flying_npc=function(self)
 	-- clamp acceleration
 	v_clamp(force,1.2*acc)
 
-	-- update orientation		
+	-- update orientation
 	v_add(pos,force)
 	v_add(pos,self.pos,-1)
 	v_normz(pos)
@@ -852,27 +816,28 @@ _g.update_flying_npc=function(self)
 	local f=v_clone(force)
 	v_normz(f)
 	self.g+=1-abs(v_dot(f,fwd))
-	self.g*=0.9
+	
 	if self.g>0.5 then
 		self.overg_t+=1
 	end
-	self.overg_t*=0.95
 	if self.overg_t>18 then
 		if not self.recover then
 			local tgt=self.target
 			self.recover=true
 			can_fire=false
-			self.target=nil				
+			self.target=nil
 			futures_add(function()
 				-- forget target
-				wait_async(180)	
+				wait_async(180)
 				self.target=tgt
 				self.recover=false
 				self.g,self.overg_t=0,0
 			end)
 		end
 	end
-
+	self.g*=0.9
+	self.overg_t*=0.95
+	
  -- try to align w/ target
 	local up={m[5],m[6],m[7]}
 	if self.target then
@@ -999,12 +964,12 @@ _g.make_proton=function(self,target)
 	make_part("flash",p,c)
 end
 
-local all_actors=json_parse'{"plyr":{"score":0,"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"acc":0.2,"model":"xwing","roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","die":"die_plyr"},"patrol":{"hp":800,"acc":0.2,"g":0,"overg_t":0,"rnd":{"model":["ywing","ywing","ywing"]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"tie":{"hp":4,"acc":0.2,"g":0,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"generator":{"waypt":true,"hp":2,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":2,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_vent"},"mfalcon":{"hp":8,"acc":0.4,"g":0,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"rnd":{"model":["junk1","junk1","junk2"]},"side":"bad_side","update":"update_junk","hit":"hit_npc","die":"die_actor"}}'
+local all_actors=json_parse'{"plyr":{"score":0,"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"acc":0.2,"model":"xwing","roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","die":"die_plyr"},"patrol":{"hp":800,"acc":0.2,"g":0,"overg_t":0,"rnd":{"model":["ywing","ywing","ywing"]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"tie":{"hp":4,"acc":0.2,"g":0,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"generator":{"waypt":true,"hp":2,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":2,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_vent"},"mfalcon":{"hp":8,"acc":0.4,"g":0,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"rnd":{"model":["junk1","junk1","junk2"]},"side":"bad_side","update":"update_junk","hit":"hit_npc","die":"die_actor"},"exit":{"pos":[0,64,0],"draw":"nop","update":"update_exit","waypt":true}}'
 		
 function make_plyr(x,y,z)
 	local p=clone(all_actors["plyr"],{
 		pos={x,y,z},
-		q=make_q(v_fwd,0),
+		q=make_q(v_right,0.25),
 		hit=function(self,dmg)
 			if(self.disabled or self.safe_t>time_t) return
 			self.safe_t=time_t+8
@@ -1082,7 +1047,7 @@ function make_cam(f,x0,y0)
  		if self.flip then
  		 q=q_clone(q)
  			q_x_q(q,rear_q)
- 		end 		
+ 		end
  		self.q=q
 		end,
 		project=function(self,x,y,z)
@@ -1274,7 +1239,7 @@ end
 
 function update_ground()
 	ground_actors={}
-	local i0,j0=flr(cam.pos[1]/ground_scale),flr(cam.pos[3]/ground_scale)
+	local i0,j0=flr(plyr.pos[1]/ground_scale),flr(plyr.pos[3]/ground_scale)
 	for i=i0-10,i0+10 do
 		local cx=(i%128+128)%128
 		for j=j0-10,j0+10 do
@@ -1336,12 +1301,14 @@ function draw_msg()
 	spr(cur_msg.spr,33,y+1,2,2)
 	print(cur_msg.title,51,y,9)
 	print(cur_msg.txt,51,y+7,7)
-	if time_t%4==0 then
-		fillp(0b1111000011110000.1)
+	-- cheap comms effect
+	if rnd()>0.3 then
+		fillp(flr(rnd(0xff))+0.1)
 		rectfill(33,y,49,y+23,0)
 		fillp()
  end
 	
+	-- lips animation
 	local c=cur_msg.lipsc or 0
 	if time_t%64>50 then
 		rectfill(40,y+13,41,y+14,c)
@@ -1356,7 +1323,7 @@ local turn_t=0
 
 function plyr_ground_col(pos)
 	-- ground collision?
-	if pos[2]<0 then		
+	if pos[2]<0 then
 		local r,col=rnd()*0.4,false
 		if abs(pos[1])<=6 then
 			if pos[1]>=5.9 then
@@ -1368,7 +1335,7 @@ function plyr_ground_col(pos)
 				pos[2],col=-5.5+r,true
 			end
 			-- between trench walls?
-			if(not col) return false			
+			if(not col) return false
 		else
 			pos[2]=r
 		end
@@ -1380,7 +1347,7 @@ function plyr_ground_col(pos)
 end
 
 local view_offsets=json_parse'[[0,2,-8],[0,0,0]]'
-local view_offset=v_clone(view_offsets[cockpit_view and 2 or 1])
+local view_offset
 local view_changing=false
 function set_view(target_view)
  -- nothing to do?
@@ -1681,6 +1648,22 @@ function start_screen:draw()
 	end
 end
 
+function wait_gameover(t)
+	del(actors,plyr)
+	plyr=nil
+	wait_async(t or 0)
+	cur_screen=gameover_screen
+	wait_async(600,function()
+		if btnp(4) or btnp(5) then
+			-- "eat" btnp
+			yield()
+			return false
+		end
+		return true
+	end)
+	cur_screen=start_screen
+end
+
 function gameover_screen:update()
 end
 
@@ -1697,6 +1680,8 @@ end
 -- play loop
 function game_screen:init()
 	time_t=0
+	cockpit_view=false
+	view_offset=v_clone(view_offsets[1])
 	actors,parts={},{}
 	npc_count=0
 	plyr=make_plyr(0,0,0)
