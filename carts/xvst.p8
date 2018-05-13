@@ -277,7 +277,8 @@ function make_v_cross(a,b)
 	local bx,by,bz=b[1],b[2],b[3]
 	return {ay*bz-az*by,az*bx-ax*bz,ax*by-ay*bx}
 end
-local v_fwd,v_right,v_up,v_dwn={0,0,1},{1,0,0},{0,1,0},{0,-1,0}
+-- world axis
+local v_fwd,v_right,v_up={0,0,1},{1,0,0},{0,1,0}
 
 function v_clone(v)
 	return {v[1],v[2],v[3]}
@@ -426,7 +427,8 @@ function m_inv(m)
 	m[3],m[9]=m[9],m[3]
 	m[7],m[10]=m[10],m[7]
 end
--- same as above, inline matrix invert
+-- inline matrix invert
+-- inc. position
 function m_inv_x_v(m,v)
 	local x,y,z=v[1]-m[13],v[2]-m[14],v[3]-m[15]
 	v[1],v[2],v[3]=m[1]*x+m[2]*y+m[3]*z,m[5]*x+m[6]*y+m[7]*z,m[9]*x+m[10]*y+m[11]*z
@@ -436,20 +438,24 @@ function m_set_pos(m,v)
 end
 
 -- models
-local all_models=json_parse'{"plane":{"c":3},"title":{"c":10},"deathstar":{"c":3},"turret":{"c":8,"r":1.1,"wp":{"sfx":1,"dmg":1,"dly":12,"pos":[[-0.2,0.8,0.65],[0.2,0.8,0.65]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"proton_wp":{"dmg":4,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":2,"dmg":1,"dly":8,"pos":[[2,1,1.6],[2,-1,1.6],[-2,-1,1.6],[-2,1,1.6]],"n":[]}},"tie":{"c":5,"r":1,"wp":{"sfx":1,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"junk1":{"c":3,"r":1.2},"junk2":{"c":3,"r":1.2},"generator":{"c":6,"r":2},"mfalcon":{"c":5},"vent":{"c":5,"r":1},"ywing":{"c":7,"r":1,"wp":{"sfx":1,"dmg":1,"dly":18,"pos":[[0.13,0,3.1],[-0.13,0,3.1]],"n":[[0,0,1],[0,0,1]]}}}'
+local all_models=json_parse'{"title":{"c":10},"deathstar":{"c":3},"turret":{"c":8,"r":1.1,"wp":{"sfx":1,"dmg":1,"dly":12,"pos":[[-0.2,0.8,0.65],[0.2,0.8,0.65]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"proton_wp":{"dmg":4,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":2,"dmg":1,"dly":8,"pos":[[2,1,1.6],[2,-1,1.6],[-2,-1,1.6],[-2,1,1.6]],"n":[]}},"tie":{"c":5,"r":1,"wp":{"sfx":1,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"junk1":{"c":3,"r":1.2},"junk2":{"c":3,"r":1.2},"generator":{"c":6,"r":2},"mfalcon":{"c":5},"vent":{"c":5,"r":1},"ywing":{"c":7,"r":1,"wp":{"sfx":1,"dmg":1,"dly":18,"pos":[[0.13,0,3.1],[-0.13,0,3.1]],"n":[[0,0,1],[0,0,1]]}}}'
 local _id=0
 local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]'
 
 local debug_vectors=false
 function draw_actor(self,x,y,z,w)
 	--[[
-	if self.recover then
-		print("?",x,y-w-8,7)
-	end
-	print(self.g,x+w+2,y-16,7)
-	print(self.overg_t,x+w+2,y-8,7)
+	local s=""
+	if self.target then
+		s=s.."☉"
+	elseif self.recover then
+		s=s.."⧗"
+	elseif not self.target then
+		s=s.."∧"
+	end	
+	s=s.." "..(flr(10*self.g)/10).."/"..flr(10*self.overg_t)/10
+	print(s,x-8,y-w-8,self.recover and 8 or 11)
 	]]
-	
 	-- distance culling
 	if w>1 then
 		draw_model(self.model,self.m,x,y,z,w)
@@ -458,6 +464,8 @@ function draw_actor(self,x,y,z,w)
 			circ(x,y,self.model.r*w,7)
 		end
 		]]
+	else
+		pset(x,y,self.model.c)
 	end
 	-- debug
 	--[[
@@ -761,52 +769,49 @@ end
 
 _g.update_flying_npc=function(self)
 	-- if npc still in range
-	if plyr and sqr_dist(self.pos,plyr.pos)>64*64 then
+	if plyr and sqr_dist(self.pos,plyr.pos)>96*96 then
 		npc_count-=1
 		spawn_t=time_t+60+rnd(60)
 		return false
 	end
 	
 	-- force application point 
-	local pos,m,acc={0,0,1},self.m,self.acc
+	local pos,m={0,0,1},self.m
 	m_x_v(m,pos)
 	-- forces
-	local force={acc*m[9],acc*m[10],acc*m[11]}
-	local can_fire=false
-	local fwd={m[9],m[10],m[11]}
+	local can_fire,fwd=false,{m[9],m[10],m[11]}
+	local force=v_clone(fwd)
+	v_scale(force,25)
 
 	if self.target and not self.target.disabled then
 		-- friendly: formation flight
 		local target_pos={0,-4,-10}
 		-- enemy: get in sight
 		if band(self.target.side,self.side)==0 then
-			target_pos={0,0,-15}
-			can_fire=true
+			can_fire,target_pos=true,{0,0,-15}
 		end
-		self.follow=follow(pos,self.target,target_pos)
-		v_add(force,self.follow)
-	else
+		local ff=follow(pos,self.target,target_pos)
+		-- todo: diffent class of enemies
+		v_add(force,ff,1-smoothstep(self.overg_t/25))
+	elseif not self.recover then
 		-- search for target
 		self.target=seek(self,24)
 	end
 	-- nothing to track?
 	if not self.target then
-		if not self.wander or self.wander_t<time_t then
+		if self.wander_t<time_t then
 			-- pick a random location
 			self.wander=wander(self)
 			self.wander_t=time_t+120+rnd(60)
 		end
 		v_add(force,follow(pos,self,self.wander))
-	else
-		-- debug
-		self.wander=nil
 	end
 	local avf=avoid(self,pos,8)
 	-- weight avoid more than follow
 	v_add(force,avf,4)
 
 	-- clamp acceleration
-	v_clamp(force,1.2*acc)
+	v_clamp(force,1.2*self.acc)
 
 	-- update orientation
 	v_add(pos,force)
@@ -814,29 +819,23 @@ _g.update_flying_npc=function(self)
 	v_normz(pos)
 
 	local f=v_clone(force)
-	v_normz(f)
+ 	local df=v_normz(f)
 	self.g+=1-abs(v_dot(f,fwd))
 	
 	if self.g>0.5 then
 		self.overg_t+=1
 	end
-	if self.overg_t>18 then
-		if not self.recover then
-			local tgt=self.target
-			self.recover=true
-			can_fire=false
-			self.target=nil
-			futures_add(function()
-				-- forget target
-				wait_async(180)
-				self.target=tgt
-				self.recover=false
-				self.g,self.overg_t=0,0
-			end)
-		end
+	if self.overg_t>25 and not self.recover then
+		local target,forget_t=self.target,15+self.overg_t
+		-- forget target
+		can_fire,self.target,self.recover=false,nil,true
+		futures_add(function()
+			wait_async(forget_t)
+			self.target,self.recover=target,false
+		end)
 	end
-	self.g*=0.9
-	self.overg_t*=0.95
+	self.g*=0.98
+	self.overg_t=mid(self.overg_t*0.98,0,35)
 	
  -- try to align w/ target
 	local up={m[5],m[6],m[7]}
@@ -969,12 +968,14 @@ local all_actors=json_parse'{"plyr":{"score":0,"hp":5,"safe_t":0,"energy":1,"ene
 function make_plyr(x,y,z)
 	local p=clone(all_actors["plyr"],{
 		pos={x,y,z},
-		q=make_q(v_right,0.25),
+		q=make_q(v_fwd,0),
 		hit=function(self,dmg)
 			if(self.disabled or self.safe_t>time_t) return
 			self.safe_t=time_t+8
 			self.energy=0
-			self.hp-=dmg
+			-- todo: remove
+			-- debug
+			--self.hp-=dmg
 			if self.hp<=0 then
 				self:die()
 			end
@@ -999,7 +1000,7 @@ function make_plyr(x,y,z)
 			-- damping
 			plyr.roll*=0.9
 			plyr.pitch*=0.9
-			plyr.boost*=0.98
+			plyr.boost*=0.9
 		
 			-- update radar cam
 			radar_cam:track(m_x_xyz(plyr.m,0,12,-24),plyr.q)
@@ -1302,8 +1303,8 @@ function draw_msg()
 	print(cur_msg.title,51,y,9)
 	print(cur_msg.txt,51,y+7,7)
 	-- cheap comms effect
-	if rnd()>0.3 then
-		fillp(flr(rnd(0xff))+0.1)
+	if time_t%4>2 then
+		fillp(0b1011000011110100.1)
 		rectfill(33,y,49,y+23,0)
 		fillp()
  end
@@ -1372,9 +1373,8 @@ function find_closest_tgt(fwd,objs,min_dist,target)
 	for _,a in pairs(objs) do
 		if a.hp and band(a.side,plyr.side)==0 then
 			local d=sqr_dist(a.pos,plyr.pos)
-			if d<min_dist and in_cone(plyr.pos,a.pos,fwd,0.996,64) then
-				min_dist=d
-				target=a
+			if d>4 and d<min_dist and in_cone(plyr.pos,a.pos,fwd,0.996,64) then
+				min_dist,target=d,a
 			end
 			-- collision?
 			local r=plyr.model.r+a.model.r
@@ -1387,7 +1387,7 @@ end
 function update_plyr_pos()
 	local m=m_from_q(plyr.q)
 	local fwd={m[9],m[10],m[11]}
-	v_add(plyr.pos,fwd,plyr.acc)
+	v_add(plyr.pos,fwd,plyr.acc+plyr.boost)
 	if game_mode==1 then
 		plyr_ground_col(plyr.pos)
 	end
@@ -1410,10 +1410,10 @@ function control_plyr(self)
 	turn_t=min(turn_t,8)
 	if roll!=0 then
 		self.roll=-roll/256
-	 self.roll=mid(self.roll,-1/96,1/96)
 	else
 		turn_t=0
 	end
+ self.roll=mid(self.roll,-1/96,1/96)
 	local r=turn_t/8
 	local q=make_q(v_up,(1-r)*roll/128)
 	q_x_q(plyr.q,q)
@@ -1422,6 +1422,10 @@ function control_plyr(self)
 	
 	if pitch!=0 then
 	 self.pitch-=pitch/396
+	end
+ if plyr.boost>0 then
+	 self.pitch=mid(self.pitch,-0.005,0.005)
+	else
 	 self.pitch=mid(self.pitch,-1/256,1/256)
 	end
 	local q=make_q(v_right,self.pitch)
@@ -1482,6 +1486,7 @@ end
 local stars,hyper_space={},false
 local stars_ramp={1,5,6,7}
 function draw_stars()
+	hyper_space=plyr and plyr.boost>0
  for i=1,#stars do
 		local v=stars[i]
 		local x,y,z,w=cam:project(v[1],v[2],v[3])
@@ -1504,27 +1509,25 @@ function draw_stars()
 	end
 end
 
-local plane_m=make_m()
-local shield_spr=json_parse'[72,14,45,43,74]'
+local radar_cols,shield_spr=json_parse'[5,11,3]',json_parse'[72,14,45,43,74]'
+function draw_radar_dots(objs)
+	for _,a in pairs(objs) do
+		if a!=plyr then
+			local v=v_clone(a.pos)
+			m_inv_x_v(plyr.m,v)
+			local x,y,c=64+0.2*v[1],116-0.2*v[3],mid(flr(v[2]/4),-1,1)+2
+			pset(x,y,radar_cols[c])
+		end
+	end
+end
 
 function draw_radar()
  clip(54,105,22,22)
-	m_set_pos(plane_m,plyr.pos)
-	local g_cam=cam
-	cam=radar_cam
-	draw_model(all_models["plane"],plane_m)
-	cam=g_cam
-	local objs=game_mode==1 and ground_actors or actors
-	for _,a in pairs(objs) do
-		if a!=plyr then
-			local x,y,z,w=radar_cam:project(a.pos[1],a.pos[2],a.pos[3])
-			if z>0 then
-				pset(x,y,a.waypt and 10 or 8)
-   end
-		end
-	end
-	
+	draw_radar_dots(ground_actors)
+	draw_radar_dots(actors)
+	pset(64,116,7)		
 	clip()
+	
 	-- draw waypoints
 	for _,a in pairs(actors) do
 		if a.waypt then
@@ -1532,8 +1535,8 @@ function draw_radar()
  		if z>0 and w<4 then
  			x,y=mid(x,4,124),mid(y-2*w,4,124)
  			spr(41,x-4,y-4)
- 		 local d=flr(10*sqrt(sqr_dist(a.pos,plyr.pos)))/10
- 		 print(d.."nm",x-4,y-10,8)		
+ 		 --local d=flr(10*sqrt(sqr_dist(a.pos,plyr.pos)))/10
+ 		 --print(d.."nm",x-4,y-10,8)		
 			end
 		end
 	end
@@ -1552,7 +1555,7 @@ function draw_radar()
 				spr(40,x-w,y+w-8,1,1,false,true)
 				spr(40,x+w-8,y+w-8,1,1,true,true)
 				pal()
-				print(plyr.lock_t,x+w+2,y,8)
+				--print(plyr.lock_t,x+w+2,y,8)
 			end
 	end
 	
@@ -1568,7 +1571,8 @@ function draw_radar()
  if plyr.hp!=5 and time_t%4<2 then
 	 spr(shield_spr[max(plyr.hp+1,1)],39,104,2,2)
 	end
-	 
+
+ -- altitude	 
 	if game_mode==1 and plyr.pos[2]<10 then
 		local h=tostr(flr(10*plyr.pos[2])/10)
 		local dy=12*(plyr.pos[2]/10)
@@ -1682,8 +1686,8 @@ function game_screen:init()
 	time_t=0
 	cockpit_view=false
 	view_offset=v_clone(view_offsets[1])
-	actors,parts={},{}
-	npc_count=0
+	actors,parts,npc_count={},{},0
+	
 	plyr=make_plyr(0,0,0)
 
 	if game_mode==0 then
@@ -1921,12 +1925,12 @@ aaaaaaaa999998888888840000000000000000000000000000000004400000000000000000000000
 00001112222222110000000000000000448888888400000000000000000000000000000000a00a0000000000b0b07770b0b0000000b07770b000000000000000
 011122222222221210000000000000000048888888400000000000000000000000000000000aa00000000000b0b00000b0b0000000b00000b000000000000000
 1222222222221122210000000000000000044888888400000000000000000000000000000000000000000000b00bbbbb00b00000000bbbbb0000000000000000
-22222222211122222210000000000000000004488888444444444444444444440000000000000000000000000b0000000b000000000000000000000000000000
+222222222111222222100000000000000000044888884444444444444444444405030b0000000000000000000b0000000b000000000000000000000000000000
 222222211222222222210000000000000000488888888888888888888888888800000000000000000000000000bbbbbbb0000000000000000000000000000000
 22221112222222222222100000000000000488888888888888888888888888880000000000000000000000000000000000000000000000000000000000000000
-21112222222222222222211111111111115999999999999999999999999999990000000000000000000000000000000000000000000000000000000000000000
-1222222222222222222221222222222226aaaaaa6666666666666666666666660000000000000000000000000000000000000000000000000000000000000000
-222222222222222222221222222222226aaaaaa6aaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000
+21112222222222222222211111111111115999999999999999999999999999990000888000000000000000000000000000000000000000000000000000000000
+1222222222222222222221222222222226aaaaaa6666666666666666666666660000808000000000000000000000000000000000000000000000000000000000
+222222222222222222221222222222226aaaaaa6aaaaaaaaaaaaaaaaaaaaaaaa0000888000000000000000000000000000000000000000000000000000000000
 22222222222222222221221111111115999999599555555555555555555555550000000000000000000000000000000000000000000000000000000000000000
 0000000000000000000000000000004888888488488888888888888888888888000000000000000000bbbbbbb000000000000000000000000000000000000000
 000000000000000000000000000004888888488488888888888888888888888800000000000000000b0000000b00000000000000000000000000000000000000
