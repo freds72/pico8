@@ -436,6 +436,10 @@ end
 function m_set_pos(m,v)
 	m[13],m[14],m[15]=v[1],v[2],v[3]
 end
+-- returns foward vector from matrix
+function m_fwd(m)
+	return {m[9],m[10],m[11]}
+end
 
 -- models
 local all_models=json_parse'{"title":{"c":10},"deathstar":{"c":3},"turret":{"c":8,"r":1.1,"wp":{"sfx":1,"dmg":1,"dly":12,"pos":[[-0.2,0.8,0.65],[0.2,0.8,0.65]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"proton_wp":{"dmg":4,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":2,"dmg":1,"dly":8,"pos":[[2,1,1.6],[2,-1,1.6],[-2,-1,1.6],[-2,1,1.6]],"n":[]}},"tie":{"c":5,"r":1,"wp":{"sfx":1,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"junk1":{"c":3,"r":1.2},"junk2":{"c":3,"r":1.2},"generator":{"c":6,"r":2},"mfalcon":{"c":5},"vent":{"c":5,"r":1},"ywing":{"c":7,"r":1,"wp":{"sfx":1,"dmg":1,"dly":18,"pos":[[0.13,0,3.1],[-0.13,0,3.1]],"n":[[0,0,1],[0,0,1]]}}}'
@@ -693,7 +697,7 @@ end
 _g.die_actor=function(self)
 	make_part("blast",self.pos)
 	self.disabled=true
-	npc_count-=1
+	if (self.side==bad_side) npc_count-=1
 	del(actors,self)
 end
 
@@ -748,8 +752,7 @@ function avoid(self,pos,dist)
 	return v
 end
 function seek(self,r)
-	local fwd={self.m[9],self.m[10],self.m[11]}
-	local d2=r*r
+	local fwd=m_fwd(self.m)
 	for _,a in pairs(actors) do
 		if band(a.side,self.side)==0 and in_cone(self.pos,a.pos,fwd,0.5,r) then
 			 -- avoid loops
@@ -768,10 +771,10 @@ function wander(self)
 end
 
 _g.update_flying_npc=function(self)
-	-- if npc still in range
+	-- npc still in range?
 	if plyr and sqr_dist(self.pos,plyr.pos)>96*96 then
-		npc_count-=1
-		spawn_t=time_t+60+rnd(60)
+		if(self.side==bad_side) npc_count-=1
+		spawn_t=time_t+180+rnd(60)
 		return false
 	end
 	
@@ -779,7 +782,7 @@ _g.update_flying_npc=function(self)
 	local pos,m={0,0,1},self.m
 	m_x_v(m,pos)
 	-- forces
-	local can_fire,fwd=false,{m[9],m[10],m[11]}
+	local can_fire,fwd=false,m_fwd(m)
 	local force=v_clone(fwd)
 	v_scale(force,25)
 
@@ -850,14 +853,14 @@ _g.update_flying_npc=function(self)
 	self.m=m
 
 	-- fire solution?
-	local fwd={m[9],m[10],m[11]}
+	local fwd=m_fwd(m)
 	if self.model.wp and can_fire and self.fire_t<time_t and in_cone(self.pos,self.target.pos,fwd,0.92,24) then
  		-- must be in sight for some time
- 		if self.lock_t>0 then
- 			self.lock_t=24
+ 		--if self.lock_t>0 then
+ 		--	self.lock_t=24
  			self:fire(self.target.pos)
- 		end
- 		self.lock_t+=2
+ 		--end
+ 		--self.lock_t+=2
 	end
 	-- target memory
  -- self.lock_t=max(self.lock_t-4)
@@ -963,7 +966,7 @@ _g.make_proton=function(self,target)
 	make_part("flash",p,c)
 end
 
-local all_actors=json_parse'{"plyr":{"score":0,"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"acc":0.2,"model":"xwing","roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","die":"die_plyr"},"patrol":{"hp":800,"acc":0.2,"g":0,"overg_t":0,"rnd":{"model":["ywing","ywing","ywing"]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"tie":{"hp":4,"acc":0.2,"g":0,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"generator":{"waypt":true,"hp":2,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":2,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_vent"},"mfalcon":{"hp":8,"acc":0.4,"g":0,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"rnd":{"model":["junk1","junk1","junk2"]},"side":"bad_side","update":"update_junk","hit":"hit_npc","die":"die_actor"},"exit":{"pos":[0,64,0],"draw":"nop","update":"update_exit","waypt":true}}'
+local all_actors=json_parse'{"plyr":{"score":0,"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"acc":0.2,"model":"xwing","roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","die":"die_plyr"},"patrol":{"hp":800,"acc":0.2,"g":0,"overg_t":0,"rnd":{"model":["xwing","xwing","ywing"]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"tie":{"hp":4,"acc":0.2,"g":0,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"generator":{"waypt":true,"hp":2,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":2,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_vent"},"mfalcon":{"hp":8,"acc":0.4,"g":0,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"rnd":{"model":["junk1","junk1","junk2"]},"side":"bad_side","update":"update_junk","hit":"hit_npc","die":"die_actor"},"exit":{"pos":[0,64,0],"draw":"nop","update":"update_exit","waypt":true}}'
 		
 function make_plyr(x,y,z)
 	local p=clone(all_actors["plyr"],{
@@ -971,8 +974,7 @@ function make_plyr(x,y,z)
 		q=make_q(v_fwd,0),
 		hit=function(self,dmg)
 			if(self.disabled or self.safe_t>time_t) return
-			self.safe_t=time_t+8
-			self.energy=0
+			self.energy,self.safe_t=0,time_t+8
 			-- todo: remove
 			-- debug
 			--self.hp-=dmg
@@ -1014,7 +1016,6 @@ function make_plyr(x,y,z)
 end
 
 function make_npc(p,v,src)
-	npc_count+=1
 	_id+=1
 	-- instance
 	local a=clone(all_actors[src],{
@@ -1024,6 +1025,8 @@ function make_npc(p,v,src)
 		draw=draw_actor
 	})
 	a.model=all_models[a.model]
+	if(a.side==bad_side)	npc_count+=1
+
 	-- init orientation
 	local m=m_from_q(a.q)
 	m_set_pos(m,p)
@@ -1150,7 +1153,7 @@ end
 _g.draw_part=function(self,x,y,z,w)
 	if self.kind==0 then
 		local x1,y1,z1,w1=cam:project(self.pos[1]+self.u[1],self.pos[2]+self.u[2],self.pos[3]+self.u[3])
-		if z1>0 then
+		if z>0 and z1>0 then
 			line(x,y,x1,y1,time_t%2==0 and 7 or self.c)
 		end
 	elseif self.kind==1 then
@@ -1170,7 +1173,7 @@ _g.draw_part=function(self,x,y,z,w)
 	end
 end
 
-all_parts=json_parse'{"laser":{"rnd":{"dly":[80,110]},"acc":0.8,"kind":0,"update":"update_blt","draw":"draw_part","die":"die_blt"},"flash":{"kind":1,"rnd":{"r":[0.3,0.5],"dly":[6,10]},"dr":-0.05},"trail":{"kind":1,"rnd":{"r":[0.2,0.3],"dly":[12,24]},"dr":-0.02},"blast":{"frame":0,"sfx":3,"kind":1,"c":7,"rnd":{"r":[2.5,3],"dly":[8,12],"sparks":[6,12]},"dr":-0.04,"update":"update_blast"},"novae":{"frame":0,"sfx":3,"kind":1,"c":7,"r":30,"rnd":{"dly":[8,12],"sparks":[30,40]},"dr":-0.04,"update":"update_blast"},"proton":{"rnd":{"dly":[90,120]},"frame":0,"acc":0.6,"kind":3,"update":"update_proton","draw":"draw_part","die":"die_blt"},"spark":{"kind":6,"dr":0,"r":1,"rnd":{"dly":[24,38]}}}'
+all_parts=json_parse'{"laser":{"rnd":{"dly":[80,110]},"acc":1.6,"kind":0,"update":"update_blt","draw":"draw_part","die":"die_blt"},"flash":{"kind":1,"rnd":{"r":[0.3,0.5],"dly":[6,10]},"dr":-0.05},"trail":{"kind":1,"rnd":{"r":[0.2,0.3],"dly":[12,24]},"dr":-0.02},"blast":{"frame":0,"sfx":3,"kind":1,"c":7,"rnd":{"r":[2.5,3],"dly":[8,12],"sparks":[6,12]},"dr":-0.04,"update":"update_blast"},"novae":{"frame":0,"sfx":3,"kind":1,"c":7,"r":30,"rnd":{"dly":[8,12],"sparks":[30,40]},"dr":-0.04,"update":"update_blast"},"proton":{"rnd":{"dly":[90,120]},"frame":0,"acc":0.6,"kind":3,"update":"update_proton","draw":"draw_part","die":"die_blt"},"spark":{"kind":6,"dr":0,"r":1,"rnd":{"dly":[24,38]}}}'
 
 function make_part(part,p,c)
 	local pt=add(parts,clone(all_parts[part],{c=c or 7,pos=v_clone(p)}))
@@ -1373,7 +1376,7 @@ function find_closest_tgt(fwd,objs,min_dist,target)
 	for _,a in pairs(objs) do
 		if a.hp and band(a.side,plyr.side)==0 then
 			local d=sqr_dist(a.pos,plyr.pos)
-			if d>4 and d<min_dist and in_cone(plyr.pos,a.pos,fwd,0.996,64) then
+			if d>2 and d<min_dist and in_cone(plyr.pos,a.pos,fwd,0.993,64) then
 				min_dist,target=d,a
 			end
 			-- collision?
@@ -1386,7 +1389,7 @@ end
 
 function update_plyr_pos()
 	local m=m_from_q(plyr.q)
-	local fwd={m[9],m[10],m[11]}
+	local fwd=m_fwd(m)
 	v_add(plyr.pos,fwd,plyr.acc+plyr.boost)
 	if game_mode==1 then
 		plyr_ground_col(plyr.pos)
@@ -1469,9 +1472,20 @@ function control_plyr(self)
 		plyr.energy=0
 	end
 		
+	local pos=target and v_clone(target.pos) or nil
+	if target then
+		local d,wp_acc=sqr_dist(pos,plyr.pos),1.6
+		d/=wp_acc*wp_acc
+		local fwd=m_fwd(target.m)
+		v_add(pos,fwd,d*target.acc)
+		plyr.sight=pos
+	else
+		plyr.sight=nil
+	end
+
 	if btnp(5) then
 		plyr.energy=max(plyr.energy-0.1)
-		if(plyr.energy>0) plyr:fire(target and target.pos or nil)
+		if(plyr.energy>0) plyr:fire(pos)
 	end	
 end
 
@@ -1545,18 +1559,28 @@ function draw_radar()
 	if plyr.target then
 		local p=plyr.target.pos
 		local x,y,z,w=cam:project(p[1],p[2],p[3])
-			if z>0 then
-				if plyr.lock_t>30 then
-					pal(8,time_t%2==0 and 10 or 11)
-				end
-				w=max(w,4)
-				spr(40,x-w,y-w)
-				spr(40,x+w-8,y-w,1,1,true)
-				spr(40,x-w,y+w-8,1,1,false,true)
-				spr(40,x+w-8,y+w-8,1,1,true,true)
-				pal()
-				--print(plyr.lock_t,x+w+2,y,8)
+		if z>0 then
+			if plyr.lock_t>30 then
+				pal(8,time_t%2==0 and 10 or 11)
 			end
+			w=max(w,4)
+			spr(40,x-w,y-w)
+			spr(40,x+w-8,y-w,1,1,true)
+			spr(40,x-w,y+w-8,1,1,false,true)
+			spr(40,x+w-8,y+w-8,1,1,true,true)
+			pal()
+			--print(plyr.lock_t,x+w+2,y,8)
+		end
+		p=plyr.sight
+		if p then
+ 		local x1,y1,z1,w1=cam:project(p[1],p[2],p[3])
+ 		if z1>0 then
+ 			fillp(0xa5a5.1)
+ 			line(x,y,x1,y1,8)
+ 			fillp()
+ 			spr(56,x1-1,y1-1)
+ 		end
+		end
 	end
 	
 	-- todo: convert to sprite?
@@ -1722,7 +1746,7 @@ function game_screen:update()
 			-- default target: player
 			local target=plyr
 			-- friendly npc?
-			if rnd()>0.8 then
+			if rnd()>0.0 then
 				target=make_npc(p,v,"patrol")
 				make_msg("help")
 				v_add(p,v,10)
@@ -1924,13 +1948,13 @@ aaaaaaaa999998888888840000000000000000000000000000000004400000000000000000000000
 00000001112222100000000000000044888888884000000000000000000000000000000000a00a00000aa0000000070000000000000007000000000000000000
 00001112222222110000000000000000448888888400000000000000000000000000000000a00a0000000000b0b07770b0b0000000b07770b000000000000000
 011122222222221210000000000000000048888888400000000000000000000000000000000aa00000000000b0b00000b0b0000000b00000b000000000000000
-1222222222221122210000000000000000044888888400000000000000000000000000000000000000000000b00bbbbb00b00000000bbbbb0000000000000000
-222222222111222222100000000000000000044888884444444444444444444405030b0000000000000000000b0000000b000000000000000000000000000000
-222222211222222222210000000000000000488888888888888888888888888800000000000000000000000000bbbbbbb0000000000000000000000000000000
+1222222222221122210000000000000000044888888400000000000000000000888000000000000000000000b00bbbbb00b00000000bbbbb0000000000000000
+22222222211122222210000000000000000004488888444444444444444444448080000000000000000000000b0000000b000000000000000000000000000000
+222222211222222222210000000000000000488888888888888888888888888888800000000000000000000000bbbbbbb0000000000000000000000000000000
 22221112222222222222100000000000000488888888888888888888888888880000000000000000000000000000000000000000000000000000000000000000
-21112222222222222222211111111111115999999999999999999999999999990000888000000000000000000000000000000000000000000000000000000000
-1222222222222222222221222222222226aaaaaa6666666666666666666666660000808000000000000000000000000000000000000000000000000000000000
-222222222222222222221222222222226aaaaaa6aaaaaaaaaaaaaaaaaaaaaaaa0000888000000000000000000000000000000000000000000000000000000000
+21112222222222222222211111111111115999999999999999999999999999990000000000000000000000000000000000000000000000000000000000000000
+1222222222222222222221222222222226aaaaaa6666666666666666666666660000000000000000000000000000000000000000000000000000000000000000
+222222222222222222221222222222226aaaaaa6aaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000
 22222222222222222221221111111115999999599555555555555555555555550000000000000000000000000000000000000000000000000000000000000000
 0000000000000000000000000000004888888488488888888888888888888888000000000000000000bbbbbbb000000000000000000000000000000000000000
 000000000000000000000000000004888888488488888888888888888888888800000000000000000b0000000b00000000000000000000000000000000000000
@@ -1942,17 +1966,17 @@ aaaaaaaa999998888888840000000000000000000000000000000004400000000000000000000000
 00000000000000000000448888888848848884888888888888848848888888880000000000000000b0b00000b0b0000000056617016760000000000000000000
 00000000000000000044888888888488488884888888888888848844444444440000000000000000b00bbbbb00b0000000566610016776000000000000000000
 000000000000000004888888888848848888848888888888888484888888888800000000000000000b0000000b00000000566611116676000000000000000000
-0000000000000004488888888884884888888488888888888884848888888888000000000000000000bbbbbbb000000005611666666676600000000000000000
-00000000000004488888888888488488888884888888888888848488888888880000000000000000000000000000000005666666666666600000000000000000
-00000000000448888888888884884888888884888888888888848488888888880000000000000000000000000000000005611616111616600000000000000000
-10000000004888888888888848848888888884888888888888848488888888880000000000000000000000000000000005666616181616600000000000000000
-21000000448888888888888488488888888884888888888888848488888888880000000000000000000000000000000001550000005575100000000000000000
-22100044888888888888884884888888888884888888888888848488888888880000000000000000000000000000000001566166111666100000000000000000
-22214488888888888888848848888888888884888888888888848488888888880000000000000000000000000000000000000000000000000000000000000000
-22269888888888888888488488888888888884888888888888848488888888880000000000000000000000000000000000000000000000000000000000000000
+0000000000000004488888888884884888888488888888888884848888488888000000000000000000bbbbbbb000000005611666666676600000000000000000
+00000000000004488888888888488488888884888888888888848488884888880000000000000000000000000000000005666666666666600000000000000000
+00000000000448888888888884884888888884888888888888848488888488880000000000000000000000000000000005611616111616600000000000000000
+10000000004888888888888848848888888884888888888888848488888488880000000000000000000000000000000005666616181616600000000000000000
+21000000448888888888888488488888888884888888888888848488888848880000000000000000000000000000000001550000005575100000000000000000
+22100044888888888888884884888888888884888888888888848488888848880000000000000000000000000000000001566166111666100000000000000000
+22214488888888888888848848888888888884888888888888848488888884880000000000000000000000000000000000000000000000000000000000000000
+22269888888888888888488488888888888884888888888888848488888884880000000000000000000000000000000000000000000000000000000000000000
 266aa988888888888884884888888888888884888888888888848488888888880000000000000000000000000000000000000000000000000000000000000000
 6aaaaa98888888888848848888888888888884888888888888848488888888880000000000000000000000000000000000000000000000000000000000000000
-aaaaaaa9888888888488488888888888888888444444444444488488888888880000000000000000000000000000000000000000000000000000000000000000
+aaaaaaa9888888888488488888888888888888444444444444488444888888880000000000000000000000000000000000000000000000000000000000000000
 aaaaaaaa988888884884888888888888888888888888888888888488888888880000000000000000000000000000000000000000000000000000000000000000
 aaaaaaaaa98888848848884444444444444444444444444888888488888888880000044499400000000000000000000000000000000000000000000000000000
 aaaaaaaaaa9888488488848888888888888888888888888488888488888888880000444994440000000000000000000000000000000000000000000000000000
