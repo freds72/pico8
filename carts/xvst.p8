@@ -7,7 +7,7 @@ __lua__
 -- game globals
 local time_t,time_dt=0,0
 local good_side,bad_side,any_side,no_side=0x1,0x2,0x0,0x3
-local before_update,after_draw={},{}
+local before_update={}
 
 -- register json context here
 local _tok={
@@ -95,10 +95,9 @@ end
 
 -- false: chase
 -- true: cockpit
-local cockpit_view,cam,radar_cam=false
+local cockpit_view,cam=false
 -- player
 local plyr_playing,plyr=true
-local spawn_t=0
 local actors,ground_actors,parts,all_parts={},{},{}
 -- ground constants
 local ground_scale,ground_colors=4,{1,5,6}
@@ -118,6 +117,7 @@ function nop() return true end
 function futures_update(futures)
 	futures=futures or before_update
 	for _,f in pairs(futures) do
+		--assert(coresume(f))
 		if not coresume(f) then
 			del(futures,f)
 		end
@@ -127,8 +127,7 @@ function futures_add(fn,futures)
 	return add(futures or before_update,cocreate(fn))
 end
 function wait_async(t,fn)
-	fn=fn or nop
-	local i=1
+	local i,fn=1,fn or nop
 	while i<=t do
 		if(not fn(i)) return
 		i+=time_dt
@@ -436,6 +435,10 @@ end
 -- returns foward vector from matrix
 function m_fwd(m)
 	return {m[9],m[10],m[11]}
+end
+-- returns up vector from matrix
+function m_up(m)
+	return {m[5],m[6],m[7]}
 end
 
 -- models
@@ -766,7 +769,8 @@ _g.update_flying_npc=function(self)
 	-- forces
 	local can_fire,fwd=false,m_fwd(m)
 	local force=v_clone(fwd)
-	v_scale(force,25)
+	-- weight move ahead
+	v_scale(force,10)
 
 	if self.target and not self.target.disabled then
 		-- friendly: formation flight
@@ -791,9 +795,8 @@ _g.update_flying_npc=function(self)
 		end
 		v_add(force,follow(pos,self,self.wander))
 	end
-	local avf=avoid(self,pos,8)
 	-- weight avoid more than follow
-	v_add(force,avf,4)
+	v_add(force,avoid(self,pos,8),5)
 
 	-- clamp acceleration
 	v_clamp(force,1.2*self.acc)
@@ -823,10 +826,9 @@ _g.update_flying_npc=function(self)
 	self.overg_t=mid(self.overg_t*0.98,0,35)
 	
  -- try to align w/ target
-	local up={m[5],m[6],m[7]}
+	local up=m_up(m)
 	if self.target then
-		local up_target={self.target.m[5],self.target.m[6],self.target.m[7]}
-		v_add(up,up_target,0.2)
+		v_add(up,m_up(self.target.m),0.2)
 	end
 	m=make_m_toward(pos,up)
 	-- move actor using force
@@ -976,14 +978,13 @@ function make_plyr(x,y,z)
 			plyr.roll*=0.9
 			plyr.pitch*=0.9
 			plyr.boost*=0.9
-		
-			-- update radar cam
-			radar_cam:track(m_x_xyz(plyr.m,0,12,-24),plyr.q)
-						
 			return true
 		end
 	})
 	p.model=all_models[p.model]
+	local m=m_from_q(p.q)
+	m_set_pos(m,p.pos)
+	p.m=m
 	add(actors,p)
 	return p
 end
@@ -1179,9 +1180,13 @@ end
 function draw_ground(self)
 	if(cam.pos[2]<0) return
 	
-	local scale=4*mid(flr(cam.pos[2]/32+0.5),1,4)
-	if scale==16 then
-		draw_deathstar(12/(cam.pos[2]/24))
+	local scale=4*max(flr(cam.pos[2]/32+0.5),1)
+	if scale>16 then
+		draw_deathstar(-6)
+		draw_stars()
+		return
+	elseif scale==16 then
+		draw_deathstar(-12/(cam.pos[2]/24))
 		draw_stars()
 		return
 	end
@@ -1273,7 +1278,7 @@ function init_trench(n)
 end
 
 -- radio message
-local all_msgs=json_parse'{"attack1":{"spr":12,"title":"ackbar","txt":"clear tie squadrons","dly":300,"can_skip":true},"ground1":{"spr":12,"title":"ackbar","txt":"destroy shield\ngenerators","dly":300,"can_skip":true},"victory1":{"spr":104,"title":"han solo","txt":"get out of here son.\nquick!","dly":300},"victory2":{"spr":12,"title":"ackbar","txt":"victory!","dly":300},"victory3":{"spr":10,"lipsc":8,"title":"leia","txt":"the rebellion thanks you\nget to the base","dly":300,"can_skip":true},"help":{"spr":10,"rnd":{"title":["red leader","alpha","delta wing"]},"txt":"help!","dly":300},"low_hp":{"spr":76,"title":"r2d2","txt":"..--..-..","dly":120,"sfx":4,"rnd":{"repeat_dly":[600,900]}}}'
+local all_msgs=json_parse'{"attack1":{"spr":12,"title":"ackbar","txt":"clear tie squadrons","dly":300},"ground1":{"spr":12,"title":"ackbar","txt":"destroy shield\ngenerators","dly":300},"ground2":{"spr":12,"title":"ackbar","txt":"bomb vent","dly":300},"victory1":{"spr":104,"title":"han solo","txt":"get out of here son.\nquick!","dly":300},"victory2":{"spr":12,"title":"ackbar","txt":"victory!","dly":300},"victory3":{"spr":10,"title":"leia","txt":"the rebellion thanks you\nget to the base","dly":300},"help":{"spr":10,"rnd":{"title":["red leader","alpha","delta wing"]},"txt":"help!","dly":300},"low_hp":{"spr":76,"title":"r2d2","txt":"..--..-..","dly":120,"sfx":4,"rnd":{"repeat_dly":[600,900]}}}'
 local cur_msg
 function make_msg(msg)
 	local m=clone(all_msgs[msg])
@@ -1283,9 +1288,8 @@ function make_msg(msg)
 end
 
 function update_msg()
-	if cur_msg then
-		if(cur_msg.t<time_t) cur_msg=nil return
-		if(cur_msg.can_skip and btnp(4) or btnp(5)) cur_msg=nil return
+	if cur_msg and cur_msg.t<time_t then
+		cur_msg=nil 
 	end
 end
 function draw_msg()
@@ -1301,16 +1305,6 @@ function draw_msg()
 		rectfill(33,y,49,y+23,0)
 		fillp()
  end
-	
-	-- lips animation
-	local c=cur_msg.lipsc or 0
-	if time_t%64>50 then
-		rectfill(40,y+13,41,y+14,c)
-	elseif time_t%64>30 then
-		line(40,y+13,41,y+13,c)
- 	elseif time_t%64>15 then
-		line(39,y+13,42,y+13,c)
- 	end
 end
 
 local turn_t=0
@@ -1515,7 +1509,6 @@ function draw_radar()
  clip(54,105,22,22)
 	draw_radar_dots(ground_actors)
 	draw_radar_dots(actors)
-	pset(64,116,7)		
 	clip()
 	
 	-- draw waypoints
@@ -1562,7 +1555,7 @@ function draw_radar()
 		spr(shield_spr[max(plyr.hp+1,1)],39,104,2,2)
 	end
 
-	-- altitude	 
+	-- altitude
 	if plyr.pos[2]<10 then
 		local h=tostr(flr(10*plyr.pos[2])/10)
 		local dy=12*(plyr.pos[2]/10)
@@ -1647,7 +1640,7 @@ _g.create_generator_group=function()
 		make_npc({-256,7,-256},v_up,"generator"),
 		make_npc({256,7,-256},v_up,"generator")}
 end
-_g.create_vent=function()
+_g.create_vent_group=function()
 	return {make_npc({0,-6,128},v_up,"vent")}
 end
 
@@ -1663,7 +1656,7 @@ _g.create_flying_group=function()
 	end
 	-- spawn new enemy
 	local npcs={}
-	for i=1,flr(2+rnd(2)) do
+	for i=1,1+rnd(3) do
 		local a=make_npc(p,v,"tie")
 		a.target=target
 		v_add(p,v,10)
@@ -1672,35 +1665,34 @@ _g.create_flying_group=function()
 	return npcs
 end
 
-local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","dly":"180","stage":5},{"msg":"ground1","init":"create_generator_group","dly":"180","stage":0}]'
-local cur_mission_i,cur_mission=0
-function next_mission()
- local new_mission=true
- -- repeat mission?
-	if cur_mission then
-		cur_mission.stage-=1
-		new_mission=cur_mission.stage<=0
-	end
-	-- move to next mission?
-	if new_mission then
-		cur_mission_i+=1
-		cur_mission=clone(all_missions[cur_mission_i])
-		if not cur_mission then
-			-- game over 
+local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","dly":"180","stage":5},{"msg":"ground1","init":"create_generator_group","dly":"180"},{"msg":"ground2","init":"create_vent_group","dly":"180"}]'
+function next_mission_async()
+	for i=1,#all_missions do
+		local m=all_missions[i]
+		if m.msg then
+			local msg=make_msg(m.msg)
+			wait_async(msg.dly)
 		end
-		if cur_mission.msg then
-			make_msg(cur_mission.msg)
+		for k=1,(m.stage or 1) do
+			-- create mission
+			local npcs=0
+			-- die hook
+			local aa=m.init()
+			for _,a in pairs(aa) do
+				npcs+=1
+				a.on_die=function()
+					npcs-=1
+				end
+			end
+			-- wait kills
+			while npcs>0 do
+				yield()
+			end
+			-- pause?
+			wait_async(m.dly)
 		end
 	end
-	-- create mission
-	local npcs=cur_mission.init()
-	-- die hook
-	for _,a in pairs(npcs) do
-		a.on_die=function(self)
-			cur_mission.npcs-=1
-		end
-	end
-	cur_mission.npcs=#npcs
+	-- todo: game over success
 end
 
 -- play loop
@@ -1713,6 +1705,9 @@ function game_screen:init()
 
 	init_ground()
 	init_trench(8)
+	
+	-- init mission engine
+	futures_add(next_mission_async)
 end
 
 local low_hp_t=0
@@ -1731,9 +1726,6 @@ function game_screen:update()
 		end
 	end
 	
-	if not cur_mission or cur_mission.npcs==0 then
-		next_mission()
-	end
 	update_ground()
 
 	zbuf_filter(actors)
@@ -1741,7 +1733,6 @@ function game_screen:update()
 	
 	-- must be done after update loop
 	cam:update()
-	radar_cam:update()
 end
 
 function game_screen:draw()
@@ -1797,10 +1788,6 @@ function game_screen:draw()
   	draw_radar()
   end
  end
- 
- if cur_mission then
- 	print(cur_mission.npcs,2,2,7)
- end
 end
 
 function _update60()
@@ -1817,8 +1804,6 @@ function _draw()
 	cls(0)
 
 	cur_screen:draw()
-	
-	futures_update(after_draw)
 
 	time_dt=0
 	
@@ -1845,7 +1830,6 @@ function _init()
 	end
 		
 	cam=make_cam(64)
-	radar_cam=make_cam(16,64,108)
 	
 	cur_screen=start_screen
 end
