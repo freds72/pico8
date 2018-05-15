@@ -146,10 +146,11 @@ function screen_update()
 	end
 	camera(shkx,shky)
 end
+-- volumetric sound
 -- zbuffer (kind of)
-local drawables={}
+local soundables,drawables
 function zbuf_clear()
-	drawables={}
+	soundables,drawables={},{}
 end
 function zbuf_draw()
 	local objs={}
@@ -168,12 +169,30 @@ function zbuf_draw()
 		d.obj:draw(d.x,d.y,d.z,d.w)
 	end
 end
+function soundbuf_play()
+	local objs={}
+	for _,s in pairs(soundables) do
+		add(objs,{sfx=s.sfx,key=sqrt_dist(cam.pos,s.pos)})
+	end
+	-- dist-sorting
+	sort(objs)
+	-- play first 3 closest emitters
+	for i=1,min(#objs,3) do
+		local base_sfx=45+i
+		-- copy sound
+		
+		-- set volume
+		-- play
+		sfx(base_sfx)
+	end
+end
 function zbuf_filter(array)
 	for _,a in pairs(array) do
 		if not a:update() then
 			del(array,a)
 		else
 			add(drawables,a)
+			if(a.sfx) add(soundables,a)
 		end
 	end
 end
