@@ -149,7 +149,7 @@ end
 -- volumetric sound
 -- zbuffer (kind of)
 local soundables,drawables
-local all_vol=json_parse'[0x0000.0000,0x0100.0100,0x0200.0200,0x0300.0300,0x0400.0400,0x0500.0500,0x0600.0600,0x0700.0700]'
+local all_vol=json_parse'[0x700.700,0x600.0600,0x500.0500,0x400.0400,0x300.0300,0x200.0200,0x100.0100,0]'
 function zbuf_clear()
 	soundables,drawables={},{}
 end
@@ -170,31 +170,32 @@ function zbuf_draw()
 		d.obj:draw(d.x,d.y,d.z,d.w)
 	end
 end
-function soundbuf_play()
+function zbuf_play()
+	-- let current sfx play
+	if(time_t%8>0) return
+	
 	local objs={}
-	-- sort be closest distance
+	-- sort by closest distance
 	for _,s in pairs(soundables) do
-		add(objs,{sfx=s.sfx,key=-sqr_dist(cam.pos,s.pos)})
+		add(objs,{obj=s,sfx=s.sfx,key=-sqr_dist(cam.pos,s.pos)})
 	end
 	-- dist-sorting
 	sort(objs)
 	-- play first 3 closest emitters
-	local channel=0
-	for i=1,min(#objs,3) do
-		local s=objs[i]
+	for i=0,min(#objs,3)-1 do
+		local s=objs[i+1]
 		-- set volume
-		local vol=flr(lerp(0,7,1-smoothstep(-s.key/32*32)))+1
-		-- 4 bytes per cycle (eg 2 notes)
+		local vol=mid(flr(-s.key/96*96+0.5),1,#all_vol)
+		-- 2 notes/loop (eg 4 bytes)
 		-- 8 notes total
-		for k=0,3 do
-			-- copy sound		
- 			local pair=peek4(0x3200+68*s.sfx+4*k)
+		for k=0,12,4 do
+			-- copy sound
+ 			local pair=peek4(0x3200+68*s.sfx+k)
 	 		pair=bor(band(pair,0xf1ff.f1ff),all_vol[vol])
- 			poke4(0x3200+68*16+4*k+channel*16,pair)
+ 			poke4(0x3200+68*16+k+i*16,pair)
  		end
  		-- play the modified segment
- 		sfx(16,channel+1,channel*8,channel*8+8)
- 		channel+=1
+ 		sfx(16,i+1,i*8,i*8+8)
 	end
 end
 function zbuf_filter(array)
@@ -944,10 +945,10 @@ _g.make_laser=function(self,target)
 			u=v,
 			c=c,
 			side=self.side,
-			dmg=wp.dmg}))
+			dmg=wp.dmg,
+			sfx=wp.sfx}))
 	pt.t=time_t+pt.dly
 	self.fire_t=time_t+wp.dly
-	if (wp.sfx) sfx(wp.sfx)
 	make_part("flash",p,c)
 	return true
 end
@@ -1769,8 +1770,8 @@ function game_screen:update()
 	-- must be done after update loop
 	cam:update()
 	
-	soundbuf_play()
-	
+	-- 3d sound rendering
+	zbuf_play()
 end
 
 function game_screen:draw()
