@@ -30,5 +30,18 @@ for blend_file in file_list:
         os.remove(path)
 
 # pico-8 map format
-s = re.sub("(.{256})", "\\1\n", s, 0, re.DOTALL)
-print(s)
+# first 4096 bytes -> gfx (shared w/ map)
+# second 4096 bytes -> map
+tmp=s[:8192]
+print("__gfx__")
+# swap bytes
+gfx_data = ""
+for i in range(0,len(tmp),2):
+    gfx_data = gfx_data + tmp[i+1:i+2] + tmp[i:i+1]
+print(re.sub("(.{128})", "\\1\n", gfx_data, 0, re.DOTALL))
+
+map_data=s[8192:]
+if len(map_data)>0:
+    print("__map__")
+    print(re.sub("(.{256})", "\\1\n", map_data, 0, re.DOTALL))
+
