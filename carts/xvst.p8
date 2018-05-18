@@ -179,13 +179,6 @@ function zbuf_draw()
 		local d=objs[i]
 		d.obj:draw(d.x,d.y,d.z,d.w)
 	end
-	
-	local y=2
-	for i=0,min(#soundables,3)-1 do
-		local s=soundables[i+1]
-		print(i..":"..s.sfx,2,y,7)
-		y+=8
-	end
 end
 function zbuf_play()
 	-- let current sfx play
@@ -198,22 +191,23 @@ function zbuf_play()
 	end
 	-- dist-sorting
 	sort(objs)
-	soundables=objs
 	-- play first 3 closest emitters
 	for i=0,min(#objs,3)-1 do
 		local s=objs[i+1]
 		-- set volume
 		local vol=mid(flr(-s.key/512+0.5),1,#all_vol)
-		s.obj.vol=vol
-		-- 2 notes/loop (eg 4 bytes)
-		-- 8 notes total
-		for k=0,12,4 do
-			 -- copy sound
-	 	local pair=bor(band(peek4(0x3200+68*s.sfx+k),0xf1ff.f1ff),all_vol[vol])
- 		poke4(0x3200+68*16+k+i*16,pair)
- 	end
- 	-- play the modified segment
- 	sfx(16,i+1,i*8,i*8+8)
+		-- muted?
+		if vol>1 then
+			-- 2 notes/loop (eg 4 bytes)
+			-- 8 notes total
+			for k=0,12,4 do
+				 -- copy sound
+		 	local pair=bor(band(peek4(0x3200+68*s.sfx+k),0xf1ff.f1ff),all_vol[vol])
+	 		poke4(0x3200+68*16+k+i*16,pair)
+	 	end
+	 	-- play the modified segment
+	 	sfx(16,i+1,i*8,i*8+8)
+	 end
 	end
 end
 function zbuf_filter(array)
@@ -997,7 +991,7 @@ local all_actors=json_parse'{"plyr":{"hp":5,"safe_t":0,"energy":1,"energy_t":0,"
 function make_plyr(x,y,z)
 	local p=clone(all_actors["plyr"],{
 		pos={x,y,z},
-		q=make_q(v_right,0.75),
+		q=make_q(v_right,0.25),
 		hit=function(self,dmg)
 			if(self.disabled or self.safe_t>time_t) return
 			self.energy,self.safe_t=0,time_t+8
@@ -1223,20 +1217,16 @@ function make_part(part,p,c)
 end
 
 function draw_ground(self)
-	if(cam.pos[2]<0) return
-	
-	local scale=4*max(flr(cam.pos[2]/32+0.5),1)
-	if scale>16 then
-		draw_deathstar(-6)
-		draw_stars()
-		return
-	elseif scale==16 then
-		draw_deathstar(-12/(cam.pos[2]/24))
+	local cy=cam.pos[2]
+	if(cy<0) return
+
+	if cy>128 then
+		cy-=64
+		draw_deathstar(-min(6,cy/64))
 		draw_stars()
 		return
 	end
-	--scale*=scale
-	local v={}
+	local scale=4*max(flr(cy/32+0.5),1)
 	local x0,z0=cam.pos[1],cam.pos[3]
 	local dx,dy=x0%scale,z0%scale
 	
@@ -1416,6 +1406,7 @@ function find_closest_tgt(fwd,objs,min_dist,target)
 			end
 			-- collision?
 			local r=plyr.model.r+a.model.r
+			-- todo: sound
 			if(d<r*r) plyr:hit(1)
 		end
 	end
@@ -1514,15 +1505,13 @@ end
 -- deathstar
 local ds_m=make_m()
 function draw_deathstar(offset)
-	offset=offset or -6
 	m_set_pos(ds_m,{cam.pos[1],offset+cam.pos[2],cam.pos[3]})
 	draw_model(all_models.deathstar,ds_m)
 end
 
-local stars,hyper_space={},false
-local stars_ramp={1,5,6,7}
+local stars,stars_ramp={},{1,5,6,7}
 function draw_stars()
-	hyper_space=plyr and plyr.boost>0
+	local hyper_space=plyr and plyr.boost>0
  for i=1,#stars do
 		local v=stars[i]
 		local x,y,z,w=cam:project(v[1],v[2],v[3])
@@ -1751,9 +1740,9 @@ end
 function game_screen:init()
 	time_t,cockpit_view,view_offset,actors,parts=0,false,v_clone(view_offsets[2]),{},{}
 	
-	make_npc({0,120,0},v_right,"patrol")
+	--make_npc({0,120,0},v_right,"patrol")
 	
-	plyr=make_plyr(0,128,0)
+	plyr=make_plyr(0,300,0)
 	-- move to cockpit view
 	set_view(true)
 
@@ -1844,6 +1833,7 @@ function game_screen:draw()
   	draw_radar()
   end
  end
+ print("x:"..plyr.pos[1].."\ny:"..plyr.pos[2].."\nz:"..plyr.pos[3],2,2,7)
 end
 
 function _update60()
