@@ -492,15 +492,15 @@ local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b01111111110
 function draw_actor(self,x,y,z,w)
 	local s=""
 	local recover=false
-	if self.overg_t>0.5 then
-		s,recover=s.."⧗",false
+	if self.overg_t>=8 then
+		s,recover=s.."⧗",true
 	end
 	if self.target then
 		s=s.."☉"
 	elseif not self.target then
 		s=s.."?"
 	end
-	s=s.." "..(flr(10*self.g)/10).."/"..flr(10*self.overg_t)/10
+	s=s.." "..(flr(10*self.g)/10).."["..(flr(10*self.overg_t)/10).."]"
 	print(s,x-8,y-w-8,recover and 8 or 11)
 
 	-- distance culling
@@ -817,24 +817,22 @@ _g.update_flying_npc=function(self)
 	m_x_v(m,pos)
 	-- forces
 	local can_fire,fwd=false,m_fwd(m)
-	local force={0,0,0}--v_clone(fwd)
+	local force=v_clone(fwd)
 	-- weight move ahead
-	-- v_scale(force,10)
+	v_scale(force,5)
 
-	if self.overg_t<0.5 then
-		if self.target and not self.target.disabled then
-			-- friendly: formation flight
-			local target_pos={0,-4,20}
-			-- enemy: get in sight
-			if band(self.target.side,self.side)==0 then
-				can_fire,target_pos=true,{0,0,-15}
-			end
-			-- todo: diffent class of enemies
-			v_add(force,follow(pos,self.target,target_pos))
-		else
-			-- search for target
-			self.target=seek(self,24)
+	if self.target and not self.target.disabled then
+		-- friendly: formation flight
+		local target_pos={0,-4,20}
+		-- enemy: get in sight
+		if band(self.target.side,self.side)==0 then
+			can_fire,target_pos=true,{0,0,-15}
 		end
+		-- todo: diffent class of enemies
+		v_add(force,follow(pos,self.target,target_pos),lerp(1,0,smoothstep(self.overg_t/16)))
+	else
+		-- search for target
+		self.target=seek(self,24)
 	end
 	-- nothing to track?
 	if not self.target then
@@ -849,7 +847,7 @@ _g.update_flying_npc=function(self)
 	v_add(force,avoid(self,pos,8),2)
 
 	-- clamp acceleration
-	v_clamp(force,0.5)
+	v_clamp(force,self.acc)
 	
 	-- update orientation
 	v_add(pos,force)
@@ -863,7 +861,7 @@ _g.update_flying_npc=function(self)
 	end
 	m=make_m_toward(pos,up)
 	-- move actor using force
-	-- v_add(self.pos,force)
+	--v_add(self.pos,force)
 	local fwd=m_fwd(m)
 	v_add(self.pos,fwd,self.acc)
 	m_set_pos(m,self.pos)
@@ -872,11 +870,11 @@ _g.update_flying_npc=function(self)
 	v_normz(force)
 	self.g+=1-abs(v_dot(force,fwd))
 	
-	if self.g>0.5 then
-		self.overg_t+=1
+	if self.g>0.2 then
+		self.overg_t=min(self.overg_t+1,16)
 	end
 	self.g*=0.98
-	self.overg_t*=0.975
+	self.overg_t*=0.95
 
 	-- fire solution?
 	if self.model.wp and can_fire and self.fire_t<time_t and in_cone(self.pos,self.target.pos,fwd,0.92,24) then
