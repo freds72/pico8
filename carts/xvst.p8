@@ -492,7 +492,7 @@ local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b01111111110
 function draw_actor(self,x,y,z,w)
 	local s=""
 	local recover=false
-	if self.overg_t>=8 then
+	if self.overg_t>=32 then
 		s,recover=s.."⧗",true
 	end
 	if self.target then
@@ -729,7 +729,7 @@ _g.die_actor=function(self)
 	self.disabled=true
 	del(actors,self)
 	-- notifies listeners (if any)
-	if(self.on_die) self:on_die()
+	if(self.on_die) self:on_die(true)
 end
 
 _g.update_exit=function(self)
@@ -829,7 +829,7 @@ _g.update_flying_npc=function(self)
 			can_fire,target_pos=true,{0,0,-15}
 		end
 		-- todo: diffent class of enemies
-		v_add(force,follow(pos,self.target,target_pos),lerp(1,0,smoothstep(self.overg_t/16)))
+		v_add(force,follow(pos,self.target,target_pos),lerp(1,0,smoothstep(self.overg_t/32)))
 	else
 		-- search for target
 		self.target=seek(self,24)
@@ -868,12 +868,11 @@ _g.update_flying_npc=function(self)
 	self.m=m
 
 	v_normz(force)
-	self.g+=1-abs(v_dot(force,fwd))
+	self.g=1-abs(v_dot(force,fwd))
 	
 	if self.g>0.2 then
-		self.overg_t=min(self.overg_t+1,16)
+		self.overg_t=min(self.overg_t+1,64)
 	end
-	self.g*=0.98
 	self.overg_t*=0.95
 
 	-- fire solution?
@@ -987,7 +986,7 @@ _g.make_proton=function(self,target)
 	make_part("flash",p,c)
 end
 
-local all_actors=json_parse'{"plyr":{"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"acc":0.2,"model":"xwing","roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","die":"die_plyr"},"patrol":{"hp":800,"acc":0.2,"g":0,"overg_t":0,"rnd":{"model":["xwing","xwing","ywing"]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"tie":{"sfx":5,"hp":4,"acc":0.4,"g":0,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"generator":{"waypt":true,"hp":2,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":2,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_vent"},"mfalcon":{"hp":8,"acc":0.4,"g":0,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","local_t":0,"pause_t":0,"fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"rnd":{"model":["junk1","junk1","junk2"]},"side":"bad_side","update":"update_junk","hit":"hit_npc","die":"die_actor"},"exit":{"pos":[0,64,0],"draw":"nop","update":"update_exit","waypt":true}}'
+local all_actors=json_parse'{"plyr":{"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"acc":0.2,"model":"xwing","roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","die":"die_plyr"},"patrol":{"hp":10,"acc":0.2,"g":0,"overg_t":0,"rnd":{"model":["xwing","xwing","ywing"]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"tie":{"sfx":5,"hp":4,"acc":0.4,"g":0,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"generator":{"waypt":true,"hp":2,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":2,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_vent"},"mfalcon":{"hp":8,"acc":0.4,"g":0,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","local_t":0,"pause_t":0,"fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"rnd":{"model":["junk1","junk1","junk2"]},"side":"bad_side","update":"update_junk","hit":"hit_npc","die":"die_actor"},"exit":{"pos":[0,64,0],"draw":"nop","update":"update_exit","waypt":true}}'
 		
 function make_plyr(x,y,z)
 	local p=clone(all_actors["plyr"],{
@@ -1323,36 +1322,6 @@ function update_ground()
 	end
 end
 
--- radio message
-local all_msgs=json_parse'{"attack1":{"spr":12,"title":"ackbar","txt":"clear tie squadrons","dly":300},"ground1":{"spr":12,"title":"ackbar","txt":"destroy shield\ngenerators","dly":300},"ground2":{"spr":12,"title":"ackbar","txt":"bomb vent","dly":300},"victory1":{"spr":104,"title":"han solo","txt":"get out of here son.\nquick!","dly":300},"victory2":{"spr":12,"title":"ackbar","txt":"victory!","dly":300},"victory3":{"spr":10,"title":"leia","txt":"the rebellion thanks you\nget to the base","dly":300},"help":{"spr":10,"rnd":{"title":["red leader","alpha","delta wing"]},"txt":"help!","dly":300},"low_hp":{"spr":76,"title":"r2d2","txt":"..--..-..","dly":120,"sfx":4,"rnd":{"repeat_dly":[600,900]}}}'
-local cur_msg
-function make_msg(msg)
-	local m=clone(all_msgs[msg])
-	m.t=time_t+m.dly
-	if (m.sfx) sfx(m.sfx)
-	cur_msg=m
-	return m
-end
-
-function update_msg()
-	if cur_msg and cur_msg.t<time_t then
-		cur_msg=nil 
-	end
-end
-function draw_msg()
-	local y=2
-	rectfill(32,y,49,y+18,0)
-	rect(32,y,49,y+18,1)
-	spr(cur_msg.spr,33,y+1,2,2)
-	print(cur_msg.title,51,y,9)
-	print(cur_msg.txt,51,y+7,7)
-	-- cheap comms effect
-	if time_t%4>2 then
-		fillp(0b1011000011110100.1)
-		rectfill(33,y,49,y+23,0)
-		fillp()
- end
-end
 
 local turn_t=0
 
@@ -1679,12 +1648,13 @@ function gameover_screen:draw()
 end
 
 -- mission start routines
+local all_generator_pos=json_parse'[[256,7,256],[-256,7,256],[-256,7,-256],[256,7,-256]]'
 _g.create_generator_group=function()
-	return {
-		make_npc({256,7,256},v_up,"generator"),
-		make_npc({-256,7,256},v_up,"generator"),
-		make_npc({-256,7,-256},v_up,"generator"),
-		make_npc({256,7,-256},v_up,"generator")}
+	local npcs={}
+	for _,p in pairs(all_generator_pos) do
+		add(npcs,make_npc(p,v_up,"generator"))
+	end
+	return nocs
 end
 _g.create_vent_group=function()
 	return {make_npc({0,-6,128},v_up,"vent")}
@@ -1711,7 +1681,7 @@ _g.create_flying_group=function()
 	return npcs
 end
 
-local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","dly":180,"stage":5},{"msg":"ground1","init":"create_generator_group","dly":180},{"msg":"ground2","init":"create_vent_group","dly":180}]'
+local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","rnd_dly":180,"target":5},{"msg":"ground1","init":"create_generator_group","dly":180,"target":4},{"msg":"ground2","init":"create_vent_group","dly":180,"target":1}]'
 function next_mission_async()
 	for i=1,#all_missions do
 		local m=all_missions[i]
@@ -1719,15 +1689,16 @@ function next_mission_async()
 			local msg=make_msg(m.msg)
 			wait_async(msg.dly)
 		end
-		local npcs=0
-		for k=1,m.stage or 1 do
+		local kills,target=0,m.target or 0
+		repeat
 			-- create mission
 			-- die hook
-			local aa=m.init()
+			local aa,npcs=m.init(),0
 			for _,a in pairs(aa) do
 				npcs+=1
-				a.on_die=function()
+				a.on_die=function(killed)
 					npcs-=1
+					if( killed) kills+=1
 				end
 			end
 			-- todo: exit when gameover
@@ -1736,8 +1707,8 @@ function next_mission_async()
 				yield()
 			end
 			-- pause?
-			wait_async(m.dly)
-		end
+			wait_async(m.rnd_dly and rnd(m.rnd_dly) or m.dly)
+		until kills<target
 	end
 	-- todo: game over success
 end
@@ -1753,24 +1724,17 @@ function game_screen:init()
 
 	init_ground()
 	
-	-- init mission engine
+	-- init mission wait loop
 	futures_add(next_mission_async)
 end
 
-local low_hp_t=0
 function game_screen:update()
 	zbuf_clear()
 	
-	if cur_msg then
-		update_msg()
-	end
+	update_msg()
 	
 	if plyr then
 		control_plyr(plyr)
-		if plyr.hp<2 and low_hp_t<time_t and rnd()>0.95 then
-			make_msg("low_hp")
-			low_hp_t=time_t+cur_msg.repeat_dly
-		end
 	end
 	
 	update_ground()
@@ -1790,10 +1754,7 @@ function game_screen:draw()
 	
 	zbuf_draw()
 	
-	-- msg
-	if cur_msg then
-		draw_msg()
-	end
+	draw_msg()
 		
 	-- cam modes
 	if plyr then
@@ -1885,6 +1846,46 @@ function _init()
 	cam=make_cam(64)
 	
 	cur_screen=start_screen
+end
+
+-->8
+-- radio messages
+local all_msgs=json_parse'{"attack1":{"spr":12,"title":"ackbar","txt":"clear tie squadrons","dly":300},"ground1":{"spr":12,"title":"ackbar","txt":"destroy shield\ngenerators","dly":300},"ground2":{"spr":12,"title":"ackbar","txt":"bomb vent","dly":300},"victory1":{"spr":104,"title":"han solo","txt":"get out of here son.\nquick!","dly":300},"victory2":{"spr":12,"title":"ackbar","txt":"victory!","dly":300},"victory3":{"spr":10,"title":"leia","txt":"the rebellion thanks you\nget to the base","dly":300},"help":{"spr":10,"rnd":{"title":["red leader","alpha","delta wing"]},"txt":"help!","dly":300},"low_hp":{"spr":76,"title":"r2d2","txt":"..--..-..","dly":120,"sfx":4,"rnd":{"repeat_dly":[600,900]}}}'
+local cur_msg
+local low_hp_t=0
+
+function make_msg(msg)
+	local m=clone(all_msgs[msg])
+	m.t=time_t+m.dly
+	if (m.sfx) sfx(m.sfx)
+	cur_msg=m
+	return m
+end
+
+function update_msg()
+	if cur_msg and cur_msg.t<time_t then
+		cur_msg=nil 
+	end
+	
+	if plyr and plyr.hp<2 and low_hp_t<time_t and rnd()>0.95 then
+			make_msg("low_hp")
+			low_hp_t=time_t+cur_msg.repeat_dly
+	end
+end
+function draw_msg()
+	if(not cur_msg) return
+	local y=2
+	rectfill(32,y,49,y+18,0)
+	rect(32,y,49,y+18,1)
+	spr(cur_msg.spr,33,y+1,2,2)
+	print(cur_msg.title,51,y,9)
+	print(cur_msg.txt,51,y+7,7)
+	-- cheap comms effect
+	if time_t%4>2 then
+		fillp(0b1011000011110100.1)
+		rectfill(33,y,49,y+23,0)
+		fillp()
+ end
 end
 
 -->8
