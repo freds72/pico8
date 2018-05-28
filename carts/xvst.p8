@@ -111,8 +111,6 @@ local game_screen={
 }
 local gameover_screen={}
 
-function nop() return true end
-
 -- futures
 function futures_update(futures)
 	futures=futures or before_update
@@ -257,14 +255,6 @@ function rndrng(ab)
 end
 function rndarray(a)
 	return a[flr(rnd(#a))+1]
-end
-function padding(i,n)
-	local txt=tostr(i)
- -- padding
- for i=1,n-#txt do
- 	txt="0"..txt
- end
- return txt
 end
 
 -- https://github.com/morgan3d/misc/tree/master/p8sort
@@ -500,7 +490,7 @@ function draw_actor(self,x,y,z,w)
 	elseif not self.target then
 		s=s.."?"
 	end
-	s=s.." "..(flr(10*self.g)/10).."["..(flr(10*self.overg_t)/10).."]"
+	s=s.." "..self.g.."["..(flr(10*self.overg_t)/10).."]"
 	print(s,x-8,y-w-8,recover and 8 or 11)
 
 	-- distance culling
@@ -692,7 +682,6 @@ function draw_model(model,m,x,y,z,w)
 			if(a[3]>0 and b[3]>0) line(a[1],a[2],b[1],b[2])
 		end
 	end
-	fillp()
 end
 
 _g.die_plyr=function(self)
@@ -860,8 +849,7 @@ _g.update_flying_npc=function(self)
 		v_add(up,m_up(self.target.m),0.2)
 	end
 	m=make_m_toward(pos,up)
-	-- move actor using force
-	--v_add(self.pos,force)
+	-- constant speed
 	local fwd=m_fwd(m)
 	v_add(self.pos,fwd,self.acc)
 	m_set_pos(m,self.pos)
@@ -869,11 +857,11 @@ _g.update_flying_npc=function(self)
 
 	v_normz(force)
 	self.g=1-abs(v_dot(force,fwd))
-	
-	if self.g>0.2 then
-		self.overg_t=min(self.overg_t+1,64)
+ 
+	if self.g>0.002 then
+		self.overg_t=min(self.overg_t+2,64)
 	end
-	self.overg_t*=0.95
+	self.overg_t*=0.96
 
 	-- fire solution?
 	if self.model.wp and can_fire and self.fire_t<time_t and in_cone(self.pos,self.target.pos,fwd,0.92,24) then
