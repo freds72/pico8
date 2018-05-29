@@ -1168,7 +1168,7 @@ function draw_ground(self)
 	if(cy<0) return
 	if cy>128 then
 		cy-=64
-		draw_deathstar(-min(6,cy/64))
+		draw_deathstar(-min(6,cy/32))
 		draw_stars()
 		return
 	end
@@ -1214,8 +1214,8 @@ function make_trench(i)
 		model=all_models["trench1"],
 		update=function(self)
 			local dz=cam.pos[3]-cam.pos[3]%(2*trench_scale)
-			local z=i*trench_scale+dz
-			self.pos[3],self.m[15]=z,z
+			local z=i*trench_scale+dz			
+			self.pos[2],self.pos[3],self.m[14],self.m[15]=ground_level,z,ground_level,z
 			return true
 		end,
 		draw=draw_actor
@@ -1778,10 +1778,10 @@ _g.create_generator_group=function()
 	ground_level=plyr.pos[2]-300
 	
 	return { 
-		make_npc({256,ground_level,256},v_up,"generator"),
-		make_npc({-256,ground_level,256},v_up,"generator"),
-		make_npc({-256,ground_level,-256},v_up,"generator"),
-		make_npc({256,ground_level,-256},v_up,"generator")
+		make_npc({256,ground_level+6,256},v_up,"generator"),
+		make_npc({-256,ground_level+6,256},v_up,"generator"),
+		make_npc({-256,ground_level+6,-256},v_up,"generator"),
+		make_npc({256,ground_level+6,-256},v_up,"generator")
 	}
 end
 _g.create_vent_group=function()
