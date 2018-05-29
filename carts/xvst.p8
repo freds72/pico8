@@ -100,6 +100,7 @@ local cockpit_view,cam=false
 local plyr_playing,plyr=true
 local actors,ground_actors,parts,all_parts={},{},{}
 -- ground constants
+local ground_level
 local ground_scale,ground_colors=4,{1,5,6}
 
 local cur_screen
@@ -480,6 +481,7 @@ local all_models=json_parse'{"title":{"c":10},"deathstar":{"c":3},"turret":{"c":
 local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]'
 
 function draw_actor(self,x,y,z,w)
+	--[[
 	local s=""
 	local recover=false
 	if self.overg_t>=32 then
@@ -492,7 +494,7 @@ function draw_actor(self,x,y,z,w)
 	end
 	s=s.." "..self.g.."["..(flr(10*self.overg_t)/10).."]"
 	print(s,x-8,y-w-8,recover and 8 or 11)
-
+	]]
 	-- distance culling
 	if w>1 then
 		draw_model(self.model,self.m,x,y,z,w)
@@ -504,58 +506,7 @@ function draw_actor(self,x,y,z,w)
 	else
 		circfill(x,y,1,self.model.c)
 	end
-	-- debug
-	--[[
-	if debug_vectors then
-		if self.dist then
-			print(self.dist,x,y-8,7)
-		end
- 	if self.target then 
- 		local c=12
- 		if band(self.side,self.target.side)==0 then
-	 		c=8
- 		end
- 		local pos=v_clone(self.target.pos)
- 		v_add(pos,self.pos,-1)
-	 	draw_vector(self.m,self.pos,pos,c,"tgt")
- 	end
- 	if self.follow then
- 		local m=self.m
- 		local pos=v_clone(self.follow)
- 		o_x_v(m,pos)
- 		draw_vector(m,self.pos,pos,10,"f")
- 	end
- 	if self.avoid then
- 		local m=self.m
- 		local pos=v_clone(self.avoid)
- 		o_x_v(m,pos)
- 		draw_vector(m,self.pos,pos,1,"a")
- 	end
- 	if self.wander then
- 		local m=self.m
- 		local pos=v_clone(self.wander)
- 		o_x_v(m,pos)
- 		draw_vector(m,self.pos,pos,2,"w")
- 	end
- end
- ]]
 end
---[[
-function draw_vector(m,pos,v,c,s)
-	local x0,y0,z0,w=cam:project(pos[1],pos[2],pos[3])
-	local x1,y1,z1,w=cam:project(pos[1]+v[1],pos[2]+v[2],pos[3]+v[3])
-	if z0>0 and z1>0 then
- 	line(x0,y0,x1,y1,c)
- 	if s then
- 		local dx,dy=x1-x0,y1-y0
- 		local d=sqrt(dx*dx+dy*dy)
- 		dx/=d
- 		dy/=d
- 		print(s,x1+4*dx,y1-4*dy,c)
- 	end
-	end
-end
-]]
 
 -- unpack models
 local mem=0x1000
@@ -768,10 +719,6 @@ function avoid(self,pos,dist)
 			end
 		end
 	end
-	-- ground
-	if self.pos[2]<3 then
-		v_add(v,v_up)
-	end
 	return v
 end
 function seek(self,r)
@@ -810,6 +757,7 @@ _g.update_flying_npc=function(self)
 	-- weight move ahead
 	v_scale(force,5)
 
+	local follow_scale=1-smoothstep(self.overg_t/32)
 	if self.target and not self.target.disabled then
 		-- friendly: formation flight
 		local target_pos={0,-4,20}
@@ -818,7 +766,7 @@ _g.update_flying_npc=function(self)
 			can_fire,target_pos=true,{0,0,-15}
 		end
 		-- todo: diffent class of enemies
-		v_add(force,follow(pos,self.target,target_pos),lerp(1,0,smoothstep(self.overg_t/32)))
+		v_add(force,follow(pos,self.target,target_pos),follow_scale)
 	else
 		-- search for target
 		self.target=seek(self,24)
@@ -846,7 +794,7 @@ _g.update_flying_npc=function(self)
  -- try to align w/ target
 	local up=m_up(m)
 	if self.target then
-		v_add(up,m_up(self.target.m),0.2)
+		v_add(up,m_up(self.target.m),follow_scale*0.2)
 	end
 	m=make_m_toward(pos,up)
 	-- constant speed
@@ -855,6 +803,7 @@ _g.update_flying_npc=function(self)
 	m_set_pos(m,self.pos)
 	self.m=m
 
+	-- evaluate stress
 	v_normz(force)
 	self.g=1-abs(v_dot(force,fwd))
  
@@ -890,7 +839,7 @@ end
 _g.update_turret=function(self,i,j)
 	if(not plyr) return true
 	
-	self.pos[1],self.pos[3]=i*ground_scale,j*ground_scale
+	self.pos[1],self.pos[2],self.pos[3]=i*ground_scale,ground_level,j*ground_scale
 	local dx,dy=self.pos[1]-plyr.pos[1],self.pos[3]-plyr.pos[3]
 	-- in range?
 	local angle,m=1,self.m
@@ -914,7 +863,7 @@ _g.update_turret=function(self,i,j)
 	return true
 end
 _g.update_junk=function(self,i,j)
-	self.pos[1],self.pos[3]=i*ground_scale,j*ground_scale
+	self.pos[1],self.pos[2],self.pos[3]=i*ground_scale,ground_level,j*ground_scale
 	m_set_pos(self.m,self.pos)
 end
 _g.make_laser=function(self,target)
@@ -1208,14 +1157,22 @@ end
 
 function draw_ground(self)
 	local cy=cam.pos[2]
-	if(cy<0) return
 
+	if not ground_level then
+		draw_deathstar(-6)
+		draw_stars()
+		return
+	end
+	-- rebase height
+	cy-=ground_level
+	if(cy<0) return
 	if cy>128 then
 		cy-=64
 		draw_deathstar(-min(6,cy/64))
 		draw_stars()
 		return
 	end
+	
 	local scale=4*max(flr(cy/32+0.5),1)
 	scale*=scale
 	local x0,z0=cam.pos[1],cam.pos[3]
@@ -1227,7 +1184,7 @@ function draw_ground(self)
 		if abs(flr(ii-x0+cam.pos[1]))>=8 then
 			for j=-8,8 do
 				local jj=scale*j-dy+z0
-				local x,y,z,w=cam:project(ii,0,jj)
+				local x,y,z,w=cam:project(ii,ground_level,jj)
 				if z>0 then
 					pset(x,y,ground_colors[mid(flr(4*w),1,3)])
 				end
@@ -1287,6 +1244,7 @@ function update_ground()
 	ground_actors={}
 	
 	-- don't activate ground actors
+	if(not ground_level) return
 	local pos=plyr and plyr.pos or cam.pos
 	if(pos[2]>64) return
 
@@ -1315,7 +1273,7 @@ local turn_t=0
 
 function plyr_ground_col(pos)
 	-- ground collision?
-	if pos[2]<0 then
+	if ground_level and pos[2]<ground_level then
 		local r,col=rnd()*0.4,false
 		if abs(pos[1])<=6 then
 			if pos[1]>=5.9 then
@@ -1329,7 +1287,7 @@ function plyr_ground_col(pos)
 			-- between trench walls?
 			if(not col) return false
 		else
-			pos[2]=r
+			pos[2]=ground_level-r
 		end
 		-- take damage
 		plyr:hit(1)
@@ -1635,71 +1593,6 @@ function gameover_screen:draw()
 	print("game over",38,60,6)
 end
 
--- mission start routines
-local all_generator_pos=json_parse'[[256,7,256],[-256,7,256],[-256,7,-256],[256,7,-256]]'
-_g.create_generator_group=function()
-	local npcs={}
-	for _,p in pairs(all_generator_pos) do
-		add(npcs,make_npc(p,v_up,"generator"))
-	end
-	return nocs
-end
-_g.create_vent_group=function()
-	return {make_npc({0,-6,128},v_up,"vent")}
-end
-
-_g.create_flying_group=function()
-	local p,v=make_rnd_pos_v(plyr,64)
-	-- default target: player
-	local target=plyr
-	-- friendly npc?
-	if rnd()>0.8 then
-		target=make_npc(p,v,"patrol")
-		make_msg("help")
-		v_add(p,v,10)
-	end
-	-- spawn new enemy
-	local npcs={}
-	for i=1,1+rnd(3) do
-		local a=make_npc(p,v,"tie")
-		a.target=target
-		v_add(p,v,10)
-		add(npcs,a)
-	end
-	return npcs
-end
-
-local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","rnd_dly":180,"target":5},{"msg":"ground1","init":"create_generator_group","dly":180,"target":4},{"msg":"ground2","init":"create_vent_group","dly":180,"target":1}]'
-function next_mission_async()
-	for i=1,#all_missions do
-		local m=all_missions[i]
-		if m.msg then
-			local msg=make_msg(m.msg)
-			wait_async(msg.dly)
-		end
-		local kills,target=0,m.target or 0
-		repeat
-			-- create mission
-			-- die hook
-			local aa,npcs=m.init(),0
-			for _,a in pairs(aa) do
-				npcs+=1
-				a.on_die=function(killed)
-					npcs-=1
-					if( killed) kills+=1
-				end
-			end
-			-- todo: exit when gameover
-			-- wait kills
-			while npcs>0 do
-				yield()
-			end
-			-- pause?
-			wait_async(m.rnd_dly and rnd(m.rnd_dly) or m.dly)
-		until kills<target
-	end
-	-- todo: game over success
-end
 
 -- play loop
 function game_screen:init()
@@ -1807,6 +1700,8 @@ function _draw()
 	time_dt=0
 	
 	if(draw_stats) draw_stats()
+	
+	print(ground_level,2,2,7)
 end
 
 
@@ -1839,8 +1734,7 @@ end
 -->8
 -- radio messages
 local all_msgs=json_parse'{"attack1":{"spr":12,"title":"ackbar","txt":"clear tie squadrons","dly":300},"ground1":{"spr":12,"title":"ackbar","txt":"destroy shield\ngenerators","dly":300},"ground2":{"spr":12,"title":"ackbar","txt":"bomb vent","dly":300},"victory1":{"spr":104,"title":"han solo","txt":"get out of here son.\nquick!","dly":300},"victory2":{"spr":12,"title":"ackbar","txt":"victory!","dly":300},"victory3":{"spr":10,"title":"leia","txt":"the rebellion thanks you\nget to the base","dly":300},"help":{"spr":10,"rnd":{"title":["red leader","alpha","delta wing"]},"txt":"help!","dly":300},"low_hp":{"spr":76,"title":"r2d2","txt":"..--..-..","dly":120,"sfx":4,"rnd":{"repeat_dly":[600,900]}}}'
-local cur_msg
-local low_hp_t=0
+local low_hp_t,cur_msg=0
 
 function make_msg(msg)
 	local m=clone(all_msgs[msg])
@@ -1874,6 +1768,77 @@ function draw_msg()
 		rectfill(33,y,49,y+23,0)
 		fillp()
  end
+end
+
+-->8
+-- missions
+-- mission start routines
+_g.create_generator_group=function()
+	-- set ground level
+	ground_level=plyr.pos[2]-300
+	
+	return { 
+		make_npc({256,ground_level,256},v_up,"generator"),
+		make_npc({-256,ground_level,256},v_up,"generator"),
+		make_npc({-256,ground_level,-256},v_up,"generator"),
+		make_npc({256,ground_level,-256},v_up,"generator")
+	}
+end
+_g.create_vent_group=function()
+	return {make_npc({0,-6,128},v_up,"vent")}
+end
+
+_g.create_flying_group=function()
+	local p,v=make_rnd_pos_v(plyr,64)
+	-- default target: player
+	local target=plyr
+	-- friendly npc?
+	if rnd()>0.8 then
+		target=make_npc(p,v,"patrol")
+		make_msg("help")
+		v_add(p,v,10)
+	end
+	-- spawn new enemy
+	local npcs={}
+	for i=1,1+rnd(3) do
+		local a=make_npc(p,v,"tie")
+		a.target=target
+		v_add(p,v,10)
+		add(npcs,a)
+	end
+	return npcs
+end
+
+local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","rnd_dly":180,"target":5},{"msg":"ground1","init":"create_generator_group","dly":180,"target":4},{"msg":"ground2","init":"create_vent_group","dly":180,"target":1}]'
+function next_mission_async()
+	for i=2,#all_missions do
+		local m=all_missions[i]
+		if m.msg then
+			local msg=make_msg(m.msg)
+			wait_async(msg.dly)
+		end
+		local kills,target=0,m.target or 0
+		repeat
+			-- create mission
+			-- die hook
+			local aa,npcs=m.init(),0
+			for _,a in pairs(aa) do
+				npcs+=1
+				a.on_die=function(killed)
+					npcs-=1
+					if(killed) kills+=1
+				end
+			end
+			-- todo: exit when gameover
+			-- wait kills
+			while npcs>0 do
+				yield()
+			end
+			-- pause?
+			wait_async(m.rnd_dly and rnd(m.rnd_dly) or m.dly)
+		until kills>=target
+	end
+	-- todo: game over success
 end
 
 -->8
