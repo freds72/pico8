@@ -116,7 +116,9 @@ local gameover_screen={}
 function futures_update(futures)
 	futures=futures or before_update
 	for _,f in pairs(futures) do
-		if not coresume(f) then
+		local r,e=coresume(f)
+		if not r then
+			--if(e) assert(r,e)
 			del(futures,f)
 		end
 	end
@@ -588,8 +590,8 @@ function draw_model(model,m,x,y,z,w)
 	color(model.c or 1)
 	-- camera distance dithering
 	if w then
-		local d=lerp(1-smoothstep(w/2),1,#dither_pat)
-		fillp(dither_pat[flr(d)]+0b0.1)
+		local d=lerp(1-mid(w/2,0,1),1,#dither_pat)
+		fillp(dither_pat[flr(d)]+0.1)
 	end
 	
 	-- cam pos in object space
@@ -633,6 +635,7 @@ function draw_model(model,m,x,y,z,w)
 			if(a[3]>0 and b[3]>0) line(a[1],a[2],b[1],b[2])
 		end
 	end
+	fillp()
 end
 
 _g.die_plyr=function(self)
@@ -674,8 +677,9 @@ end
 
 _g.update_exit=function(self)
 	if(not plyr) return false
-	if sqr_dist(self.pos,plyr.pos)<1 then
-			self:on_die(true)
+	if sqr_dist(self.pos,plyr.pos)<32 then
+		del(actors,self)
+		self:on_die(true)
 		return false
 	end
 	return true
@@ -804,6 +808,38 @@ _g.update_flying_npc=function(self)
 	return true
 end
 
+_g.hit_plyr=function(self,dmg)
+	if(self.disabled or self.safe_t>time_t) return
+	self.energy,self.safe_t=0,time_t+8
+	--self.hp-=dmg
+	if self.hp<=0 then
+		self:die()
+	end
+	screen_shake(rnd(),rnd(),2)
+end
+
+_g.draw_plyr=function(self,x,y,z,w)
+	if(cockpit_view) return
+	draw_model(self.model,self.m,x,y,z,w)
+end
+
+_g.update_plyr=function(self)
+	-- energy
+	self.energy=min(self.energy+0.01,1)
+	-- refill shield + proton
+	if self.energy==1 and self.energy_t<time_t then
+		self.proton_ammo=min(self.proton_ammo+1,4)
+		self.hp=min(self.hp+1,5)
+		self.energy,self.energy_t=0,time_t+120
+	end
+
+	-- damping
+	self.roll*=0.9
+	self.pitch*=0.9
+	self.boost*=0.9
+	return true
+end
+
 _g.hit_npc=function(self,dmg)
 	-- avoid reentrancy
 	if(self.disabled) return
@@ -908,59 +944,16 @@ _g.make_proton=function(self,target)
 	make_part("flash",p,c)
 end
 
-local all_actors=json_parse'{"plyr":{"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"acc":0.2,"model":"xwing","roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","die":"die_plyr"},"patrol":{"hp":10,"acc":0.2,"g":0,"overg_t":0,"rnd":{"model":["xwing","xwing","ywing"]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"tie":{"sfx":5,"hp":4,"acc":0.4,"g":0,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"generator":{"waypt":true,"hp":2,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":2,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"mfalcon":{"hp":8,"acc":0.4,"g":0,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","local_t":0,"pause_t":0,"fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"rnd":{"model":["junk1","junk1","junk2"]},"side":"bad_side","update":"update_junk","hit":"hit_npc","die":"die_actor"},"exit":{"draw":"nop","update":"nop","waypt":true},"vador":{"sfx":5,"hp":40,"acc":0.4,"g":0,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"}}'
-		
-function make_plyr(x,y,z)
-	local p=clone(all_actors["plyr"],{
-		pos={x,y,z},
-		q=make_q(v_right,0.25),
-		hit=function(self,dmg)
-			if(self.disabled or self.safe_t>time_t) return
-			self.energy,self.safe_t=0,time_t+8
-			self.hp-=dmg
-			if self.hp<=0 then
-				self:die()
-			end
-			screen_shake(rnd(),rnd(),2)
-		end,
-		draw=function(self,x,y,z,w)
-			if(cockpit_view) return
-			draw_model(self.model,self.m,x,y,z,w)
-		end,
-		update=function(self)
-			-- energy
-			plyr.energy=min(plyr.energy+0.01,1)
-			-- refill shield + proton
-			if plyr.energy==1 and plyr.energy_t<time_t then
-				plyr.proton_ammo=min(plyr.proton_ammo+1,4)
-				plyr.hp=min(plyr.hp+1,5)
-				plyr.energy,plyr.energy_t=0,time_t+120
-			end
-	
-			-- damping
-			plyr.roll*=0.9
-			plyr.pitch*=0.9
-			plyr.boost*=0.9
-			return true
-		end
-	})
-	p.model=all_models[p.model]
-	local m=m_from_q(p.q)
-	m_set_pos(m,p.pos)
-	p.m=m
-	add(actors,p)
-	return p
-end
+local all_actors=json_parse'{"plyr":{"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"acc":0.2,"model":"xwing","roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","draw":"draw_plyr","update":"update_plyr","hit":"hit_plyr","die":"die_plyr"},"patrol":{"hp":10,"acc":0.2,"g":0,"overg_t":0,"rnd":{"model":["xwing","xwing","ywing"]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"tie":{"sfx":5,"hp":4,"acc":0.4,"g":0,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"generator":{"waypt":true,"hp":2,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":2,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"mfalcon":{"hp":8,"acc":0.4,"g":0,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","local_t":0,"pause_t":0,"fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"rnd":{"model":["junk1","junk1","junk2"]},"side":"bad_side","update":"update_junk","hit":"hit_npc","die":"die_actor"},"exit":{"draw":"nop","update":"update_exit","waypt":true},"vador":{"sfx":5,"hp":40,"acc":0.4,"g":0,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"}}'
 
-function make_npc(p,v,src)
+function make_actor(p,v,src)
 	-- instance
 	local a=clone(all_actors[src],{
 		pos=v_clone(p),
-		q=make_q(v,0),
-		draw=draw_actor
+		q=make_q(v,0)
 	})
 	a.model=all_models[a.model]
-
+	a.draw=a.draw or draw_model
 	-- init orientation
 	local m=m_from_q(a.q)
 	m_set_pos(m,p)
@@ -1587,7 +1580,7 @@ function game_screen:init()
 	time_t,cockpit_view,view_offset,actors,parts,ground_level=0,false,v_clone(view_offsets[2]),{},{},nil
 	
 	
-	plyr=make_plyr(0,300,0)
+	plyr=make_actor({0,300,0},v_right,"plyr")
 	-- move to cockpit view
 	set_view(true)
 
@@ -1688,8 +1681,6 @@ function _draw()
 	time_dt=0
 	
 	if(draw_stats) draw_stats()
-	
-	print(ground_level,2,2,7)
 end
 
 
@@ -1762,18 +1753,15 @@ end
 -- missions
 -- mission start routines
 _g.create_generator_group=function()
-	-- set ground level
-	ground_level=plyr.pos[2]-300
-	
 	return { 
-		make_npc({256,ground_level+6,256},v_up,"generator"),
-		make_npc({-256,ground_level+6,256},v_up,"generator"),
-		make_npc({-256,ground_level+6,-256},v_up,"generator"),
-		make_npc({256,ground_level+6,-256},v_up,"generator")
+		make_actor({256,ground_level+6,256},v_up,"generator"),
+		make_actor({-256,ground_level+6,256},v_up,"generator"),
+		make_actor({-256,ground_level+6,-256},v_up,"generator"),
+		make_actor({256,ground_level+6,-256},v_up,"generator")
 	}
 end
 _g.create_vent_group=function()
-	return {make_npc({0,-6,128},v_up,"vent")}
+	return {make_actor({0,-6,128},v_up,"vent")}
 end
 
 _g.create_flying_group=function()
@@ -1782,23 +1770,27 @@ _g.create_flying_group=function()
 	local target=plyr
 	-- friendly npc?
 	if rnd()>0.8 then
-		target=make_npc(p,v,"patrol")
+		target=make_actor(p,v,"patrol")
 		make_msg("help")
 		v_add(p,v,10)
 	end
 	-- spawn new enemy
 	local npcs={}
 	for i=1,1+rnd(3) do
-		local a=make_npc(p,v,"tie")
+		local a=make_actor(p,v,"tie")
 		a.target=target
 		v_add(p,v,10)
 		add(npcs,a)
 	end
 	return npcs
 end
-
-_g.exit_mission=function()
-	return {make_npc({0,ground_level+300,0},v_up,"exit")}
+_g.ingress_mission=function()
+	-- set ground level
+	ground_level=plyr.pos[2]-300
+	return {make_actor({0,ground_level+30,0},v_up,"exit")}
+end
+_g.egress_mission=function()
+	return {make_actor({0,ground_level+300,0},v_up,"exit")}
 end
 _g.victory_mission=function()
 	make_part("novae",{0,ground_level,0})
@@ -1807,10 +1799,10 @@ _g.victory_mission=function()
 	
 	-- track dark vador
 	local y=plyr.pos[2]
-	local npc,wing=make_npc({0,y+64,0},v_up,"vador"),make_npc({0,y+56,0},v_up,"mfalcon")
+	local npc,wing=make_actor({0,y+64,0},v_up,"vador"),make_actor({0,y+56,0},v_up,"mfalcon")
 	mfalcon.target=npc
 	-- mark rendez-vous point
-	make_npc({0,y+64,0},v_up,"exit")
+	make_actor({0,y+64,0},v_up,"exit")
 	return {npc}
 end
 _g.cinematic_mission=function()
@@ -1818,7 +1810,8 @@ _g.cinematic_mission=function()
 	return {}
 end
 
-local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","rnd_dly":180,"target":5},{"msg":"ground1","init":"create_generator_group","dly":180,"target":4},{"msg":"ground2","init":"create_vent_group","dly":180,"target":1},{"msg":"victory1","init":"exit_mission","dly":600},{"msg":"victory2","init":"victory_mission","dly":600}]'
+local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","rnd_dly":180,"target":5},{"msg":"ground1","init":"ingress_mission","dly":15},{"init":"create_generator_group","dly":180,"target":4},{"msg":"ground2","init":"create_vent_group","dly":180,"target":1},{"msg":"victory1","init":"egress_mission","dly":600},{"msg":"victory2","init":"victory_mission","dly":600}]'
+ground_level=-300
 function next_mission_async()
 	for i=2,#all_missions do
 		local m=all_missions[i]
