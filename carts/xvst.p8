@@ -113,9 +113,8 @@ local gameover_screen={}
 
 
 local shkx,shky=0,0
-function screen_shake(u,v,pow)
-	shkx=min(4,shkx+pow*u)
-	shky=min(4,shky+pow*v)
+function screen_shake(pow)
+	shkx,shky=min(4,shkx+rnd(pow)),min(4,shky+rnd(pow))
 end
 function screen_update()
 	shkx*=-0.7-rnd(0.2)
@@ -548,7 +547,7 @@ local draw_session_id=0
 function draw_model(model,m,x,y,z,w)
 	draw_session_id+=1
 
-	color(model.c or 1)
+	color(model.c)
 	-- camera distance dithering
 	if w then
 		local d=lerp(1-mid(w/2,0,1),1,#dither_pat)
@@ -568,6 +567,12 @@ function draw_model(model,m,x,y,z,w)
 		if d>=model.cp[i] then
 			for k=1,f[2] do
 				model.e[f[k+2]][3]=draw_session_id
+			end
+			-- engines?
+			if i==12 then
+				color(time_t%2==0 and 7 or 13)
+			else
+				color(model.c)
 			end
 		end
 	end
@@ -600,30 +605,28 @@ function draw_model(model,m,x,y,z,w)
 end
 
 _g.die_plyr=function(self)
-	-- todo: fix
 	plyr.disabled=true
 	plyr_playing=false
 	cam.flip=false
 	set_view(false)
 
 	futures_add(function()
-		wait_async(30)
-		-- stop tracking player
-		-- cam:track(nil)
+		--wait_async(30)
 		
+		-- death spin
 		local death_q=make_q(v_fwd,rndlerp(-0.04,0.04))
-		local cam_acc=plyr.acc
 		wait_async(90,function(i)
 			q_x_q(plyr.q,death_q)
 			local fwd=update_plyr_pos()
-			--v_add(cam.pos,fwd,cam_acc)
-			cam_acc*=0.98
+			--[[
 			local p=make_rnd_v(0.5)
 			v_add(p,plyr.pos)
 			make_part("flash",p,rndlerp(8,10))
+			]]
 			return true
 		end)
 		make_part("blast",plyr.pos)
+		screen_shake(2)
 		wait_gameover(600)
 	end)
 end
@@ -772,11 +775,11 @@ end
 _g.hit_plyr=function(self,dmg)
 	if(self.disabled or self.safe_t>time_t) return
 	self.energy,self.safe_t=0,time_t+8
-	--self.hp-=dmg
+	self.hp-=dmg
 	if self.hp<=0 then
 		self:die()
 	end
-	screen_shake(rnd(),rnd(),2)
+	screen_shake(2)
 end
 
 _g.draw_plyr=function(self,x,y,z,w)
@@ -933,12 +936,12 @@ function make_cam(f,x0,y0)
 			m_inv(self.m)
 		end,
 		track=function(self,pos,q)
- 		self.pos=v_clone(pos)
- 		if self.flip then
- 		 q=q_clone(q)
- 			q_x_q(q,rear_q)
- 		end
- 		self.q=q
+			self.pos=v_clone(pos)
+			q=q_clone(q)
+			if self.flip then
+				q_x_q(q,rear_q)
+			end
+			self.q=q
 		end,
 		project=function(self,x,y,z)
 			-- world to view
@@ -1514,6 +1517,7 @@ function wait_gameover(t)
 	plyr=nil
 	wait_async(t or 0)
 	cur_screen=gameover_screen
+	camera()
 	wait_async(600,function()
 		if btnp(4) or btnp(5) then
 			-- "eat" btnp
@@ -1541,7 +1545,7 @@ function game_screen:init()
 
 	-- move to cockpit view
 	set_view(true)
-
+	
 	init_ground()
 	
 	-- init mission wait loop
@@ -1670,7 +1674,7 @@ end
 
 -->8
 -- radio messages
-local all_msgs=json_parse'{"attack1":{"spr":12,"title":"ackbar","txt":"clear tie squadrons","dly":300},"ground1":{"spr":12,"title":"ackbar","txt":"destroy shield\ngenerators","dly":300},"ground2":{"spr":12,"title":"ackbar","txt":"bomb vent","dly":300},"victory1":{"spr":104,"title":"han solo","txt":"get out of here son.\nquick!","dly":300},"victory2":{"spr":12,"title":"ackbar","txt":"victory!","dly":300},"victory3":{"spr":10,"title":"leia","txt":"the rebellion thanks you\nget to the base","dly":300},"help":{"spr":10,"rnd":{"title":["red leader","alpha","delta wing"]},"txt":"help!","dly":300},"vador_out":{"spr":106,"title":"d.vador","txt":"i\\39ll be back...","dly":300},"low_hp":{"spr":76,"title":"r2d2","txt":"..--..-..","dly":120,"sfx":8,"rnd":{"repeat_dly":[600,900]}}}'
+local all_msgs=json_parse'{"attack1":{"spr":12,"title":"ackbar","txt":"clear tie squadrons","dly":300},"ground1":{"spr":12,"title":"ackbar","txt":"destroy shield\ngenerators","dly":300},"ground2":{"spr":12,"title":"ackbar","txt":"bomb vent","dly":300},"victory1":{"spr":104,"title":"han solo","txt":"get out of here son.\nquick!","dly":300},"victory2":{"spr":12,"title":"ackbar","txt":"victory!","dly":300},"victory3":{"spr":10,"title":"leia","txt":"the rebellion thanks you\nget to the base","dly":300},"help":{"spr":10,"rnd":{"title":["red leader","alpha","delta wing"]},"txt":"help!","dly":300},"vador_out":{"spr":106,"title":"d.vador","txt":"i\'ll be back...","dly":300},"low_hp":{"spr":76,"title":"r2d2","txt":"..--..-..","dly":120,"sfx":8,"rnd":{"repeat_dly":[600,900]}}}'
 local low_hp_t,cur_msg=0
 
 function make_msg(msg)
@@ -1768,10 +1772,10 @@ _g.gameover_mission=function()
 	return {}
 end
 
-local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","rnd_dly":180,"target":5},{"msg":"ground1","init":"ingress_mission","dly":15},{"init":"create_generator_group","dly":180,"target":4},{"msg":"ground2","init":"create_vent_group","dly":180,"target":1},{"msg":"victory1","init":"egress_mission","dly":600},{"init":"victory_mission","target":1,"dly":30},{"msg":"d_vador","init":"gameover_mission","dly":600}]'
+local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","rnd_dly":180,"target":5},{"msg":"ground1","init":"ingress_mission","dly":15},{"init":"create_generator_group","dly":180,"target":4},{"msg":"ground2","init":"create_vent_group","dly":180,"target":1},{"msg":"victory1","init":"egress_mission","dly":600},{"init":"victory_mission","target":1,"dly":30},{"msg":"vador_out","init":"gameover_mission","dly":600}]'
 
 function next_mission_async()
-	for i=6,#all_missions do
+	for i=1,#all_missions do
 		local m=all_missions[i]
 		if m.msg then
 			local msg=make_msg(m.msg)
