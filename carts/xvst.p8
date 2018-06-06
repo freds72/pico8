@@ -444,7 +444,7 @@ function m_up(m)
 end
 
 -- models
-local all_models=json_parse'{"title":{"c":10},"deathstar":{"c":3},"turret":{"c":8,"r":1.1,"wp":{"sfx":1,"dmg":1,"dly":12,"pos":[[-0.2,0.8,0.65],[0.2,0.8,0.65]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"proton_wp":{"dmg":4,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":6,"dmg":1,"dly":8,"pos":[[2.1,0.6,1.6],[2.1,-0.6,1.6],[-2.1,-0.6,1.6],[-2.1,0.6,1.6]],"n":[[-0.0452,-0.0129,0.9989],[-0.0452,0.0129,0.9989],[0.0452,0.0129,0.9989],[0.0452,-0.0129,0.9989]]}},"tie":{"c":5,"r":1.2,"wp":{"sfx":6,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"tiex1":{"c":13,"r":1.2,"wp":{"sfx":6,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"junk2":{"c":3,"r":1.2},"generator":{"c":6,"r":2},"mfalcon":{"c":5,"wp":{"sfx":6,"dmg":1,"dly":12,"pos":[[0.45,1.1,0],[-0.45,1.1,0],[0.45,-1.3,0],[-0.45,1.3,0]],"n":[[0,0,1],[0,0,1],[0,0,1],[0,0,1]]}},"vent":{"c":5,"r":1},"ywing":{"c":7,"r":1,"wp":{"sfx":1,"dmg":1,"dly":18,"pos":[[0.13,0,3.1],[-0.13,0,3.1]],"n":[[0,0,1],[0,0,1]]}}}'
+local all_models=json_parse'{"title":{"c":10},"deathstar":{"c":3},"turret":{"c":8,"r":1.1,"wp":{"sfx":1,"dmg":1,"dly":12,"pos":[[-0.2,0.8,0.65],[0.2,0.8,0.65]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"engines":[[-0.2,0.2,-0.3],[0.2,0.2,-0.3],[-0.2,-0.2,-0.3],[-0.2,-0.2,-0.3]],"proton_wp":{"dmg":4,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":6,"dmg":1,"dly":8,"pos":[[2.1,0.6,1.6],[2.1,-0.6,1.6],[-2.1,-0.6,1.6],[-2.1,0.6,1.6]],"n":[[-0.0452,-0.0129,0.9989],[-0.0452,0.0129,0.9989],[0.0452,0.0129,0.9989],[0.0452,-0.0129,0.9989]]}},"tie":{"c":5,"r":1.2,"engines":[[0,0,-0.5]],"wp":{"sfx":6,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"tiex1":{"c":13,"r":1.2,"wp":{"sfx":6,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"junk2":{"c":3,"r":1.2},"generator":{"c":6,"r":2},"mfalcon":{"c":5,"wp":{"sfx":6,"dmg":1,"dly":12,"pos":[[0.45,1.1,0],[-0.45,1.1,0],[0.45,-1.3,0],[-0.45,1.3,0]],"n":[[0,0,1],[0,0,1],[0,0,1],[0,0,1]]}},"vent":{"c":5,"r":1},"ywing":{"c":7,"r":1,"wp":{"sfx":1,"dmg":1,"dly":18,"pos":[[0.13,0,3.1],[-0.13,0,3.1]],"n":[[0,0,1],[0,0,1]]}}}'
 local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]'
 
 function draw_actor(self,x,y,z,w)
@@ -601,8 +601,8 @@ end
 _g.die_plyr=function(self)
 	plyr.disabled=true
 	plyr_playing=false
+	cockpit_view=false
 	cam.flip=false
-	set_view(false)
 
 	futures_add(function()
 		--wait_async(30)
@@ -686,6 +686,16 @@ function wander(self)
 	return p
 end
 
+function update_engines(self)
+	if self.model.engines and time_t%4>2 then
+		for _,v in pairs(self.model.engines) do
+			v=v_clone(v)
+			m_x_v(self.m,v)
+			make_part("engine",v)
+		end
+	end
+end
+
 _g.update_flying_npc=function(self)
 	-- npc still in range?
 	if plyr and sqr_dist(self.pos,plyr.pos)>96*96 then
@@ -749,6 +759,9 @@ _g.update_flying_npc=function(self)
 	m_set_pos(m,self.pos)
 	self.m=m
 
+	-- engine effect
+	update_engines(self)
+	
 	-- evaluate stress
 	v_normz(force)
 	self.g=1-abs(v_dot(force,fwd))
@@ -795,6 +808,8 @@ _g.update_plyr=function(self)
 	self.roll*=0.95
 	self.pitch*=0.95
 	self.boost*=0.9
+	
+	update_engines(self)
 	return true
 end
 
@@ -1055,6 +1070,7 @@ _g.update_proton=function(self)
  return _g.update_blt(self)
 end
 
+local engine_colors={7,12,5,1}
 _g.draw_part=function(self,x,y,z,w)
 	if self.kind==0 then
 		local x1,y1,z1,w1=cam:project(self.prev_pos[1],self.prev_pos[2],self.prev_pos[3])
@@ -1075,10 +1091,12 @@ _g.draw_part=function(self,x,y,z,w)
 		circ(x,y,w*self.r,7)
 	elseif self.kind==6 then
 		pset(x,y,15*rnd())
+	elseif self.kind==7 then
+	 circfill(x,y,self.r*w,engine_colors[flr(3-3*mid(self.r/0.5,0,1))+1])
 	end
 end
 
-all_parts=json_parse'{"laser":{"rnd":{"dly":[80,110]},"acc":3,"kind":0,"update":"update_blt","draw":"draw_part","die":"die_blt"},"flash":{"kind":1,"rnd":{"r":[0.3,0.5],"dly":[6,10]},"dr":-0.05},"trail":{"kind":1,"rnd":{"r":[0.2,0.3],"dly":[12,24]},"dr":-0.02},"blast":{"frame":0,"sfx":3,"kind":1,"c":7,"rnd":{"r":[2.5,3],"dly":[8,12],"sparks":[6,12]},"dr":-0.04,"update":"update_blast"},"novae":{"frame":0,"sfx":3,"kind":1,"c":7,"r":30,"rnd":{"dly":[8,12],"sparks":[30,40]},"dr":-0.04,"update":"update_blast"},"proton":{"rnd":{"dly":[90,120]},"frame":0,"acc":0.6,"kind":3,"update":"update_proton","draw":"draw_part","die":"die_blt"},"spark":{"kind":6,"dr":0,"r":1,"rnd":{"dly":[24,38]}}}'
+all_parts=json_parse'{"laser":{"rnd":{"dly":[80,110]},"acc":3,"kind":0,"update":"update_blt","draw":"draw_part","die":"die_blt"},"flash":{"kind":1,"rnd":{"r":[0.3,0.5],"dly":[6,10]},"dr":-0.05},"trail":{"kind":1,"rnd":{"r":[0.2,0.3],"dly":[12,24]},"dr":-0.02},"blast":{"frame":0,"sfx":3,"kind":1,"c":7,"rnd":{"r":[2.5,3],"dly":[8,12],"sparks":[6,12]},"dr":-0.04,"update":"update_blast"},"novae":{"frame":0,"sfx":3,"kind":1,"c":7,"r":30,"rnd":{"dly":[8,12],"sparks":[30,40]},"dr":-0.04,"update":"update_blast"},"proton":{"rnd":{"dly":[90,120]},"frame":0,"acc":0.6,"kind":3,"update":"update_proton","draw":"draw_part","die":"die_blt"},"spark":{"kind":6,"dr":0,"r":1,"rnd":{"dly":[24,38]}},"engine":{"kind":7,"rnd":{"r":[0.3,0.5],"dly":[12,24],"dr":[-0.08,-0.05]}}}'
 
 function make_part(part,p,c)
 	local pt=add(parts,clone(all_parts[part],{c=c or 7,pos=v_clone(p)}))
