@@ -444,7 +444,7 @@ function m_up(m)
 end
 
 -- models
-local all_models=json_parse'{"title":{"c":10},"deathstar":{"c":3},"turret":{"c":8,"r":1.1,"wp":{"sfx":1,"dmg":1,"dly":12,"pos":[[-0.2,0.8,0.65],[0.2,0.8,0.65]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"engine_part":"purple_engine","engines":[[-0.57,0.44,-1.61],[-0.57,-0.44,-1.61],[0.57,0.44,-1.61],[0.57,-0.44,-1.61]],"proton_wp":{"dmg":4,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":6,"dmg":1,"dly":8,"pos":[[2.1,0.6,1.6],[2.1,-0.6,1.6],[-2.1,-0.6,1.6],[-2.1,0.6,1.6]],"n":[[-0.0452,-0.0129,0.9989],[-0.0452,0.0129,0.9989],[0.0452,0.0129,0.9989],[0.0452,-0.0129,0.9989]]}},"tie":{"c":5,"r":1.2,"engine_part":"blue_engine","engines":[[0,0,-0.5]],"wp":{"sfx":6,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"tiex1":{"c":13,"r":1.2,"wp":{"sfx":6,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"junk2":{"c":3,"r":1.2},"generator":{"c":6,"r":2},"mfalcon":{"c":5,"wp":{"sfx":6,"dmg":1,"dly":12,"pos":[[0.45,1.1,0],[-0.45,1.1,0],[0.45,-1.3,0],[-0.45,1.3,0]],"n":[[0,0,1],[0,0,1],[0,0,1],[0,0,1]]}},"vent":{"c":5,"r":1},"ywing":{"c":7,"r":1,"wp":{"sfx":1,"dmg":1,"dly":18,"pos":[[0.13,0,3.1],[-0.13,0,3.1]],"n":[[0,0,1],[0,0,1]]}}}'
+local all_models=json_parse'{"title":{"c":10},"deathstar":{"c":3},"turret":{"c":8,"r":1.1,"wp":{"sfx":1,"part":"slow_laser","dmg":1,"dly":12,"pos":[[-0.2,0.8,0.65],[0.2,0.8,0.65]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"engine_part":"purple_trail","engines":[[-0.57,0.44,-1.61],[-0.57,-0.44,-1.61],[0.57,0.44,-1.61],[0.57,-0.44,-1.61]],"proton_wp":{"dmg":4,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":6,"dmg":1,"dly":8,"pos":[[2.1,0.6,1.6],[2.1,-0.6,1.6],[-2.1,-0.6,1.6],[-2.1,0.6,1.6]],"n":[[-0.0452,-0.0129,0.9989],[-0.0452,0.0129,0.9989],[0.0452,0.0129,0.9989],[0.0452,-0.0129,0.9989]]}},"tie":{"c":5,"r":1.2,"engine_part":"blue_trail","engines":[[0,0,-0.5]],"wp":{"sfx":6,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"tiex1":{"c":13,"r":1.2,"wp":{"sfx":6,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"junk2":{"c":3,"r":1.2},"generator":{"c":6,"r":2},"mfalcon":{"c":5,"wp":{"sfx":6,"dmg":1,"dly":12,"pos":[[0.45,1.1,0],[-0.45,1.1,0],[0.45,-1.3,0],[-0.45,1.3,0]],"n":[[0,0,1],[0,0,1],[0,0,1],[0,0,1]]}},"vent":{"c":5,"r":1},"ywing":{"c":7,"r":1,"wp":{"sfx":1,"dmg":1,"dly":18,"pos":[[0.13,0,3.1],[-0.13,0,3.1]],"n":[[0,0,1],[0,0,1]]}}}'
 local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]'
 
 function draw_actor(self,x,y,z,w)
@@ -574,8 +574,11 @@ function draw_model(model,m,x,y,z,w)
 	local p,v={}
 	for _,e in pairs(model.e) do
 		if e[3]==true or e[3]==draw_session_id then
+			-- edges indices
 			local ak,bk=e[1],e[2]
+			-- edge positions
 			local a,b=p[ak],p[bk]
+			-- not in cache?
 			if not a then
 				v=model.v[ak]
 				x,y,z=v[1],v[2],v[3]
@@ -592,6 +595,7 @@ function draw_model(model,m,x,y,z,w)
 				p[bk]={x,y,z,w}
 				b=p[bk]
 			end
+			-- on screen? draw
 			if(a[3]>0 and b[3]>0) line(a[1],a[2],b[1],b[2])
 		end
 	end
@@ -654,20 +658,20 @@ function avoid(self,pos,dist)
 	local n,d2=0,dist*dist
 	for _,a in pairs(actors) do
 		if a!=self then
-			local p=v_clone(a.pos)
-			v_add(p,pos,-1)
-			local d=v_dot(p,p)
-			if d>0 and d<d2 then
-				v_add(v,p,-1)
+			local d=sqr_dist(pos,a.pos)
+			if d<d2 then
+				v_add(v,pos)
+				v_add(v,a.pos,-1)
+				n+=1
 			end
 		end
 	end
+	if(n>0) v_scale(v,1/n)
 	return v
 end
-function seek(self,r)
-	local fwd=m_fwd(self.m)
+function seek(self,fwd,dist)
 	for _,a in pairs(actors) do
-		if band(a.side,self.side)==0 and in_cone(self.pos,a.pos,fwd,0.5,r) then
+		if band(a.side,self.side)==0 and in_cone(self.pos,a.pos,fwd,0.5,dist) then
 			 -- avoid loops
 			if a.target!=self then
 				return a
@@ -695,7 +699,7 @@ end
 
 _g.update_flying_npc=function(self)
 	-- npc still in range?
-	if plyr and sqr_dist(self.pos,plyr.pos)>96*96 then
+	if plyr and sqr_dist(self.pos,plyr.pos)>9216 then
 		-- notifies listeners (if any)
 		if (self.on_die) self:on_die()
 		return false
@@ -703,6 +707,7 @@ _g.update_flying_npc=function(self)
 	
 	-- force application point 
 	local pos,m={0,0,1},self.m
+	-- to world
 	m_x_v(m,pos)
 	-- forces
 	local can_fire,fwd=false,m_fwd(m)
@@ -722,7 +727,7 @@ _g.update_flying_npc=function(self)
 		v_add(force,follow(pos,self.target,target_pos),follow_scale)
 	else
 		-- search for target
-		self.target=seek(self,24)
+		self.target=seek(self,fwd,24)
 	end
 	-- nothing to track?
 	if not self.target then
@@ -878,7 +883,7 @@ _g.make_laser=function(self,target)
 	self.laser_i+=1
 	-- laser colors
 	local c=self.side==good_side and 11 or 8
-	local pt=add(parts,clone(all_parts["laser"],{
+	local pt=add(parts,clone(all_parts[wp.part or "laser"],{
 			actor=self, -- laser owner
 			pos=p,
 			u=v,
@@ -1092,11 +1097,11 @@ _g.draw_part=function(self,x,y,z,w)
 	end
 end
 
-all_parts=json_parse'{"laser":{"rnd":{"dly":[80,110]},"acc":3,"kind":0,"update":"update_blt","draw":"draw_part","die":"die_blt"},"flash":{"kind":1,"rnd":{"r":[0.3,0.5],"dly":[6,10]},"dr":-0.05},"trail":{"kind":1,"rnd":{"r":[0.2,0.3],"dly":[12,24]},"dr":-0.02},"blast":{"frame":0,"sfx":3,"kind":1,"c":7,"rnd":{"r":[2.5,3],"dly":[8,12],"sparks":[6,12]},"dr":-0.04,"update":"update_blast"},"novae":{"frame":0,"sfx":3,"kind":1,"c":7,"r":30,"rnd":{"dly":[8,12],"sparks":[30,40]},"dr":-0.04,"update":"update_blast"},"proton":{"rnd":{"dly":[90,120]},"frame":0,"acc":0.6,"kind":3,"update":"update_proton","draw":"draw_part","die":"die_blt"},"spark":{"kind":6,"dr":0,"r":1,"rnd":{"dly":[24,38]}},"purple_engine":{"kind":7,"c":[14,2,5,1],"rnd":{"r":[0.25,0.4],"dly":[12,24],"dr":[-0.08,-0.1]}},"blue_engine":{"kind":7,"c":[7,12,5,1],"rnd":{"r":[0.3,0.5],"dly":[12,24],"dr":[-0.08,-0.05]}}}'
+all_parts=json_parse'{"laser":{"rnd":{"dly":[80,110]},"acc":3,"kind":0,"update":"update_blt","die":"die_blt","draw":"draw_part"},"slow_laser":{"rnd":{"dly":[80,110]},"acc":1.5,"kind":0,"update":"update_blt","die":"die_blt","draw":"draw_part"},"flash":{"kind":1,"rnd":{"r":[0.3,0.5],"dly":[6,10]},"dr":-0.05},"trail":{"kind":1,"rnd":{"r":[0.2,0.3],"dly":[12,24]},"dr":-0.02},"blast":{"frame":0,"sfx":3,"kind":1,"c":7,"rnd":{"r":[2.5,3],"dly":[8,12],"sparks":[6,12]},"dr":-0.04,"update":"update_blast"},"novae":{"frame":0,"sfx":3,"kind":1,"c":7,"r":30,"rnd":{"dly":[8,12],"sparks":[30,40]},"dr":-0.04,"update":"update_blast"},"proton":{"rnd":{"dly":[90,120]},"frame":0,"acc":0.6,"kind":3,"update":"update_proton","die":"die_blt"},"spark":{"kind":6,"dr":0,"r":1,"rnd":{"dly":[24,38]}},"purple_trail":{"kind":7,"c":[14,2,5,1],"rnd":{"r":[0.25,0.4],"dly":[12,24],"dr":[-0.08,-0.1]}},"blue_trail":{"kind":7,"c":[7,12,5,1],"rnd":{"r":[0.3,0.5],"dly":[12,24],"dr":[-0.08,-0.05]}}}'
 
 function make_part(part,p,c)
-	local pt=add(parts,clone(all_parts[part],{pos=v_clone(p)}))
-	pt.t,pt.update,pt.draw=time_t+pt.dly,pt.update or _g.update_part,_g.draw_part
+	local pt=add(parts,clone(all_parts[part],{pos=v_clone(p),draw=_g.draw_part}))
+	pt.t,pt.update=time_t+pt.dly,pt.update or _g.update_part
 	if(pt.sfx) sfx(pt.sfx)
 	return pt
 end
@@ -1789,7 +1794,7 @@ end
 local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","rnd_dly":180,"target":5},{"msg":"ground1","init":"ingress_mission","dly":15},{"init":"create_generator_group","dly":180,"target":4},{"msg":"ground2","init":"create_vent_group","dly":180,"target":1},{"msg":"victory1","init":"egress_mission","dly":600},{"init":"victory_mission","target":1,"dly":30},{"msg":"vador_out","init":"gameover_mission","dly":600}]'
 
 function next_mission_async()
-	for i=1,#all_missions do
+	for i=6,#all_missions do
 		local m=all_missions[i]
 		if m.msg then
 			local msg=make_msg(m.msg)
