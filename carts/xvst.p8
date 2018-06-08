@@ -721,7 +721,7 @@ _g.update_flying_npc=function(self)
 		local target_pos={0,-4,20}
 		-- enemy: get in sight
 		if band(self.target.side,self.side)==0 then
-			can_fire,target_pos=true,{0,0,-15}
+			can_fire,target_pos=true,{self.id%2==0 and -0.5 or 0.4,0,-15}
 		end
 		-- todo: diffent class of enemies
 		v_add(force,follow(pos,self.target,target_pos),follow_scale)
@@ -918,8 +918,9 @@ _g.make_proton=function(self,target)
 	make_part("flash",p,c)
 end
 
-local all_actors=json_parse'{"plyr":{"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"acc":0.2,"model":"xwing","roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","draw":"draw_plyr","update":"update_plyr","hit":"hit_plyr","die":"die_plyr"},"patrol":{"hp":10,"acc":0.2,"g":0,"overg_t":0,"rnd":{"model":["xwing","xwing","ywing"]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"tie":{"sfx":5,"hp":4,"acc":0.4,"g":0,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"generator":{"waypt":true,"hp":2,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":2,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"mfalcon":{"hp":8,"acc":0.25,"g":0,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","local_t":0,"pause_t":0,"fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"model":"junk2","side":"bad_side","update":"update_junk","hit":"hit_npc","die":"die_actor"},"exit":{"draw":"nop","update":"update_exit","waypt":true},"vador":{"sfx":5,"hp":40,"acc":0.3,"g":0,"overg_t":0,"model":"tiex1","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"}}'
+local all_actors=json_parse'{"plyr":{"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"acc":0.2,"model":"xwing","roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","draw":"draw_plyr","update":"update_plyr","hit":"hit_plyr","die":"die_plyr"},"patrol":{"hp":10,"acc":0.2,"g":0,"overg_t":0,"rnd":{"model":["xwing","xwing","ywing"]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"tie":{"sfx":5,"hp":4,"acc":0.4,"g":0,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor","rnd":{"id":[0,128]}},"generator":{"waypt":true,"hp":2,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":2,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"mfalcon":{"hp":8,"acc":0.25,"g":0,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","local_t":0,"pause_t":0,"fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"model":"junk2","side":"bad_side","update":"update_junk","hit":"hit_npc","die":"die_actor"},"exit":{"draw":"nop","update":"update_exit","waypt":true},"vador":{"sfx":5,"hp":40,"acc":0.3,"g":0,"overg_t":0,"model":"tiex1","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"}}'
 
+local actor_id=0
 function make_actor(src,p,q)
 	-- instance
 	local a=clone(all_actors[src],{
@@ -1175,6 +1176,7 @@ function make_trench(i)
 end
 
 function init_ground()
+	-- reset globals
 	turrets,trench_actors={},{}
 	for i=0,127 do
 		for j=0,127 do
@@ -1295,15 +1297,16 @@ function update_plyr_pos()
 end
 
 function control_plyr(self)
-	if(not plyr_playing) return
 	
 	local pitch,roll=0,0
 	
-	if(btn(0)) roll=-1 turn_t+=1
-	if(btn(1)) roll=1 turn_t+=1
-	if(btn(2)) pitch=-1
-	if(btn(3)) pitch=1
-
+	if(not plyr_playing) then
+		if(btn(0)) roll=-1 turn_t+=1
+		if(btn(1)) roll=1 turn_t+=1
+		if(btn(2)) pitch=-1
+		if(btn(3)) pitch=1
+	end
+	
 	-- flat turn
 	turn_t=min(turn_t,8)
 	if roll!=0 then
@@ -1346,9 +1349,6 @@ function control_plyr(self)
 	if btn(2,1) then
 		cam.flip=true
 	end
-
-	-- update cam
-	cam:track(m_x_xyz(plyr.m,view_offset[1],view_offset[2],cam.flip and -view_offset[3] or view_offset[3]),plyr.q)
 	
 	-- find nearest enemy (in sight)
 	local min_dist,target=find_closest_tgt(fwd,actors)
@@ -1375,17 +1375,18 @@ function control_plyr(self)
 end
 
 -- deathstar
-local ds_m=make_m()
+local ds_m,ds_enabled=make_m(),false
 function draw_deathstar(offset)
-	m_set_pos(ds_m,{cam.pos[1],offset+cam.pos[2],cam.pos[3]})
-	draw_model(all_models.deathstar,ds_m)
+	if ds_enabled then
+		m_set_pos(ds_m,{cam.pos[1],offset+cam.pos[2],cam.pos[3]})
+		draw_model(all_models.deathstar,ds_m)
+	end
 end
 
 local stars,stars_ramp={},{1,5,6,7}
 function draw_stars()
 	local hyper_space=plyr and plyr.boost>0
- for i=1,#stars do
-		local v=stars[i]
+ for _,v in pairs(stars) do
 		local x,y,z,w=cam:project(v[1],v[2],v[3])
 		if z>0 and z<32 then
 			w=flr(4*w/12)
@@ -1546,7 +1547,6 @@ end
 
 function gameover_screen:update()
 	v_add(cam.pos,m_fwd(cam.m),0.1)
-	--cam.pos[3]+=0.1
 	cam:update()
 end
 
@@ -1558,17 +1558,25 @@ end
 -- play loop
 function game_screen:init()
 	time_t,cockpit_view,view_offset,actors,parts,ground_level=0,false,v_clone(view_offsets[2]),{},{},nil
-	plyr_playing=true
-			
+	plyr_playing=false
+	ds_enabled=false
 	plyr=make_actor("plyr",{0,300,0},make_q(v_right,0.25))
-
-	-- move to cockpit view
-	set_view(true)
+	futures_add(function()
+		-- exit hyperspace effect
+		plyr.boost=10
+		wait_async(60)
+		ds_enabled=true
+		wait_async(30)
+		-- move to cockpit view
+		set_view(true)
+		plyr_playing=true
+		
+		-- init mission wait loop
+		futures_add(next_mission_async)
+	end)
 	
 	init_ground()
 	
-	-- init mission wait loop
-	futures_add(next_mission_async)
 end
 
 function game_screen:update()
@@ -1578,6 +1586,11 @@ function game_screen:update()
 	
 	if plyr then
 		control_plyr(plyr)
+		-- dead player?
+		if not plyr.disabled then
+		-- update cam
+		cam:track(m_x_xyz(plyr.m,view_offset[1],view_offset[2],cam.flip and -view_offset[3] or view_offset[3]),plyr.q)
+		end
 	end
 	
 	update_ground()
@@ -1612,7 +1625,6 @@ function game_screen:draw()
   		spr(64,0,32,8,4)
   		spr(64,64,32,8,4,true)
   		pal()
-  		palt()
   		
   		-- radar
   		draw_radar()
@@ -1634,6 +1646,7 @@ function game_screen:draw()
   		set_layer(true)
   		spr(0,0,32,8,4)
   		spr(0,64,32,8,4,true)
+  		-- seat
   		rectfill(0,64,127,127,0)
   		rect(19,64,108,125,1)
   		pal()
@@ -1794,7 +1807,7 @@ end
 local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","rnd_dly":180,"target":5},{"msg":"ground1","init":"ingress_mission","dly":15},{"init":"create_generator_group","dly":180,"target":4},{"msg":"ground2","init":"create_vent_group","dly":180,"target":1},{"msg":"victory1","init":"egress_mission","dly":600},{"init":"victory_mission","target":1,"dly":30},{"msg":"vador_out","init":"gameover_mission","dly":600}]'
 
 function next_mission_async()
-	for i=2,#all_missions do
+	for i=1,#all_missions do
 		local m=all_missions[i]
 		if m.msg then
 			local msg=make_msg(m.msg)
@@ -1826,7 +1839,7 @@ end
 
 -->8
 -- stats
-
+--[[
 local cpu_stats={}
 
 function draw_stats()
@@ -1855,7 +1868,7 @@ function draw_stats()
 		print("mem:"..mem.."%",2,2,7)
 	end
 end
-
+]]
 -->8
 -- futures
 local futures={}
