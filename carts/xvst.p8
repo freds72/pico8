@@ -102,16 +102,10 @@ local actors,ground_actors,parts,all_parts={},{},{}
 local ground_level
 local ground_scale,ground_colors=4,{1,5,6}
 
-local cur_screen
-local start_screen={
-	starting=false
-}
-local game_screen={
-	starting=false
-}
-local gameover_screen={}
+-- screen management
+local start_screen,game_screen,gameover_screen,cur_screen={},{},{}
 
-
+-- camera shake
 local shkx,shky=0,0
 function screen_shake(pow)
 	shkx,shky=min(4,shkx+rnd(pow)),min(4,shky+rnd(pow))
@@ -126,7 +120,7 @@ function screen_update()
 end
 -- volumetric sound
 -- zbuffer (kind of)
-local soundables,drawables
+local soundables,drawables={},{}
 local all_vol=json_parse'[0x700.0700,0x600.0600,0x500.0500,0x400.0400,0x300.0300,0x200.0200,0x100.0100,0]'
 
 function zbuf_clear()
@@ -444,7 +438,7 @@ function m_up(m)
 end
 
 -- models
-local all_models=json_parse'{"title":{"c":10},"deathstar":{"c":3},"turret":{"c":8,"r":1.1,"wp":{"sfx":1,"part":"slow_laser","dmg":1,"dly":12,"pos":[[-0.2,0.8,0.65],[0.2,0.8,0.65]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"engine_part":"purple_trail","engines":[[-0.57,0.44,-1.61],[-0.57,-0.44,-1.61],[0.57,0.44,-1.61],[0.57,-0.44,-1.61]],"proton_wp":{"dmg":4,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":6,"dmg":1,"dly":8,"pos":[[2.1,0.6,1.6],[2.1,-0.6,1.6],[-2.1,-0.6,1.6],[-2.1,0.6,1.6]],"n":[[-0.0452,-0.0129,0.9989],[-0.0452,0.0129,0.9989],[0.0452,0.0129,0.9989],[0.0452,-0.0129,0.9989]]}},"tie":{"c":5,"r":1.2,"engine_part":"blue_trail","engines":[[0,0,-0.5]],"wp":{"sfx":6,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"tiex1":{"c":13,"r":1.2,"wp":{"sfx":6,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"junk2":{"c":3,"r":1.2},"generator":{"c":6,"r":2},"mfalcon":{"c":5,"engine_part":"mfalcon_trail","engines":[[0,0,-5.86]],"wp":{"sfx":6,"dmg":1,"dly":12,"pos":[[0.45,1.1,0],[-0.45,1.1,0],[0.45,-1.3,0],[-0.45,1.3,0]],"n":[[0,0,1],[0,0,1],[0,0,1],[0,0,1]]}},"vent":{"c":5,"r":1},"ywing":{"c":7,"r":1,"wp":{"sfx":1,"dmg":1,"dly":18,"pos":[[0.13,0,3.1],[-0.13,0,3.1]],"n":[[0,0,1],[0,0,1]]}}}'
+local all_models=json_parse'{"title":{"c":10},"deathstar":{"c":3},"trench1":{"c":13},"turret":{"c":8,"r":1.1,"wp":{"sfx":1,"part":"slow_laser","dmg":1,"dly":12,"pos":[[-0.2,0.8,0.65],[0.2,0.8,0.65]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"engine_part":"purple_trail","engines":[[-0.57,0.44,-1.61],[-0.57,-0.44,-1.61],[0.57,0.44,-1.61],[0.57,-0.44,-1.61]],"proton_wp":{"dmg":4,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":6,"dmg":1,"dly":8,"pos":[[2.1,0.6,1.6],[2.1,-0.6,1.6],[-2.1,-0.6,1.6],[-2.1,0.6,1.6]],"n":[[-0.0452,-0.0129,0.9989],[-0.0452,0.0129,0.9989],[0.0452,0.0129,0.9989],[0.0452,-0.0129,0.9989]]}},"tie":{"c":5,"r":1.2,"engine_part":"blue_trail","engines":[[0,0,-0.5]],"wp":{"sfx":6,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"tiex1":{"c":13,"r":1.2,"wp":{"sfx":6,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"junk2":{"c":3,"r":1.2},"generator":{"c":6,"r":2},"mfalcon":{"c":5,"engine_part":"mfalcon_trail","engines":[[0,0,-5.86]],"wp":{"sfx":6,"dmg":1,"dly":12,"pos":[[0.45,1.1,0],[-0.45,1.1,0],[0.45,-1.3,0],[-0.45,1.3,0]],"n":[[0,0,1],[0,0,1],[0,0,1],[0,0,1]]}},"vent":{"c":5,"r":1},"ywing":{"c":7,"r":1,"wp":{"sfx":1,"dmg":1,"dly":18,"pos":[[0.13,0,3.1],[-0.13,0,3.1]],"n":[[0,0,1],[0,0,1]]}}}'
 local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]'
 
 function draw_actor(self,x,y,z,w)
@@ -612,17 +606,11 @@ _g.die_plyr=function(self)
 		local death_q=make_q(v_fwd,rndlerp(-0.04,0.04))
 		wait_async(90,function(i)
 			q_x_q(plyr.q,death_q)
-			local fwd=update_plyr_pos()
-			--[[
-			local p=make_rnd_v(0.5)
-			v_add(p,plyr.pos)
-			make_part("flash",p,rndlerp(8,10))
-			]]
 			return true
 		end)
 		make_part("blast",self.pos)
 		screen_shake(4)
-		wait_gameover(600)
+		wait_gameover_async()
 	end)
 end
 
@@ -784,7 +772,7 @@ end
 _g.hit_plyr=function(self,dmg)
 	if(self.disabled or self.safe_t>time_t) return
 	self.energy,self.safe_t=0,time_t+8
-	--self.hp-=dmg
+	self.hp-=dmg
 	if self.hp<=0 then
 		self:die()
 	end
@@ -918,7 +906,7 @@ _g.make_proton=function(self,target)
 	make_part("flash",p,c)
 end
 
-local all_actors=json_parse'{"plyr":{"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"acc":0.2,"model":"xwing","roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","draw":"draw_plyr","update":"update_plyr","hit":"hit_plyr","die":"die_plyr"},"patrol":{"hp":10,"acc":0.2,"g":0,"overg_t":0,"rnd":{"model":["xwing","xwing","ywing"]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"tie":{"sfx":5,"hp":4,"acc":0.4,"g":0,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor","rnd":{"id":[0,128]}},"generator":{"waypt":true,"hp":2,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":2,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"mfalcon":{"hp":8,"acc":0.25,"g":0,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","local_t":0,"pause_t":0,"fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"model":"junk2","side":"bad_side","update":"update_junk","hit":"hit_npc","die":"die_actor"},"exit":{"draw":"nop","update":"update_exit","waypt":true},"vador":{"sfx":5,"hp":40,"acc":0.3,"g":0,"overg_t":0,"model":"tiex1","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"}}'
+local all_actors=json_parse'{"plyr":{"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"dboost":1,"acc":0.2,"model":"xwing","roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","draw":"draw_plyr","update":"update_plyr","hit":"hit_plyr","die":"die_plyr"},"patrol":{"hp":10,"acc":0.2,"g":0,"overg_t":0,"rnd":{"model":["xwing","xwing","ywing"]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"tie":{"sfx":5,"hp":4,"acc":0.4,"g":0,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor","rnd":{"id":[0,128]}},"generator":{"waypt":true,"hp":2,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":2,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"mfalcon":{"hp":8,"acc":0.25,"g":0,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","local_t":0,"pause_t":0,"fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"model":"junk2","side":"bad_side","update":"update_junk","hit":"hit_npc","die":"die_actor"},"exit":{"draw":"nop","update":"update_exit","waypt":true},"vador":{"sfx":5,"hp":40,"acc":0.3,"g":0,"overg_t":0,"model":"tiex1","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"}}'
 
 local actor_id=0
 function make_actor(src,p,q)
@@ -992,7 +980,7 @@ _g.update_blast=function(self)
 end
 
 _g.die_blt=function(self)
-	make_part("flash",self.pos)
+	make_part("flash",self.pos,self.c)
 	-- to be removed from set
 	return false
 end
@@ -1109,7 +1097,7 @@ _g.draw_part=function(self,x,y,z,w)
 	end
 end
 
-all_parts=json_parse'{"laser":{"rnd":{"dly":[80,110]},"acc":3,"kind":0,"update":"update_blt","die":"die_blt","draw":"draw_part"},"slow_laser":{"rnd":{"dly":[80,110]},"acc":1.5,"kind":0,"update":"update_blt","die":"die_blt","draw":"draw_part"},"flash":{"kind":1,"rnd":{"r":[0.3,0.5],"dly":[6,10]},"dr":-0.05},"trail":{"kind":1,"rnd":{"r":[0.2,0.3],"dly":[12,24]},"dr":-0.02},"blast":{"frame":0,"sfx":3,"kind":1,"c":7,"rnd":{"r":[2.5,3],"dly":[8,12],"sparks":[6,12]},"dr":-0.04,"update":"update_blast"},"novae":{"frame":0,"sfx":3,"kind":1,"c":7,"r":30,"rnd":{"dly":[8,12],"sparks":[30,40]},"dr":-0.04,"update":"update_blast"},"proton":{"rnd":{"dly":[90,120]},"frame":0,"acc":0.6,"kind":3,"update":"update_proton","die":"die_blt","draw":"draw_part"},"spark":{"kind":6,"dr":0,"r":1,"rnd":{"dly":[24,38]}},"purple_trail":{"kind":7,"c":[14,2,5,1],"rnd":{"r":[0.35,0.4],"dly":[2,4],"dr":[-0.08,-0.05]}},"blue_trail":{"kind":7,"c":[7,12,5,1],"rnd":{"r":[0.3,0.5],"dly":[12,24],"dr":[-0.08,-0.05]}},"mfalcon_trail":{"kind":8,"r":1,"dr":0,"rnd":{"c":[12,7,13],"dly":[1,2]}}}'
+all_parts=json_parse'{"laser":{"rnd":{"dly":[80,110]},"acc":3,"kind":0,"update":"update_blt","die":"die_blt","draw":"draw_part"},"slow_laser":{"rnd":{"dly":[80,110]},"acc":1.5,"kind":0,"update":"update_blt","die":"die_blt","draw":"draw_part"},"flash":{"kind":1,"rnd":{"r":[0.5,0.7],"dly":[4,6]},"dr":-0.05},"trail":{"kind":1,"rnd":{"r":[0.2,0.3],"dly":[12,24]},"dr":-0.02},"blast":{"frame":0,"sfx":3,"kind":1,"c":7,"rnd":{"r":[2.5,3],"dly":[8,12],"sparks":[6,12]},"dr":-0.04,"update":"update_blast"},"novae":{"frame":0,"sfx":3,"kind":1,"c":7,"r":30,"rnd":{"dly":[8,12],"sparks":[30,40]},"dr":-0.04,"update":"update_blast"},"proton":{"rnd":{"dly":[90,120]},"frame":0,"acc":0.6,"kind":3,"update":"update_proton","die":"die_blt","draw":"draw_part"},"spark":{"kind":6,"dr":0,"r":1,"rnd":{"dly":[24,38]}},"purple_trail":{"kind":7,"c":[14,2,5,1],"rnd":{"r":[0.35,0.4],"dly":[2,4],"dr":[-0.08,-0.05]}},"blue_trail":{"kind":7,"c":[7,12,5,1],"rnd":{"r":[0.3,0.5],"dly":[12,24],"dr":[-0.08,-0.05]}},"mfalcon_trail":{"kind":8,"r":1,"dr":0,"rnd":{"c":[12,7,13],"dly":[1,2]}}}'
 
 function make_part(part,p,c)
 	local pt=add(parts,clone(all_parts[part],{pos=v_clone(p),draw=_g.draw_part,c=c}))
@@ -1141,11 +1129,11 @@ function draw_ground(self)
 	local x0,z0=cam.pos[1],cam.pos[3]
 	local dx,dy=x0%scale,z0%scale
 	
-	for i=-8,8 do
+	for i=-6,6 do
 		local ii=scale*i-dx+x0
 		-- don't draw on trench
 		if abs(flr(ii-x0+cam.pos[1]))>=8 then
-			for j=-8,8 do
+			for j=-6,6 do
 				local jj=scale*j-dy+z0
 				local x,y,z,w=cam:project(ii,ground_level,jj)
 				if z>0 then
@@ -1385,10 +1373,12 @@ function control_plyr(self)
 end
 
 -- deathstar
-local ds_m,ds_scale=make_m(),0
+local ds_m,ds_scale,ds_enable=make_m(),0,false
 function draw_deathstar(offset)
-	m_set_pos(ds_m,{cam.pos[1],ds_scale+offset+cam.pos[2],cam.pos[3]})
-	draw_model(all_models.deathstar,ds_m)
+	if ds_enabled then
+		m_set_pos(ds_m,{cam.pos[1],ds_scale+offset+cam.pos[2],cam.pos[3]})
+		draw_model(all_models.deathstar,ds_m)
+	end
 end
 
 local stars,stars_ramp={},{1,13,6,7}
@@ -1507,101 +1497,91 @@ function set_layer(top)
 end
 
 -- wait loop
+local start_screen_starting=false
 function start_screen:update()
-	if not self.starting and (btnp(4) or btnp(5)) then
+	if not start_screen_starting and (btnp(4) or btnp(5)) then
 		-- avoid start reentrancy
-		self.starting=true
+		-- select next screen
+		start_screen_starting,cur_screen=true,game_screen
 		-- init game
+		time_t,cockpit_view,view_offset,actors,parts,ground_level=0,false,outside_offset,{},{},nil
+		plyr,plyr_playing=make_actor("plyr",{0,300,0},make_q(v_right,0.25)),false
+		-- hyperspace!
+		plyr.boost,plyr.dboost=1,1.03
+		init_ground()
+		sfx(9)
 		futures_add(function()
-			wait_async(30)
-			game_screen:init()
-			cur_screen=game_screen
-			start_screen.starting=false
+			-- deathstar animation effect
+			wait_async(180,function(i)
+				ds_enabled,ds_scale=i>80,lerp(-150,0,smoothstep((i-90)/90))
+				return true
+			end)
+			plyr.boost,plyr.dboost=0,0.9
+			-- move to cockpit view
+			wait_async(60)
+			set_view(true)
+			plyr_playing=true
+			
+			-- init mission wait loop
+			futures_add(next_mission_async)
+			start_screen_starting=false
 		end)
 	end
 end
+local title_m=m_from_q(make_q(v_right,0.75))
 function start_screen:draw()
 	cam.pos[3]+=0.1
 	cam:update()
 	draw_stars()
-	local m=m_from_q(make_q(v_right,0.75))
-	m_set_pos(m,{-0.85,0.4,2.1+cam.pos[3]})
-	draw_model(all_models.title,m)
+	m_set_pos(title_m,{-0.85,0.4,2.1+cam.pos[3]})
+	draw_model(all_models.title,title_m)
 	print("attack on the death star",20,78,12)
 	
-	if (starting and time_t%2==0) or time_t%24<12 then	
+	if (start_screen_starting and time_t%2==0) or time_t%24<12 then	
 		print("press start",44,118,11)
 	end
 end
 
-function wait_gameover(t)
+function wait_gameover_async()
 	del(actors,plyr)
 	plyr=nil
-	wait_async(t or 0)
+	wait_async(60)
 	cur_screen=gameover_screen
-	camera()
 	wait_async(600,function()
 		if btnp(4) or btnp(5) then
-			-- "eat" btnp
+			-- "eat" btnp to avoid immediate restart
 			yield()
 			return false
 		end
 		return true
 	end)
-	cur_screen=start_screen
+	camera()
+	cam,cur_screen=make_cam(64),start_screen
 end
 
 function gameover_screen:update()
-	v_add(cam.pos,m_fwd(cam.m),0.1)
-	cam:update()
+	q_x_q(cam.q,make_q(v_up,0.001))
+	game_screen:update()
 end
 
 function gameover_screen:draw()
-	draw_stars()
+	game_screen:draw()
 	print("game over",38,60,6)
 end
 
 -- play loop
-function game_screen:init()
-	time_t,cockpit_view,view_offset,actors,parts,ground_level=0,false,v_clone(outside_offset),{},{},nil
-	plyr_playing=false
-	ds_enabled=false
-	plyr=make_actor("plyr",{0,300,0},make_q(v_right,0.25))
-	sfx(9)
-	futures_add(function()
-		-- exit hyperspace effect
-		plyr.boost=2
-		plyr.dboost=1
-		wait_async(180,function(i)
-			ds_scale=lerp(-150,0,smoothstep((i-90)/90))
-			return true
-		end)
-		ds_scale=0
-		plyr.dboost=0.9
-		wait_async(60)
-		-- move to cockpit view
-		set_view(true)
-		plyr_playing=true
-		
-		-- init mission wait loop
-		futures_add(next_mission_async)
-	end)
-	
-	init_ground()
-	
-end
-
 function game_screen:update()
 	zbuf_clear()
 	
+	-- comms
 	update_msg()
 	
 	if plyr then
 		control_plyr(plyr)
-		-- dead player?
+		-- do not track dead player
 		if not plyr.disabled then
-		-- update cam
-		cam:track(m_x_xyz(plyr.m,view_offset[1],view_offset[2],cam.flip and -view_offset[3] or view_offset[3]),plyr.q)
+			-- update cam
+			cam:track(m_x_xyz(plyr.m,view_offset[1],view_offset[2],cam.flip and -view_offset[3] or view_offset[3]),plyr.q)
 		end
 	end
 	
@@ -1624,48 +1604,47 @@ function game_screen:draw()
 	
 	draw_msg()
 		
-	-- cam modes
+	-- draw cockpit
 	if plyr then
- 	if cockpit_view then
- 	 if not cam.flip then
- 	  
- 			-- cockpit
- 			set_layer(false)
-  		spr(0,0,64,8,8)
-  		spr(0,64,64,8,8,true)
- 			set_layer(true)
-  		spr(64,0,32,8,4)
-  		spr(64,64,32,8,4,true)
-  		pal()
-  		-- radar
-  		draw_radar()
-  		-- hp
-  		local x=23
-  		local imax=flr(8*plyr.energy)
-  		for i=1,imax do
-  			rectfill(x,120,x+1,123,11)
-  			x+=3
-  		end
-  		for i=imax+1,8 do  
-  			rectfill(x,120,x+1,123,1)
-  			x+=3
-  		end
-  		-- engines
-  		local p=(plyr.acc+plyr.boost)/(0.3)
-  		rectfill(82,120,82+22*p,123,9)
-  	else
-  		set_layer(true)
-  		spr(0,0,32,8,4)
-  		spr(0,64,32,8,4,true)
-  		-- seat
-  		rectfill(0,64,127,127,0)
-  		rect(19,64,108,125,1)
-  		pal()
-  	end
-  else
-  	draw_radar()
-  end
- end
+		if cockpit_view then
+			if not cam.flip then
+
+				-- cockpit
+				set_layer(false)
+				spr(0,0,64,8,8)
+				spr(0,64,64,8,8,true)
+				set_layer(true)
+				spr(64,0,32,8,4)
+				spr(64,64,32,8,4,true)
+				pal()
+				-- radar
+				draw_radar()
+				-- hp
+				local x,imax=23,flr(8*plyr.energy)
+				for i=1,imax do
+					rectfill(x,120,x+1,123,11)
+					x+=3
+				end
+				for i=imax+1,8 do  
+					rectfill(x,120,x+1,123,1)
+					x+=3
+				end
+				-- engines
+				local p=(plyr.acc+plyr.boost)/(0.3)
+				rectfill(82,120,82+22*p,123,9)
+			else
+				set_layer(true)
+				spr(0,0,32,8,4)
+				spr(0,64,32,8,4,true)
+				-- seat
+				rectfill(0,64,127,127,0)
+				rect(19,64,108,125,1)
+				pal()
+			end
+		else
+			draw_radar()
+		end
+	end
 end
 
 function _update60()
@@ -1818,7 +1797,7 @@ end
 local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","rnd_dly":180,"target":5},{"msg":"ground1","init":"ingress_mission","dly":15},{"init":"create_generator_group","dly":180,"target":4},{"msg":"ground2","init":"create_vent_group","dly":180,"target":1},{"msg":"victory1","init":"egress_mission","dly":600},{"init":"victory_mission","target":1,"dly":30},{"msg":"vador_out","init":"gameover_mission","dly":600}]'
 
 function next_mission_async()
-	for i=6,#all_missions do
+	for i=2,#all_missions do
 		local m=all_missions[i]
 		if m.msg then
 			local msg=make_msg(m.msg)
@@ -1838,10 +1817,13 @@ function next_mission_async()
 			end
 			-- todo: exit when gameover
 			-- wait kills
-			while npcs>0 do
+			while plyr and npcs>0 do
 				yield()
 			end
-			-- pause?
+			-- game over (failure)
+			if(not plyr) return
+
+			-- pause before next mission?
 			wait_async(m.rnd_dly and rnd(m.rnd_dly) or m.dly)
 		until kills>=target
 	end
@@ -1922,7 +1904,7 @@ aaaaaaaa999998888888840000000000000000000000000000000004400000000000000000000000
 0000000000000012669888888888888840000000000000000000000000000000000000dffd000000000005f00f50000000006711117600000000000000000000
 00000000000000122144888888888888840000000000000000000000000000000000076666700000000000577500000000776561176677000000000000000000
 00000000000000122100448888888888884000000000000000000000000000000006776677776000000000000000000000666655666666000000000000000000
-000000000000012221000048888888888884000000000000000000000000000088000000aaaaaaaa0000000000000000000000000000000000000000012d6700
+000000000000012221000048888888888884000000000000000000000000000088000000aaaaaaaa000000000000000000000000000000000000000000000000
 000000000000012210000004488888888888400000000000000000000000000080000000a000000a000000000000000000000000000000000000000000000000
 000000000000122210000000044888888888840000000000000000000000000000000000a000000a000aa000000bbbbb00000000000bbbbb0000000000000000
 0000000000001221000000000004488888888840000000000000000000000000000000000a0000a000aaaa0000b00000b000000000b00000b000000000000000
@@ -2071,7 +2053,7 @@ __sfx__
 000100003c5503755034550315502f5502b5502565024550206501f5301b620185201161010550096500655004650036500265004550036500b50008500065000350001500015000000000000000000000000000
 00020000026500a650146501765019650196501765015650126500e6500d6500b6500a65007650036400565004650026500165001650016500165001650026500265002650036500365003650036500265002650
 000300002f3502f3502f3502f3502f3502f3503d3503d3503c3503c3503c350353503533035330353300e30012300163001a3001e3002330026300293002b3002f300284002630035400203001c300364001b300
-000200080565010450056500f450056500f45007650114500f55032450344501445022450224502c4502c4502c4502c4502c4502c4502c4502b4502b4502b4502b4502b4502b4502b4502b450000000000000000
+000200082a3501f3502b3501b3503135013350363500f3501ed5032450344501445022450224502c4502c4502c4502c4502c4502c4502c4502b4502b4502b4502b4502b4502b4502b4502b450000000000000000
 000200081b560160501f540120401f550140601e550180502325015040116400d0400b6300a030076300803007630060300463004030036300263002640016400164001640016300163001630016300163001620
 000200000b4500b4500c4500d4500e450104501145015450174501a45022450304503c4502bc002ec0030c002fc0034c0037c002dc002dc002fc002fc0031c0033c0030c002ec002fc0030c0032c0034c0034c00
 0006000025c6022c701bc701ac603bf5036f5034c6032f7038f7038f6022350223401e3301c3302ff302ff4036f4035f402fc3031f5030c7036f702fc6038f402a33038350383603636020c5026c502ec5032c60
