@@ -599,7 +599,7 @@ _g.die_plyr=function(self)
 	plyr_playing,cockpit_view=false,false
 	cam.flip=false
 
-	futures_add(function()	
+	futures_add(function()
 		-- death spin
 		local death_q=make_q(v_fwd,rndlerp(-0.04,0.04))
 		wait_async(90,function(i)
@@ -608,7 +608,8 @@ _g.die_plyr=function(self)
 		end)
 		make_part("blast",self.pos)
 		screen_shake(4)
-		wait_gameover_async()
+		del(actors,self)
+		plyr=nil
 	end)
 end
 
@@ -836,7 +837,7 @@ _g.update_turret=function(self,i,j)
 	
 	-- delay fire for new turret
 	if time_t-self.local_t>45 then
-		self.pause_t=time_t+45
+		self.pause_t=time_t+rnd(45)
 	end
 	
 	-- fly low or die!
@@ -907,7 +908,7 @@ _g.make_proton=function(self,target)
 	make_part("flash",p,c)
 end
 
-local all_actors=json_parse'{"plyr":{"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"dboost":1,"acc":0.2,"model":"xwing","roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","draw":"draw_plyr","update":"update_plyr","hit":"hit_plyr","die":"die_plyr"},"patrol":{"hp":10,"acc":0.2,"g":0,"overg_t":0,"rnd":{"model":["xwing","xwing","ywing"]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"tie":{"sfx":5,"hp":4,"acc":0.4,"g":0,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor","rnd":{"id":[0,128]}},"generator":{"waypt":true,"hp":2,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":2,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"mfalcon":{"hp":8,"acc":0.25,"g":0,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","local_t":0,"pause_t":0,"fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"model":"junk2","side":"bad_side","update":"update_junk","hit":"hit_npc","die":"die_actor"},"exit":{"draw":"nop","update":"update_exit","waypt":true},"vador":{"sfx":5,"hp":40,"acc":0.3,"g":0,"overg_t":0,"model":"tiex1","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"}}'
+local all_actors=json_parse'{"plyr":{"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"dboost":1,"acc":0.2,"model":"xwing","roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","draw":"draw_plyr","update":"update_plyr","hit":"hit_plyr","die":"die_plyr"},"patrol":{"hp":10,"acc":0.2,"g":0,"overg_t":0,"rnd":{"model":["xwing","xwing","ywing"]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"tie":{"sfx":5,"hp":4,"acc":0.4,"g":0,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor","rnd":{"id":[0,128]}},"generator":{"waypt":true,"hp":10,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":2,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"mfalcon":{"hp":8,"acc":0.25,"g":0,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","local_t":0,"pause_t":0,"fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"model":"junk2","side":"bad_side","update":"update_junk","hit":"hit_npc","die":"die_actor"},"exit":{"draw":"nop","update":"update_exit","waypt":true},"vador":{"sfx":5,"hp":40,"acc":0.3,"g":0,"overg_t":0,"model":"tiex1","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"}}'
 
 function make_actor(src,p,q)
 	-- instance
@@ -1515,14 +1516,12 @@ function start_screen:draw()
 	draw_model(all_models.title,title_m)
 	print("attack on the death star",20,78,12)
 	
-	if (start_screen_starting and time_t%2==0) or time_t%24<12 then	
+	if (start_screen_starting and time_t%2==0) or time_t%24<12 then
 		print("press start",44,118,11)
 	end
 end
 
 function wait_gameover_async()
-	del(actors,plyr)
-	plyr=nil
 	wait_async(60)
 	cur_screen=gameover_screen
 	wait_async(600,function()
@@ -1544,12 +1543,12 @@ end
 
 function gameover_screen:draw()
 	game_screen:draw()
-	print("game over",38,60,6)
-	print("completed:"..score.."/8",40,68,10)
+	print("game over",41,60,12)
+	print("achieved: "..score.."/4",31,70,10)
 	
  -- display badges
-	for i=1,8 do
-		spr(i<=score and 57 or 108,11*i,72,2,1)
+	for i=1,4 do
+		spr(i<=score and 57 or 108,31+11*i,80,2,1)
 	end
 end
 
@@ -1641,7 +1640,7 @@ function _draw()
 
 	cur_screen:draw()
 	
-	if(draw_stats) draw_stats()
+	--if(draw_stats) draw_stats()
 	print(stat(1),2,2,7)
 end
 
@@ -1674,7 +1673,7 @@ end
 
 -->8
 -- radio messages
-local all_msgs=json_parse'{"attack1":{"spr":12,"title":"ackbar","txt":"clear tie squadrons","dly":300},"ground1":{"spr":12,"title":"ackbar","txt":"destroy shield\ngenerators","dly":300},"ground2":{"spr":12,"title":"ackbar","txt":"bomb vent","dly":300},"victory1":{"spr":104,"title":"han solo","txt":"get out of here son.\nquick!","dly":300},"victory2":{"spr":12,"title":"ackbar","txt":"victory!","dly":300},"victory3":{"spr":10,"title":"leia","txt":"the rebellion thanks you\nget to the base","dly":300},"help":{"spr":10,"rnd":{"title":["red leader","alpha","delta wing"]},"txt":"help!","dly":300},"vador_out":{"spr":106,"title":"d.vador","txt":"i\'ll be back...","dly":300},"low_hp":{"spr":76,"title":"r2d2","txt":"..--..-..","dly":120,"sfx":8,"rnd":{"repeat_dly":[600,900]}}}'
+local all_msgs=json_parse'{"attack1":{"spr":12,"title":"ackbar","txt":"clear tie squadrons","dly":300},"ground1":{"spr":12,"title":"ackbar","txt":"destroy shield\ngenerators","dly":300},"ground2":{"spr":12,"title":"ackbar","txt":"bomb vent","dly":300},"victory1":{"spr":104,"title":"han solo","txt":"get out of here son.\nquick!","dly":300},"victory2":{"spr":12,"title":"ackbar","txt":"victory!","dly":300},"victory3":{"spr":8,"title":"leia","txt":"the rebellion\n thanks you.\nget back home!","dly":300},"help":{"spr":10,"rnd":{"title":["red leader","alpha","delta wing"]},"txt":"help!","dly":300},"vador_out":{"spr":106,"title":"d.vador","txt":"i\'ll be back...","dly":300},"low_hp":{"spr":76,"title":"r2d2","txt":"..--.-..","dly":120,"sfx":8,"rnd":{"repeat_dly":[600,900]}}}'
 local low_hp_t,cur_msg=0
 
 function make_msg(msg)
@@ -1770,15 +1769,16 @@ _g.victory_mission=function()
 	return {npc}
 end
 _g.gameover_mission=function()
-	-- todo: end?
+	del(actors,plyr)
+	plyr=nil
 	return {}
 end
 
-local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","rnd_dly":180,"target":5},{"msg":"ground1","init":"ingress_mission","dly":15},{"init":"create_generator_group","dly":180,"target":4},{"msg":"ground2","init":"create_vent_group","dly":180,"target":1},{"msg":"victory1","init":"egress_mission","dly":600},{"init":"victory_mission","target":1,"dly":30},{"msg":"vador_out","init":"gameover_mission","dly":600}]'
+local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","rnd_dly":180,"target":8},{"msg":"ground1","init":"ingress_mission","dly":15},{"init":"create_generator_group","dly":180,"target":4},{"msg":"ground2","init":"create_vent_group","dly":180,"target":1},{"msg":"victory1","init":"egress_mission","dly":600},{"init":"victory_mission","target":1,"dly":30},{"msg":"vador_out","dly":600},{"msg":"victory3","init":"gameover_mission","dly":600}]'
 
 function next_mission_async()
 	score=0
-	for i=1,#all_missions do
+	for i=7,#all_missions do
 		local m=all_missions[i]
 		if m.msg then
 			wait_async(make_msg(m.msg).dly)
@@ -1788,7 +1788,7 @@ function next_mission_async()
 			-- create mission
 			-- die hook
 			local npcs=0
-			for _,a in pairs(m.init()) do
+			for _,a in pairs(m.init and m.init() or {}) do
 				npcs+=1
 				a.on_die=function(killed)
 					npcs-=1
@@ -1799,15 +1799,20 @@ function next_mission_async()
 			while plyr and npcs>0 do
 				yield()
 			end
-			-- game over (failure)
-			if(not plyr) return
-
+			-- game over
+			if(not plyr) goto gameover
+			
+			-- failed?
+			if(m.mandatory and kills!=target) goto gameover
+			
 			-- pause before next mission?
 			wait_async(m.rnd_dly and rnd(m.rnd_dly) or m.dly)
 		until kills>=target
-		-- 
-		score+=1
+		-- don’t record transitions
+		score+=target>0 and 1 or 0
 	end
+::gameover::
+	wait_gameover_async()
 end
 
 -->8
