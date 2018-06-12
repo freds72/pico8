@@ -119,12 +119,32 @@ function screen_update()
 	camera(shkx,shky)
 end
 -- volumetric sound
--- zbuffer (kind of)
-local soundables,drawables={},{}
 local all_vol=json_parse'[0x700.0700,0x600.0600,0x500.0500,0x400.0400,0x300.0300,0x200.0200,0x100.0100,0]'
+function sfx_v(s,pos)
+	local d=sqr_dist(cam.pos,pos)
+	-- set volume
+	local vol=all_vol[mid(flr(sqrt(d)/8+0.5),1,#all_vol)]
+	if vol!=0 then
+		local src,dst=0x3200+68*s,0x3200+68*16
+		-- 2 notes/loop (eg 4 bytes)
+		-- 32 notes total
+		for k=1,16 do
+			 -- copy sound
+			local pair=bor(band(peek4(src),0xf1ff.f1ff),vol)
+			poke4(dst,pair)
+			src+=4
+			dst+=4
+		end
+		-- sfx attributes
+		poke4(dst,peek4(src))
+		sfx(16)
+	end
+end
 
+-- zbuffer (kind of)
+local drawables={}
 function zbuf_clear()
-	soundables,drawables={},{}
+	drawables={},{}
 end
 function zbuf_draw()
 	local objs={}
@@ -143,34 +163,7 @@ function zbuf_draw()
 		d.obj:draw(d.x,d.y,d.z,d.w)
 	end
 end
-function zbuf_play()
-	local objs={}
-	-- sort by closest distance
-	for _,s in pairs(soundables) do
-		add(objs,{obj=s,sfx=s.sfx,key=-sqr_dist(cam.pos,s.pos)})
-	end
-	-- dist-sorting
-	sort(objs)
-	-- play first 3 closest emitters
-	for i=0,min(#objs,3)-1 do
-		local s=objs[i+1]
-		-- set volume
-		local vol=mid(flr(sqrt(-s.key)/8+0.5),1,#all_vol)
-		-- muted?
-		if vol>1 then
-			-- 2 notes/loop (eg 4 bytes)
-			-- 8 notes total
-			for k=0,12,4 do
-				 -- copy sound
-		 	local pair=bor(band(peek4(0x3200+68*s.sfx+k),0xf1ff.f1ff),all_vol[vol])
-	 		poke4(0x3200+68*(16+i)+k,pair)
-	 	end
-	 	-- in case some other sound took over
-	 	-- restart the loop
-		 if(stat(17+i)==-1) sfx(16+i,i+1)
-	 end
-	end	
-end
+
 function zbuf_filter(array)
 	for _,a in pairs(array) do
 		if not a:update() then
@@ -879,10 +872,10 @@ _g.make_laser=function(self,target)
 			u=v,
 			c=c,
 			side=self.side,
-			dmg=wp.dmg,
-			sfx=wp.sfx}))
+			dmg=wp.dmg}))
 	pt.t=time_t+pt.dly
 	self.fire_t=time_t+wp.dly
+	if(wp.sfx) sfx_v(wp.sfx,p)
 	make_part("flash",p,c)
 end
 
@@ -904,7 +897,7 @@ _g.make_proton=function(self,target)
 		side=self.side,
 		dmg=wp.dmg}))
 	pt.t=time_t+pt.dly
-	if (wp.sfx) sfx(wp.sfx)
+	if(wp.sfx) sfx_v(wp.sfx,p)
 	make_part("flash",p,c)
 end
 
@@ -1103,7 +1096,7 @@ all_parts=json_parse'{"laser":{"rnd":{"dly":[80,110]},"acc":3,"kind":0,"update":
 function make_part(part,p,c)
 	local pt=add(parts,clone(all_parts[part],{pos=v_clone(p),draw=_g.draw_part,c=c}))
 	pt.t,pt.update=time_t+pt.dly,pt.update or _g.update_part
-	if(pt.sfx) sfx(pt.sfx)
+	if(pt.sfx) sfx_v(pt.sfx,p)
 	return pt
 end
 
@@ -1482,16 +1475,17 @@ function start_screen:update()
 		-- avoid start reentrancy
 		start_screen_starting=true	 
 		futures_add(function()
- 		wait_async(30)
-			-- select next screen
- 		cur_screen=game_screen
- 		-- init game
- 		time_t,cockpit_view,view_offset,actors,parts,ground_level=0,false,outside_offset,{},{},nil
- 		plyr,plyr_playing=make_actor("plyr",{0,300,0},make_q(v_right,0.25)),false
- 		-- hyperspace!
- 		plyr.boost,plyr.dboost=1,1.01
- 		init_ground()
- 		sfx(9)			-- deathstar animation effect
+			wait_async(30)
+				-- select next screen
+			cur_screen=game_screen
+			-- init game
+			time_t,cockpit_view,view_offset,actors,parts,ground_level=0,false,outside_offset,{},{},nil
+			plyr,plyr_playing=make_actor("plyr",{0,300,0},make_q(v_right,0.25)),false
+			-- hyperspace!
+			plyr.boost,plyr.dboost=1,1.01
+			init_ground()
+			sfx(9)
+			-- deathstar animation effect
 			wait_async(180,function(i)
 				ds_enabled,ds_scale=i>80,lerp(-150,0,smoothstep((i-90)/90))
 				return true
@@ -1507,15 +1501,21 @@ function start_screen:update()
 		end)
 	end
 end
--- todo: flip model!!
+
 local title_m=make_m(0,0,0)
+local all_help=json_parse'[{"msg":"⬅️⬆️⬇️➡️: flight control","x":20},{"msg":"❎: laser / ❎+2s: proton","x":24},{"msg":"🅾️: speed boost","x":32},{"msg":"⬇️(p2): rear view","x":30},{"msg":"⬆️(p2): external view","x":23}]'
 function start_screen:draw()
 	cam.pos[3]+=0.1
 	cam:update()
 	draw_stars()
 	m_set_pos(title_m,{-0.94,0.4,2.1+cam.pos[3]})
 	draw_model(all_models.title,title_m)
+	print("freds72 presents",32,4,1)
 	print("attack on the death star",20,78,12)
+	
+	local i=flr(time_t/128)%#all_help
+	local h=all_help[i+1]
+	print(h.msg,h.x,108,3)
 	
 	if (start_screen_starting and time_t%2==0) or time_t%24<12 then
 		print("press start",44,118,11)
@@ -1576,9 +1576,6 @@ function game_screen:update()
 	
 	-- must be done after update loop
 	cam:update()
-	
-	-- 3d sound rendering
-	zbuf_play()
 end
 
 function game_screen:draw()
