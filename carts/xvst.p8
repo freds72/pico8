@@ -96,7 +96,7 @@ end
 -- true: cockpit
 local cockpit_view,cam=false
 -- player
-local plyr_playing,score,plyr=false,0
+local plyr_playing,score,invert_y,plyr=false,0,false
 local actors,ground_actors,parts,all_parts={},{},{}
 -- ground constants
 local ground_level
@@ -429,7 +429,7 @@ function m_up(m)
 end
 
 -- models
-local all_models=json_parse'{"title":{"c":10},"deathstar":{"c":3},"trench1":{"c":13},"turret":{"c":8,"r":1.1,"wp":{"sfx":1,"part":"slow_laser","dmg":1,"dly":24,"pos":[[-0.2,0.8,0.65],[0.2,0.8,0.65]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"engine_part":"purple_trail","engines":[[-0.57,0.44,-1.61],[-0.57,-0.44,-1.61],[0.57,0.44,-1.61],[0.57,-0.44,-1.61]],"proton_wp":{"dmg":4,"sfx":11,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":2,"dmg":1,"dly":8,"pos":[[2.1,0.6,1.6],[2.1,-0.6,1.6],[-2.1,-0.6,1.6],[-2.1,0.6,1.6]],"n":[[-0.0452,-0.0129,0.9989],[-0.0452,0.0129,0.9989],[0.0452,0.0129,0.9989],[0.0452,-0.0129,0.9989]]}},"tie":{"c":5,"r":1.2,"engine_part":"blue_trail","engines":[[0,0,-0.5]],"wp":{"sfx":1,"dmg":1,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"tiex1":{"c":13,"r":1.2,"wp":{"sfx":6,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"junk2":{"c":3,"r":1.2},"generator":{"c":6,"r":2},"mfalcon":{"c":5,"engine_part":"mfalcon_trail","engines":[[0,0,-5.86]],"wp":{"sfx":6,"dmg":1,"dly":12,"pos":[[0.45,1.1,0],[-0.45,1.1,0],[0.45,-1.3,0],[-0.45,1.3,0]],"n":[[0,0,1],[0,0,1],[0,0,1],[0,0,1]]}},"vent":{"c":5,"r":1},"ywing":{"c":7,"r":1,"wp":{"sfx":1,"dmg":1,"dly":18,"pos":[[0.13,0,3.1],[-0.13,0,3.1]],"n":[[0,0,1],[0,0,1]]}}}'
+local all_models=json_parse'{"title":{"c":10},"deathstar":{"c":3},"trench1":{"c":13},"turret":{"c":8,"r":1.1,"wp":{"sfx":1,"part":"slow_laser","dmg":1,"dly":24,"pos":[[-0.2,0.8,0.65],[0.2,0.8,0.65]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"engine_part":"purple_trail","engines":[[-0.57,0.44,-1.61],[-0.57,-0.44,-1.61],[0.57,0.44,-1.61],[0.57,-0.44,-1.61]],"proton_wp":{"dmg":4,"part":"proton","sfx":11,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":2,"dmg":1,"dly":8,"pos":[[2.1,0.6,1.6],[2.1,-0.6,1.6],[-2.1,-0.6,1.6],[-2.1,0.6,1.6]],"n":[[-0.0452,-0.0129,0.9989],[-0.0452,0.0129,0.9989],[0.0452,0.0129,0.9989],[0.0452,-0.0129,0.9989]]}},"tie":{"c":5,"r":1.2,"engine_part":"blue_trail","engines":[[0,0,-0.5]],"wp":{"sfx":1,"dmg":1,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"tiex1":{"c":13,"r":1.2,"wp":{"sfx":6,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"junk2":{"c":3,"r":1.2},"generator":{"c":6,"r":2},"mfalcon":{"c":5,"engine_part":"mfalcon_trail","engines":[[0,0,-5.86]],"wp":{"sfx":6,"dmg":1,"dly":12,"pos":[[0.45,1.1,0],[-0.45,1.1,0],[0.45,-1.3,0],[-0.45,1.3,0]],"n":[[0,0,1],[0,0,1],[0,0,1],[0,0,1]]}},"vent":{"c":5,"r":1},"ywing":{"c":7,"r":1,"wp":{"sfx":1,"dmg":1,"dly":18,"pos":[[0.13,0,3.1],[-0.13,0,3.1]],"n":[[0,0,1],[0,0,1]]}}}'
 local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]'
 
 function draw_actor(self,x,y,z,w)
@@ -845,6 +845,17 @@ _g.update_junk=function(self,i,j)
 
 	m_set_pos(self.m,self.pos)
 end
+function make_blt(self,wp,pos,u)
+	local pt=add(parts,clone(all_parts[wp.part or "laser"],{
+			actor=self, -- laser owner
+			pos=pos,
+			u=u,
+			side=self.side,
+			dmg=wp.dmg}))
+	pt.t=time_t+pt.dly
+	if(wp.sfx) sfx_v(wp.sfx,pos)
+	return pt
+end
 _g.make_laser=function(self,target)
 	if(self.fire_t>time_t) return false
 	
@@ -864,18 +875,11 @@ _g.make_laser=function(self,target)
 		o_x_v(self.m,v)
 	end
 	self.laser_i+=1
+	local pt=make_blt(self,wp,p,v)
 	-- laser colors
-	local c=self.side==good_side and 11 or 8
-	local pt=add(parts,clone(all_parts[wp.part or "laser"],{
-			actor=self, -- laser owner
-			pos=p,
-			u=v,
-			c=c,
-			side=self.side,
-			dmg=wp.dmg}))
-	pt.t=time_t+pt.dly
+	local c=self.side==good_side and 8 or 11
 	self.fire_t=time_t+wp.dly
-	if(wp.sfx) sfx_v(wp.sfx,p)
+	pt.c=c
 	make_part("flash",p,c)
 end
 
@@ -885,20 +889,11 @@ _g.make_proton=function(self,target)
 	local p=v_clone(wp.pos)
 	m_x_v(self.m,p)
 	-- fire direction in world space
-	v=v_clone(wp.n)
+	local v=v_clone(wp.n)
 	o_x_v(self.m,v)
 
-	local pt=add(parts,clone(all_parts["proton"],{
-		-- proton owner
-		actor=self,
-		target=target,
-		pos=p,
-		u=v,
-		side=self.side,
-		dmg=wp.dmg}))
-	pt.t=time_t+pt.dly
-	if(wp.sfx) sfx_v(wp.sfx,p)
-	make_part("flash",p,c)
+	local pt=make_blt(self,wp,p,v)
+	pt.target=target
 end
 
 local all_actors=json_parse'{"plyr":{"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"dboost":1,"acc":0.2,"model":"xwing","roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","draw":"draw_plyr","update":"update_plyr","hit":"hit_plyr","die":"die_plyr"},"patrol":{"hp":10,"acc":0.2,"g":0,"overg_t":0,"rnd":{"model":["xwing","xwing","ywing"]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"tie":{"sfx":5,"hp":4,"acc":0.4,"g":0,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor","rnd":{"id":[0,128]}},"generator":{"waypt":true,"hp":10,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":2,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"mfalcon":{"hp":8,"acc":0.25,"g":0,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","local_t":0,"pause_t":0,"fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"model":"junk2","side":"bad_side","update":"update_junk","hit":"hit_npc","die":"die_actor"},"exit":{"draw":"nop","update":"update_exit","waypt":true},"vador":{"sfx":5,"hp":40,"acc":0.3,"g":0,"overg_t":0,"model":"tiex1","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"}}'
@@ -1286,7 +1281,6 @@ end
 function control_plyr(self)
 	
 	local pitch,roll=0,0
-	
 	if plyr_playing then
 		if(btn(0)) roll=-1 turn_t+=1
 		if(btn(1)) roll=1 turn_t+=1
@@ -1294,12 +1288,12 @@ function control_plyr(self)
 		if(btn(3)) pitch=1
 
 		-- cam modes
-		if btnp(0,1) then
+		if btnp(2,1) then
 			set_view(not cockpit_view)
 		end
 		-- behind look?
 		cam.flip=false
-		if btn(2,1) then
+		if btn(3,1) then
 			cam.flip=true
 		end
 
@@ -1352,17 +1346,17 @@ function control_plyr(self)
 	else
 		plyr.lock_t=0
 	end
-	if plyr_playing and plyr.proton_ammo>0 and plyr.proton_t<time_t and plyr.lock_t>30 and btnp(4) then
+	if plyr_playing and plyr.proton_ammo>0 and plyr.proton_t<time_t and plyr.lock_t>30 and btnp(5) then
 		plyr:fire_proton(target)
 		plyr.proton_t=time_t+plyr.model.proton_wp.dly
 		plyr.proton_ammo-=1
 		plyr.energy=0
 	end
 		
-	if plyr_playing and btnp(5) then
+	if plyr_playing and self.fire_t<time_t and btn(5) then
 		plyr.energy=max(plyr.energy-0.1)
 		if(plyr.energy>0) plyr:fire(target and target.pos or nil)
-	end	
+	end
 end
 
 -- deathstar
@@ -1505,7 +1499,7 @@ function start_screen:update()
 end
 
 local title_m=make_m(0,0,0)
-local all_help=json_parse'[{"msg":"⬅️⬆️⬇️➡️: flight control","x":20},{"msg":"❎: laser / ❎+2s: proton","x":24},{"msg":"🅾️: speed boost","x":32},{"msg":"⬇️(p2): rear view","x":30},{"msg":"⬆️(p2): external view","x":23}]'
+local all_help=json_parse'[{"msg":"curdor️: flight control","x":20},{"msg":"menu: invert y-axis","x":32},{"msg":"c: laser / c+2s: proton","x":24},{"msg":"c: speed boost","x":32},{"msg":"d[p2]: rear view","x":30},{"msg":"u[p2]: external view","x":23}]'
 function start_screen:draw()
 	cam.pos[3]+=0.1
 	cam:update()
@@ -1646,6 +1640,13 @@ end
 
 
 function _init()
+	if cartdata("freds72_xvst") then
+		invert_y=dget(0)==1
+	end
+	menuitem(1,"invert y", function() 
+		invert_y=not invert_y
+		dset(0,invert_y and 1 or 0)
+	end)
 	-- read models from map data
 	unpack_models()
 	
@@ -1729,12 +1730,14 @@ end
 _g.create_flying_group=function()
 	local p,v=make_rnd_pos_v(plyr,64)
 	-- default target: player
-	local target,n=plyr,3
+	local target,n,dly=plyr,3,60+rnd(30)
 	-- friendly npc?
 	if rnd()>0.8 then
 		target=make_actor("patrol",p)
 		make_msg("help")
 		v_add(p,v,10)
+		-- remove firing delay
+		dly=0
 		-- avoid too many ties with npc
 		n-=1
 	end
@@ -1742,7 +1745,9 @@ _g.create_flying_group=function()
 	local npcs={}
 	for i=1,1+rnd(n) do
 		local a=make_actor("tie",p)
-		a.target=target
+		-- lock on target
+		-- delay npc firing
+		a.target,a.fire_t=target,time_t+dly
 		v_add(p,v,10)
 		add(npcs,a)
 	end
@@ -1758,7 +1763,7 @@ _g.egress_mission=function()
 end
 _g.victory_mission=function()
 	make_part("novae",{cam.pos[1],ground_level,cam.pos[3]})
-	-- hide deathstar	
+	-- hide deathstar
 	ds_enabled,ground_level=false
 
 	-- track dark vador
@@ -1779,7 +1784,7 @@ local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","rn
 
 function next_mission_async()
 	score=0
-	for i=2,#all_missions do
+	for i=1,#all_missions do
 		local m=all_missions[i]
 		if m.msg then
 			wait_async(make_msg(m.msg).dly)
@@ -1788,12 +1793,15 @@ function next_mission_async()
 		repeat
 			-- create mission
 			local npcs=0
-			for _,a in pairs(m.init and m.init() or {}) do
-				npcs+=1
-				-- die hook
-				a.on_die=function(killed)
-					npcs-=1
-					if(killed) kills+=1
+			-- any mission logic?
+			if m.init then
+				for _,a in pairs(m.init()) do
+					npcs+=1
+					-- die hook
+					a.on_die=function(killed)
+						npcs-=1
+						if(killed) kills+=1
+					end
 				end
 			end
 			-- wait kills
