@@ -96,7 +96,7 @@ end
 -- true: cockpit
 local cockpit_view,cam=false
 -- player
-local plyr_playing,score,invert_y,plyr=false,0,false
+local plyr_playing,score,invert_y,plyr=false,0,1
 local actors,ground_actors,parts,all_parts={},{},{}
 -- ground constants
 local ground_level
@@ -640,8 +640,9 @@ function avoid(self,pos,dist)
 		if a!=self then
 			local d=sqr_dist(pos,a.pos)
 			if d<d2 then
-				v_add(v,pos)
-				v_add(v,a.pos,-1)
+			 local force=1-smoothstep(d/d2)
+				v_add(v,pos,force)
+				v_add(v,a.pos,-force)
 				n+=1
 			end
 		end
@@ -709,15 +710,13 @@ _g.update_flying_npc=function(self)
 		-- search for target
 		self.target=seek(self,fwd,24)
 	end
-	-- nothing to track?
-	if not self.target then
-		if not self.wander or self.wander_t<time_t then
-			-- pick a random location
-			self.wander=wander(self)
-			self.wander_t=time_t+120+rnd(60)
-		end
-		v_add(force,follow(pos,self,self.wander))
+	if not self.wander or self.wander_t<time_t then
+		-- pick a random location
+		self.wander=wander(self)
+		self.wander_t=time_t+120+rnd(60)
 	end
+	-- add some 'noise' even when following a target
+	v_add(force,follow(pos,self,self.wander),self.target and 0.2 or 1)
 	-- weight avoid more than follow
 	v_add(force,avoid(self,pos,8),2)
 
@@ -764,7 +763,7 @@ end
 _g.hit_plyr=function(self,dmg)
 	if(self.disabled or self.safe_t>time_t) return
 	self.energy,self.safe_t=0,time_t+8
-	self.hp-=dmg
+	--self.hp-=dmg
 	if self.hp<=0 then
 		self:die()
 	end
@@ -1159,7 +1158,8 @@ function make_trench(i)
 			return true
 		end,
 		draw=function(self,x,y,z,w)
-			draw_model(self.model,self.m,x,y,z,w)
+		 if(w>1) draw_model(self.model,self.m,x,y,z,w)
+		 -- no lod
 		end
 	}
 	m_set_pos(t.m,t.pos)
@@ -1282,23 +1282,26 @@ function control_plyr(self)
 	
 	local pitch,roll=0,0
 	if plyr_playing then
-		if(btn(0)) roll=-1 turn_t+=1
-		if(btn(1)) roll=1 turn_t+=1
-		if(btn(2)) pitch=-1
-		if(btn(3)) pitch=1
-
+	 -- ⬅️⬆️⬇️➡️🅾️❎
+		if(btn(⬅️)) roll=-1 turn_t+=1
+		if(btn(➡️)) roll=1 turn_t+=1
+		if(btn(⬆️)) pitch=-1
+		if(btn(⬇️)) pitch=1
+		-- flip y-axis?
+		pitch*=invert_y
+		
 		-- cam modes
-		if btnp(2,1) then
+		if btnp(⬆️,1) then
 			set_view(not cockpit_view)
 		end
 		-- behind look?
 		cam.flip=false
-		if btn(3,1) then
+		if btn(⬇️,1) then
 			cam.flip=true
 		end
 
 		-- boost 
-		if btn(4) then
+		if btn(🅾️) then
 			plyr.boost=min(plyr.boost+0.01,0.1)
 		end	
 	end
@@ -1346,14 +1349,14 @@ function control_plyr(self)
 	else
 		plyr.lock_t=0
 	end
-	if plyr_playing and plyr.proton_ammo>0 and plyr.proton_t<time_t and plyr.lock_t>30 and btnp(5) then
+	if plyr_playing and plyr.proton_ammo>0 and plyr.proton_t<time_t and plyr.lock_t>30 and btnp(🅾️) then
 		plyr:fire_proton(target)
 		plyr.proton_t=time_t+plyr.model.proton_wp.dly
 		plyr.proton_ammo-=1
 		plyr.energy=0
 	end
 		
-	if plyr_playing and self.fire_t<time_t and btn(5) then
+	if plyr_playing and self.fire_t<time_t and btn(❎) then
 		plyr.energy=max(plyr.energy-0.1)
 		if(plyr.energy>0) plyr:fire(target and target.pos or nil)
 	end
@@ -1499,7 +1502,7 @@ function start_screen:update()
 end
 
 local title_m=make_m(0,0,0)
-local all_help=json_parse'[{"msg":"curdor️: flight control","x":20},{"msg":"menu: invert y-axis","x":32},{"msg":"c: laser / c+2s: proton","x":24},{"msg":"c: speed boost","x":32},{"msg":"d[p2]: rear view","x":30},{"msg":"u[p2]: external view","x":23}]'
+local all_help=json_parse'[{"msg":"⬅️⬆️⬇️➡️: flight control","x":20},{"msg":"menu: invert y-axis","x":30},{"msg":"❎: laser / 🅾️: torpedo","x":20},{"msg":"🅾️: speed boost","x":34},{"msg":"⬇️[p2]: rear view","x":30},{"msg":"⬆️[p2]: external view","x":23}]'
 function start_screen:draw()
 	cam.pos[3]+=0.1
 	cam:update()
@@ -1634,18 +1637,18 @@ function _draw()
 
 	cur_screen:draw()
 	
-	--if(draw_stats) draw_stats()
-	--print(stat(1),2,2,7)
+	-- if(draw_stats) draw_stats()
+	-- print(flr(100*stat(1)).."% @"..stat(7).."fps",2,2,7)
 end
 
 
 function _init()
 	if cartdata("freds72_xvst") then
-		invert_y=dget(0)==1
+		invert_y=dget(0)
 	end
-	menuitem(1,"invert y", function() 
-		invert_y=not invert_y
-		dset(0,invert_y and 1 or 0)
+	menuitem(1,"invert y-axis", function() 
+		invert_y=invert_y==-1 and 1 or -1
+		dset(0,invert_y)
 	end)
 	-- read models from map data
 	unpack_models()
