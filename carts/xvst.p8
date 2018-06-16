@@ -453,6 +453,7 @@ function draw_actor(self,x,y,z,w)
 	else
 		circfill(x,y,1,self.model.c)
 	end
+	-- if(self.model.r) circ(x,y,self.model.r*w,7)
 end
 
 -- unpack models
@@ -763,7 +764,7 @@ end
 _g.hit_plyr=function(self,dmg)
 	if(self.disabled or self.safe_t>time_t) return
 	self.energy,self.safe_t=0,time_t+8
-	--self.hp-=dmg
+	self.hp-=dmg
 	if self.hp<=0 then
 		self:die()
 	end
@@ -777,7 +778,7 @@ end
 
 _g.update_plyr=function(self)
 	-- energy
-	self.energy=min(self.energy+0.01,1)
+	self.energy=min(self.energy+0.005,1)
 	-- refill shield + proton
 	if self.energy==1 and self.hp!=5 then
 		self.hp,self.energy=min(self.hp+1,5),0
@@ -955,8 +956,7 @@ _g.update_part=function(self)
 end
 _g.update_blast=function(self)
 	if self.frame==8 then
-		self.kind=5
-		self.dr=-0.2
+		self.kind,self.dr=5,-0.2
 		for i=1,self.sparks do
 			local v=make_rnd_v(rnd(self.r))
 			v_add(v,self.pos)
@@ -983,16 +983,14 @@ function blt_obj_col(self,objs)
 			if sqr_dist(self.pos,a.pos)<r or sqr_dist(self.prev_pos,a.pos)<r then
 				hit=true
 			else
-				local p=v_clone(self.prev_pos)
-				v_add(p,self.pos,-1)
-				local max_t=v_normz(p)
-				-- vector to sphere
 				local ps=v_clone(a.pos)
+				-- point to sphere
 				v_add(ps,self.pos,-1)
 				-- projection on ray
-				local t=v_dot(p,ps)
-				if t>=0 and t<=max_t then
+				local t=v_dot(self.u,ps)
+				if t>=0 and t<=self.acc then
 					-- distance to sphere?
+					local p=v_clone(self.u)
 					v_scale(p,t)
 					hit=sqr_dist(p,a.pos)<r
 				end	
@@ -1357,8 +1355,8 @@ function control_plyr(self)
 	end
 		
 	if plyr_playing and self.fire_t<time_t and btn(❎) then
+		if(plyr.energy>0.1) plyr:fire(target and target.pos or nil)
 		plyr.energy=max(plyr.energy-0.1)
-		if(plyr.energy>0) plyr:fire(target and target.pos or nil)
 	end
 end
 
