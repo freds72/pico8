@@ -429,7 +429,7 @@ function m_up(m)
 end
 
 -- models
-local all_models=json_parse'{"title":{"c":10},"deathstar":{"c":3},"trench1":{"c":13},"turret":{"c":8,"r":1.1,"wp":{"sfx":1,"part":"slow_laser","dmg":1,"dly":24,"pos":[[-0.2,0.8,0.65],[0.2,0.8,0.65]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"engine_part":"purple_trail","engines":[[-0.57,0.44,-1.61],[-0.57,-0.44,-1.61],[0.57,0.44,-1.61],[0.57,-0.44,-1.61]],"proton_wp":{"dmg":4,"part":"proton","sfx":11,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":2,"dmg":1,"dly":8,"pos":[[2.1,0.6,1.6],[2.1,-0.6,1.6],[-2.1,-0.6,1.6],[-2.1,0.6,1.6]],"n":[[-0.0452,-0.0129,0.9989],[-0.0452,0.0129,0.9989],[0.0452,0.0129,0.9989],[0.0452,-0.0129,0.9989]]}},"tie":{"c":5,"r":1.2,"engine_part":"blue_trail","engines":[[0,0,-0.5]],"wp":{"sfx":14,"dmg":1,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"tiex1":{"c":13,"r":1.2,"wp":{"sfx":6,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"junk2":{"c":3,"r":1.2},"generator":{"c":6,"r":2},"mfalcon":{"c":5,"engine_part":"mfalcon_trail","engines":[[0,0,-5.86]],"wp":{"sfx":6,"dmg":1,"dly":12,"pos":[[0.45,1.1,0],[-0.45,1.1,0],[0.45,-1.3,0],[-0.45,1.3,0]],"n":[[0,0,1],[0,0,1],[0,0,1],[0,0,1]]}},"vent":{"c":5,"r":1},"ywing":{"c":7,"r":1,"wp":{"sfx":1,"dmg":1,"dly":18,"pos":[[0.13,0,3.1],[-0.13,0,3.1]],"n":[[0,0,1],[0,0,1]]}}}'
+local all_models=json_parse'{"title":{"c":10},"deathstar":{"c":3},"trench1":{"c":13},"turret":{"c":8,"r":1.1,"wp":{"sfx":1,"part":"slow_laser","dmg":1,"dly":24,"pos":[[-0.2,0.8,0.65],[0.2,0.8,0.65]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"engine_part":"purple_trail","engines":[[-0.57,0.44,-1.61],[-0.57,-0.44,-1.61],[0.57,0.44,-1.61],[0.57,-0.44,-1.61]],"proton_wp":{"dmg":4,"part":"proton","sfx":11,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":2,"dmg":1,"dly":8,"pos":[[2.1,0.6,1.6],[2.1,-0.6,1.6],[-2.1,-0.6,1.6],[-2.1,0.6,1.6]],"n":[[-0.0452,-0.0129,0.9989],[-0.0452,0.0129,0.9989],[0.0452,0.0129,0.9989],[0.0452,-0.0129,0.9989]]}},"tie":{"c":5,"r":1.2,"engine_part":"blue_trail","engines":[[0,0,-0.5]],"wp":{"sfx":14,"dmg":1,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"tiex1":{"c":13,"r":1.2,"wp":{"sfx":6,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"junk2":{"c":3,"r":1.2},"generator":{"c":6,"r":2},"mfalcon":{"c":5,"engine_part":"mfalcon_trail","engines":[[0,0,-5.86]],"wp":{"sfx":6,"dmg":1,"dly":24,"pos":[[0.45,1.1,0],[-0.45,1.1,0],[0.45,-1.3,0],[-0.45,1.3,0]],"n":[[0,0,1],[0,0,1],[0,0,1],[0,0,1]]}},"vent":{"c":5,"r":1},"ywing":{"c":7,"r":1,"wp":{"sfx":1,"dmg":1,"dly":18,"pos":[[0.13,0,3.1],[-0.13,0,3.1]],"n":[[0,0,1],[0,0,1]]}}}'
 local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]'
 
 function draw_actor(self,x,y,z,w)
@@ -718,8 +718,8 @@ _g.update_flying_npc=function(self)
 	end
 	-- add some 'noise' even when following a target
 	v_add(force,follow(pos,self,self.wander),self.target and 0.2 or 1)
-	-- weight avoid more than follow
-	v_add(force,avoid(self,pos,8),2)
+ -- avoid other actors
+	v_add(force,avoid(self,pos,8))
 
 	-- clamp acceleration
 	v_clamp(force,self.acc)
@@ -851,7 +851,8 @@ function make_blt(self,wp,pos,u)
 			pos=pos,
 			u=u,
 			side=self.side,
-			dmg=wp.dmg}))
+			dmg=wp.dmg,
+			die_part=wp.die_part}))
 	pt.t=time_t+pt.dly
 	if(wp.sfx) sfx_v(wp.sfx,pos)
 	return pt
@@ -968,7 +969,7 @@ _g.update_blast=function(self)
 end
 
 _g.die_blt=function(self)
-	make_part("flash",self.pos,self.c)
+	make_part(self.die_part or "flash",self.pos,self.c)
 	-- to be removed from set
 	return false
 end
@@ -1048,15 +1049,17 @@ _g.update_proton=function(self)
 end
 
 _g.draw_part=function(self,x,y,z,w)
+ -- laser
 	if self.kind==0 then
 		local x1,y1,z1,w1=cam:project(self.prev_pos[1],self.prev_pos[2],self.prev_pos[3])
 		if z>0 and z1>0 then
-			line(x,y,x1,y1,time_t%2==0 and 7 or self.c)
+			line(x,y,x1,y1,time_t%2==0 and 10 or self.c)
 		end
 	elseif self.kind==1 then
   circfill(x,y,self.r*w,self.c)
 	elseif self.kind==2 then
 		circfill(x,y,self.r*w,7)
+	-- proton head
 	elseif self.kind==3 then
 		-- light effect
 		fillp(dither_pat[mid(#dither_pat-flr(w/2),1,#dither_pat)])
@@ -1065,10 +1068,12 @@ _g.draw_part=function(self,x,y,z,w)
 		circfill(x,y,(0.1+0.2*rnd())*w,10)
 	elseif self.kind==5 then
 		circ(x,y,w*self.r,7)
+	-- blast particle
 	elseif self.kind==6 then
-		pset(x,y,15*rnd())
+		pset(x,y,rnd(16))
 	elseif self.kind==7 then
 	 circ(x,y,self.r*w,self.c[flr(3-3*mid(self.r/0.4,0,1))+1])
+	-- 3d line particles
 	elseif self.kind==8 then
 		color(self.c)
 		if w>1 then
@@ -1083,7 +1088,7 @@ _g.draw_part=function(self,x,y,z,w)
 	end
 end
 
-all_parts=json_parse'{"laser":{"rnd":{"dly":[80,110]},"acc":3,"kind":0,"update":"update_blt","die":"die_blt","draw":"draw_part"},"slow_laser":{"rnd":{"dly":[80,110]},"acc":0.8,"kind":0,"update":"update_blt","die":"die_blt","draw":"draw_part"},"flash":{"kind":1,"rnd":{"r":[0.5,0.7],"dly":[4,6]},"dr":-0.05},"trail":{"kind":1,"rnd":{"r":[0.2,0.3],"dly":[12,24]},"dr":-0.02},"blast":{"frame":0,"sfx":3,"kind":1,"c":7,"rnd":{"r":[2.5,3],"dly":[8,12],"sparks":[6,12]},"dr":-0.04,"update":"update_blast"},"novae":{"frame":0,"sfx":15,"kind":1,"c":7,"r":30,"rnd":{"dly":[8,12],"sparks":[30,40]},"dr":-0.04,"update":"update_blast"},"proton":{"rnd":{"dly":[90,120]},"frame":0,"acc":0.6,"kind":3,"update":"update_proton","die":"die_blt","draw":"draw_part"},"spark":{"kind":6,"dr":0,"r":1,"rnd":{"dly":[24,38]}},"purple_trail":{"kind":7,"c":[14,2,5,1],"rnd":{"r":[0.35,0.4],"dly":[2,4],"dr":[-0.08,-0.05]}},"blue_trail":{"kind":7,"c":[7,12,5,1],"rnd":{"r":[0.3,0.5],"dly":[12,24],"dr":[-0.08,-0.05]}},"mfalcon_trail":{"kind":8,"r":1,"dr":0,"rnd":{"c":[12,7,13],"dly":[1,2]}}}'
+all_parts=json_parse'{"laser":{"rnd":{"dly":[80,110]},"acc":3,"kind":0,"update":"update_blt","die":"die_blt","draw":"draw_part"},"slow_laser":{"rnd":{"dly":[80,110]},"acc":0.8,"kind":0,"update":"update_blt","die":"die_blt","draw":"draw_part"},"flash":{"kind":1,"rnd":{"r":[0.5,0.7],"dly":[4,6]},"dr":-0.05},"trail":{"kind":1,"rnd":{"r":[0.2,0.3],"dly":[12,24]},"dr":-0.02},"blast":{"frame":0,"sfx":3,"kind":1,"c":7,"rnd":{"r":[2.5,3],"dly":[8,12],"sparks":[6,12]},"dr":-0.04,"update":"update_blast"},"novae":{"frame":0,"sfx":15,"kind":1,"c":7,"r":30,"rnd":{"dly":[8,12],"sparks":[30,40]},"dr":-0.04,"update":"update_blast"},"proton":{"die_part":"blast","rnd":{"dly":[90,120]},"frame":0,"acc":0.6,"kind":3,"update":"update_proton","die":"die_blt","draw":"draw_part"},"spark":{"kind":6,"dr":0,"r":1,"rnd":{"dly":[24,38]}},"purple_trail":{"kind":7,"c":[14,2,5,1],"rnd":{"r":[0.35,0.4],"dly":[2,4],"dr":[-0.08,-0.05]}},"blue_trail":{"kind":7,"c":[7,12,5,1],"rnd":{"r":[0.3,0.5],"dly":[12,24],"dr":[-0.08,-0.05]}},"mfalcon_trail":{"kind":8,"r":1,"dr":0,"rnd":{"c":[12,7,13],"dly":[1,2]}}}'
 
 function make_part(part,p,c)
 	local pt=add(parts,clone(all_parts[part],{pos=v_clone(p),draw=_g.draw_part,c=c}))
@@ -1429,17 +1434,15 @@ function draw_radar()
 	end
 	
 	-- draw lock
-	if plyr.target then
+	if plyr.target and plyr.lock_t>30 then
 		local p=plyr.target.pos
 		local x,y,z,w=cam:project(p[1],p[2],p[3])
 		if z>0 then
-			local s=plyr.lock_t>30 and 56 or 40
 			w=max(w,4)
-			spr(s,x-w,y-w)
-			spr(s,x+w-8,y-w,1,1,true)
-			spr(s,x-w,y+w-8,1,1,false,true)
-			spr(s,x+w-8,y+w-8,1,1,true,true)
-			pal()
+			spr(40,x-w,y-w)
+			spr(40,x+w-8,y-w,1,1,true)
+			spr(40,x-w,y+w-8,1,1,false,true)
+			spr(40,x+w-8,y+w-8,1,1,true,true)
 		end
 	end
 	
@@ -1508,7 +1511,7 @@ function start_screen:update()
 end
 
 local title_m=make_m(0,0,0)
-local all_help=json_parse'[{"msg":"⬅️⬆️⬇️➡️: flight control","x":20},{"msg":"menu: invert y-axis","x":30},{"msg":"❎: laser / 🅾️: torpedo","x":20},{"msg":"🅾️: speed boost","x":34},{"msg":"⬇️[p2]: rear view","x":30},{"msg":"⬆️[p2]: external view","x":23}]'
+local all_help=json_parse'[{"msg":"⬅️⬆️⬇️➡️: flight control","x":20},{"msg":"menu: invert y-axis","x":30},{"msg":"❎: laser / 🅾️+lock: torpedo","x":12},{"msg":"🅾️: speed boost","x":34},{"msg":"⬇️[p2]: rear view","x":30},{"msg":"⬆️[p2]: external view","x":23}]'
 function start_screen:draw()
 	cam.pos[3]+=0.1
 	cam:update()
@@ -1613,7 +1616,7 @@ function game_screen:draw()
 				end
 				-- engines
 				local p=(plyr.acc+plyr.boost)/0.3
-				fillp(0xaaaa)
+				fillp(0x5555)
 				rectfill(82,120,82+23*p,123,9)
 				fillp()
 			else
@@ -1726,7 +1729,6 @@ end
 
 -->8
 -- missions
--- mission start routines
 _g.create_generator_group=function()
 	return { 
 		make_actor("generator",{256,ground_level+6,256}),
@@ -1778,7 +1780,7 @@ _g.victory_mission=function()
 	make_part("novae",{cam.pos[1],cam.pos[2]-32,cam.pos[3]})
 	-- hide deathstar
 	ds_enabled,ground_level=false
-
+ 
 	-- track dark vador
 	local y=plyr.pos[2]
 	local npc,wing=make_actor("vador",{0,y-8,0}),make_actor("mfalcon",{0,y-12,0})
@@ -2023,7 +2025,6 @@ f7e708b9a8080000b7307010506010405010304010102010207010601010a09010d08010c0b010e0
 7110b1c110627210e35310819110728210829210615110514110e2f210413110021210312110c2d210f1021092a210e1f110f20310710110211110d2e210b781
 10a2b210b2c210f00310d1e110c1d110425210324210223210122210637310b3c31013c31073831083931093a310132310a3b310233310536310334310a4e510
 55f510e5f510344410f30410243410d4e410f34510657510e4f410142410c5d51094a410354510445410041410556510d5b41095a510a5b510859510758510b5
-
 __map__
 5c014c4d014b4c015253015152015051014f50014849014748014647014546016162016566017677017172016465017273017071016364016667016e6f016768016f70016b7a016a6b01696a016c6d016061017576016062017577017a6e016974017978016379016d73016c74016878011110010f7b01343d01061f201d1d10
 1f010c869a8d869a967a9a8d7a9a969080909080707080707080908da08d8da07973a07973a08d050904090b0a080604030d08060804070e0b0c070405060a0e08040c090d040580a080a083806083808088618083a00e020101040301050600050800060700060a00070800090a00090c000a0b000b0c00080c00050900070b
@@ -2052,7 +2053,7 @@ __map__
 91638c889689967a98948c9d8883889f8c9d788996969c8e7a9d8c889d74889c727a869894936d919393917a0401000302000107000802000503000604000607000805000a0900090c000b0a000b0c00040a000b06000c07000901000e0d00100d000f0e00100f000810000f0500020d00030e00111200121300131400141500
 151600190800081300121700181900191a001a1b00162e001708001718001c1d001d1e001e1f001f1b001a1e001d1900181c00202100212200222300232400211d001c20001f2300221e001b0300031500072700210700252000262700272800282900250700021a002625002a2b002b2c002c2d002e2d00292d002c2800272b
 002a2600112a00142c002b1300122a00152d00111700111800111c00112000112500112600051400230400042900062800012200302f013130013231013233012f36013433013534013635013035013134010e39010a3801373901383a013c3b013d3c013e3d013e3f013b4201403f014140014241013c41013d40011b160024
-2e002924002404002e1f00031600162401373a013a2401371601
+2e002924002404002e1f00031600162401373a013a2401371601000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __sfx__
 00020000085500d650086500955009550086500955008550086500955008650085500865008550076500855008550076500855007650085500865008650075500765007650076500755008650096500855009550
 000200002c060350503b0403e0403365029060216501e0501665015040116400d0400b6300a030076300803007630060300463004030036300263002640016400164001640016300163001630016300163001620
