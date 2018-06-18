@@ -98,9 +98,8 @@ local cockpit_view,cam=false
 -- player
 local plyr_playing,score,invert_y,plyr=false,0,1
 local actors,ground_actors,parts,all_parts={},{},{}
--- ground constants
-local ground_level
-local ground_scale,ground_colors=4,json_parse'[1,5,6]'
+-- ground constants 
+local ground_scale,ground_colors,ground_level=4,json_parse'[1,5,6]'
 
 -- screen management
 local start_screen,game_screen,gameover_screen,cur_screen={},{},{}
@@ -119,32 +118,32 @@ function screen_update()
 	camera(shkx,shky)
 end
 -- volumetric sound
-local all_vol=json_parse'[0x700.0700,0x600.0600,0x500.0500,0x400.0400,0x300.0300,0x200.0200,0x100.0100,0]'
+local all_vol=json_parse'[0x700.0700,0x600.0600,0x500.0500,0x400.0400,0x300.0300,0x200.0200,0x100.0100,0x100.0100]'
 function sfx_v(s,pos)
 	local d=sqr_dist(cam.pos,pos)
 	-- set volume
+	-- todo: move sqrt into volume array
 	local vol=all_vol[mid(flr(sqrt(d)/8+0.5),1,#all_vol)]
-	if vol!=0 then
-		local src,dst=0x3200+68*s,0x3200+68*16
-		-- 2 notes/loop (eg 4 bytes)
-		-- 32 notes total
-		for k=1,16 do
-			 -- copy sound
-			local pair=bor(band(peek4(src),0xf1ff.f1ff),vol)
-			poke4(dst,pair)
-			src+=4
-			dst+=4
-		end
-		-- sfx attributes
-		poke4(dst,peek4(src))
-		sfx(16)
+	local src,dst=0x3200+68*s,0x3200+68*63
+	-- 2 notes/loop (eg 4 bytes)
+	-- 32 notes total
+	for k=1,16 do
+		 -- copy sound + adjust volume
+		local pair=bor(band(peek4(src),0xf1ff.f1ff),vol)
+		poke4(dst,pair)
+		src+=4
+		dst+=4
 	end
+	-- misc sfx attributes
+	poke4(dst,peek4(src))
+	-- play
+	sfx(63)
 end
 
 -- zbuffer (kind of)
 local drawables={}
 function zbuf_clear()
-	drawables={},{}
+	drawables={}
 end
 function zbuf_draw()
 	local objs={}
@@ -170,7 +169,6 @@ function zbuf_filter(array)
 			del(array,a)
 		else
 			add(drawables,a)
-			if(a.sfx) add(soundables,a)
 		end
 	end
 end
@@ -216,8 +214,7 @@ end
 function sort(data)
  for num_sorted=1,#data-1 do 
   local new_val=data[num_sorted+1]
-  local new_val_key=new_val.key
-  local i=num_sorted+1
+  local new_val_key,i=new_val.key,num_sorted+1
 
   while i>1 and new_val_key>data[i-1].key do
    data[i]=data[i-1]   
@@ -290,8 +287,7 @@ end
 function v_clamp(v,l)
 	local d=v_dot(v,v)
 	if d>l*l then
-		d=sqrt(d)
-		v_scale(v,l/d)
+		v_scale(v,l/sqrt(d))
 	end
 end
 function v_scale(v,scale)
@@ -635,8 +631,7 @@ function follow(pos,other,offset)
 	return v
 end
 function avoid(self,pos,dist)
-	local v={0,0,0}
-	local n,d2=0,dist*dist
+	local v,n,d2={0,0,0},0,dist*dist
 	for _,a in pairs(actors) do
 		if a!=self then
 			local d=sqr_dist(pos,a.pos)
@@ -648,6 +643,7 @@ function avoid(self,pos,dist)
 			end
 		end
 	end
+	-- average force
 	if(n>0) v_scale(v,1/n)
 	return v
 end
