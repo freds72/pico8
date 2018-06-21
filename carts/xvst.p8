@@ -591,7 +591,7 @@ _g.die_plyr=function(self)
 
 	futures_add(function()
 		-- death spin
-		local death_q=make_q(v_fwd,rndlerp(-0.04,0.04))
+		local death_q=make_q(v_fwd,rnd(0.04)-0.08)
 		wait_async(90,function(i)
 			q_x_q(plyr.q,death_q)
 			return true
@@ -621,7 +621,8 @@ _g.update_exit=function(self)
 	return true
 end
 
--- offset: position relative to other pos
+-- returns a vector from pos to offset
+-- offset: position relative to other
 function follow(pos,other,offset)
 	local v=v_clone(offset)
 	-- offset into world position
@@ -649,7 +650,7 @@ function avoid(self,pos,dist)
 end
 function seek(self,fwd,dist)
 	for _,a in pairs(actors) do
-		if band(a.side,self.side)==0 and in_cone(self.pos,a.pos,fwd,0.5,dist) then
+		if not a.disabled and band(a.side,self.side)==0 and in_cone(self.pos,a.pos,fwd,0.5,dist) then
 			 -- avoid loops
 			if a.target!=self then
 				return a
@@ -668,9 +669,11 @@ end
 function update_engines(self)
 	if self.model.engines and time_t%2==0 then
 		for _,v in pairs(self.model.engines) do
+			-- model to world
 			v=v_clone(v)
 			m_x_v(self.m,v)
 			local p=make_part(self.model.engine_part,v)
+			-- set part orientation
 			p.m=self.m
 		end
 	end
@@ -696,12 +699,9 @@ _g.update_flying_npc=function(self)
 
 	local follow_scale=1-smoothstep(self.overg_t/32)
 	if self.target and not self.target.disabled then
-		-- friendly: formation flight
-		local target_pos={0,-4,20}
+
 		-- enemy: get in sight
-		if band(self.target.side,self.side)==0 then
-			can_fire,target_pos=true,{rnd()-0.5,0,-15}
-		end
+		can_fire,target_pos=true,{rnd()-0.5,rnd()-0.5,-15}
 		v_add(force,follow(pos,self.target,target_pos),follow_scale)
 	else
 		-- search for target
@@ -875,8 +875,7 @@ _g.make_laser=function(self,target)
 	local pt=make_blt(self,wp,p,v)
 	-- laser colors
 	local c=self.side==good_side and 8 or 11
-	self.fire_t=time_t+wp.dly
-	pt.c=c
+	pt.c,self.fire_t=c,time_t+wp.dly
 	make_part("flash",p,c)
 end
 
@@ -889,8 +888,7 @@ _g.make_proton=function(self,target)
 	local v=v_clone(wp.n)
 	o_x_v(self.m,v)
 
-	local pt=make_blt(self,wp,p,v)
-	pt.target=target
+	make_blt(self,wp,p,v).target=target
 end
 
 local all_actors=json_parse'{"plyr":{"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"dboost":1,"acc":0.2,"model":"xwing","roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","draw":"draw_plyr","update":"update_plyr","hit":"hit_plyr","die":"die_plyr"},"patrol":{"hp":10,"acc":0.2,"g":0,"overg_t":0,"rnd":{"model":["xwing","xwing","ywing"]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"tie":{"sfx":5,"hp":4,"acc":0.4,"g":0,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor","rnd":{"id":[0,128]}},"generator":{"waypt":true,"hp":10,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":2,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"mfalcon":{"hp":8,"acc":0.25,"g":0,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","local_t":0,"pause_t":0,"fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"model":"junk2","side":"bad_side","update":"update_junk","hit":"hit_npc","die":"die_actor"},"exit":{"draw":"nop","update":"update_exit","waypt":true},"vador":{"sfx":5,"hp":40,"acc":0.3,"g":0,"overg_t":0,"model":"tiex1","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"}}'
@@ -910,8 +908,7 @@ function make_actor(src,p,q)
 end
 
 local rear_q=make_q(v_up,0.5)
-function make_cam(f,x0,y0)
-	x0,y0=x0 or 64,y0 or 64
+function make_cam(f)
 	local c={
 		pos={0,0,3},
 		q=make_q(v_up,0),
@@ -940,7 +937,7 @@ function make_cam(f,x0,y0)
 			if(v[3]<0.001) return nil,nil,-1,nil
 			-- view to screen
  			local w=self.focal/v[3]
- 			return x0+v[1]*w,y0-v[2]*w,v[3],w
+ 			return 64+v[1]*w,64-v[2]*w,v[3],w
 		end
 	}
 	return c
@@ -1312,7 +1309,7 @@ function control_plyr(self)
 	else
 		turn_t=0
 	end
- 	self.roll=mid(self.roll,-1/96,1/96)
+ 	self.roll=mid(self.roll,-0.01,0.01)
 	local r=turn_t/8
 	local q=make_q(v_up,(1-r)*roll/128)
 	q_x_q(plyr.q,q)
@@ -1325,7 +1322,7 @@ function control_plyr(self)
 	if plyr.boost>0 then
 		self.pitch=mid(self.pitch,-0.005,0.005)
 	else
-		self.pitch=mid(self.pitch,-1/256,1/256)
+		self.pitch=mid(self.pitch,-0.004,0.004)
 	end
 	local q=make_q(v_right,self.pitch)
 	q_x_q(plyr.q,q)
@@ -1400,19 +1397,19 @@ function draw_stars()
 	end
 end
 
-local radar_cols,shield_spr=json_parse'[5,11,3]',json_parse'[72,14,45,43,74]'
+local radar_colors,shield_spr=json_parse'[5,11,3]',json_parse'[72,14,45,43,74]'
 function draw_radar_dots(objs)
 	for _,a in pairs(objs) do
 		if a!=plyr then
 			local v=v_clone(a.pos)
 			m_inv_x_v(plyr.m,v)
 			local x,y,c=64+0.2*v[1],116-0.2*v[3],mid(flr(v[2]/8),-1,1)+2
-			pset(x,y,radar_cols[c])
+			pset(x,y,radar_colors[c])
 		end
 	end
 end
 
-function draw_radar()
+function draw_instr()
 	clip(54,105,22,22)
 	draw_radar_dots(ground_actors)
 	draw_radar_dots(actors)
@@ -1602,8 +1599,8 @@ function game_screen:draw()
 				spr(64,0,32,8,4)
 				spr(64,64,32,8,4,true)
 				pal()
-				-- radar
-				draw_radar()
+				-- radar & core instruments
+				draw_instr()
 				-- hp
 				local x,imax=23,flr(8*plyr.energy)+1
 				for i=1,8 do
@@ -1625,7 +1622,7 @@ function game_screen:draw()
 				pal()
 			end
 		else
-			draw_radar()
+			draw_instr()
 		end
 	end
 end
@@ -1691,9 +1688,8 @@ local low_hp_t,cur_msg=0
 
 function make_msg(msg)
 	local m=clone(all_msgs[msg])
-	m.t=time_t+m.dly
+	cur_msg,m.t=m,time_t+m.dly
 	if (m.sfx) sfx(m.sfx)
-	cur_msg=m
 	return m
 end
 
@@ -1715,7 +1711,7 @@ function draw_msg()
 	spr(cur_msg.spr,33,y+1,2,2)
 	print(cur_msg.title,51,y,9)
 	print(cur_msg.txt,51,y+7,7)
-	-- cheap comms effect
+	-- cheap comms static effect
 	if time_t%4>2 then
 		fillp(0b1011000011110100.1)
 		rectfill(33,y,48,y+23,0)
@@ -1772,11 +1768,17 @@ _g.egress_mission=function()
 	return {make_actor("exit",{cam.pos[1],ground_level+300,cam.pos[3]})}
 end
 _g.victory_mission=function()
+	cam.flip,plyr_playing=true,false
+	set_view(false)
+	wait_async(60)
  -- blast deathstar
 	make_part("novae",{cam.pos[1],cam.pos[2]-32,cam.pos[3]})
 	-- hide deathstar
 	ds_enabled,ground_level=false
- 
+	wait_async(60)
+	set_view(true)
+	cam.flip,plyr_playing=false,true
+	
 	-- track dark vador
 	local y=plyr.pos[2]
 	local npc,wing=make_actor("vador",{0,y-8,0}),make_actor("mfalcon",{0,y-12,0})
@@ -1786,6 +1788,9 @@ _g.victory_mission=function()
 	return {npc}
 end
 _g.gameover_mission=function()
+	plyr.disabled,plyr.boost,plyr.dboost=true,1,1.01
+	set_view(false)
+	wait_async(90)
 	del(actors,plyr)
 	plyr=nil
 	return {}
@@ -1795,7 +1800,7 @@ local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","rn
 
 function next_mission_async()
 	score=0
-	for i=1,#all_missions do
+	for i=8,#all_missions do
 		local m=all_missions[i]
 		if m.msg then
 			wait_async(make_msg(m.msg).dly)
