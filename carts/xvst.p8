@@ -1279,25 +1279,25 @@ function control_plyr(self)
 	local pitch,roll=0,0
 	if plyr_playing then
 	 -- ⬅️⬆️⬇️➡️🅾️❎
-		if(btn(⬅️)) roll=-1 turn_t+=1
-		if(btn(➡️)) roll=1 turn_t+=1
-		if(btn(⬆️)) pitch=-1
-		if(btn(⬇️)) pitch=1
+		if(btn(0)) roll=-1 turn_t+=1
+		if(btn(1)) roll=1 turn_t+=1
+		if(btn(2)) pitch=-1
+		if(btn(3)) pitch=1
 		-- flip y-axis?
 		pitch*=invert_y
 		
 		-- cam modes
-		if btnp(⬆️,1) then
+		if btnp(2,1) then
 			set_view(not cockpit_view)
 		end
 		-- behind look?
 		cam.flip=false
-		if btn(⬇️,1) then
+		if btn(3,1) then
 			cam.flip=true
 		end
 
 		-- boost 
-		if btn(🅾️) then
+		if btn(4) then
 			plyr.boost=min(plyr.boost+0.01,0.1)
 		end	
 	end
@@ -1351,14 +1351,14 @@ function control_plyr(self)
  	if self.lock_t==30 then
  		sfx(7)
  	end
- 	if plyr.proton_ammo>0 and plyr.proton_t<time_t and plyr.lock_t>30 and btnp(🅾️) then
+ 	if plyr.proton_ammo>0 and plyr.proton_t<time_t and plyr.lock_t>30 and btnp(4) then
  		plyr:fire_proton(target)
  		plyr.proton_t=time_t+plyr.model.proton_wp.dly
  		plyr.proton_ammo-=1
  		plyr.energy=0
  	end
  		
- 	if self.fire_t<time_t and btn(❎) then
+ 	if self.fire_t<time_t and btn(5) then
  		if(plyr.energy>0.08) plyr:fire(target and target.pos or nil)
  		plyr.energy=max(plyr.energy-0.08)
  	end
