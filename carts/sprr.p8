@@ -41,10 +41,10 @@ function rspr(sx,sy,x,y,a,w)
  local srcx,srcy,addr,pixel_pair
  local ddx0,ddy0=ca,sa
  local mask=shl(0xfff8,(w-1))
- w*=4
- ca*=w
- sa*=w
- local dx0,dy0=sa-ca+w,-ca-sa+w
+ w*=4	
+ ca*=w-0.5
+ sa*=w-0.5 
+local dx0,dy0=sa-ca+w,-ca-sa+w
  w=2*w-1
  for ix=0,w do
   srcx,srcy=dx0,dy0
