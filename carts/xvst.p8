@@ -440,7 +440,7 @@ function m_up(m)
 end
 
 -- models
-local all_models=json_parse'{"logo":{"c":10},"deathstar":{"c":3},"trench1":{"c":13},"turret":{"c":8,"r":1.1,"wp":{"sfx":1,"part":"ground_laser","dmg":1,"dly":24,"pos":[[-0.2,0.8,0.65],[0.2,0.8,0.65]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"engine_part":"purple_trail","engines":[[-0.57,0.44,-1.61],[-0.57,-0.44,-1.61],[0.57,0.44,-1.61],[0.57,-0.44,-1.61]],"proton_wp":{"dmg":4,"part":"proton","sfx":6,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":2,"dmg":1,"dly":8,"pos":[[2.1,0.6,1.6],[2.1,-0.6,1.6],[-2.1,-0.6,1.6],[-2.1,0.6,1.6]],"n":[[-0.0452,-0.0129,0.9989],[-0.0452,0.0129,0.9989],[0.0452,0.0129,0.9989],[0.0452,-0.0129,0.9989]]}},"tie":{"c":5,"r":1.2,"engine_part":"blue_trail","engines":[[0,0,-0.5]],"wp":{"sfx":8,"dmg":1,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"tiex1":{"c":13,"r":1.2,"wp":{"sfx":6,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"junk2":{"c":3,"r":1.2},"generator":{"c":6,"r":2},"mfalcon":{"c":5,"engine_part":"mfalcon_trail","engines":[[0,0,-5.86]],"wp":{"sfx":1,"dmg":1,"dly":45,"pos":[[0.45,1.1,0],[-0.45,1.1,0],[0.45,-1.3,0],[-0.45,1.3,0]],"n":[[0,0,1],[0,0,1],[0,0,1],[0,0,1]]}},"vent":{"c":5,"r":1},"ywing":{"c":7,"r":1,"wp":{"sfx":1,"dmg":1,"dly":18,"pos":[[0.13,0,3.1],[-0.13,0,3.1]],"n":[[0,0,1],[0,0,1]]}}}'
+local all_models=json_parse'{"logo":{"c":10},"deathstar":{"c":3},"trench1":{"c":13},"turret":{"c":8,"r":1.1,"wp":{"sfx":1,"part":"ground_laser","dmg":1,"dly":24,"pos":[[-0.4,1.6,1.4],[0.4,1.6,1.4]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"engine_part":"purple_trail","engines":[[-0.57,0.44,-1.61],[-0.57,-0.44,-1.61],[0.57,0.44,-1.61],[0.57,-0.44,-1.61]],"proton_wp":{"dmg":4,"part":"proton","sfx":6,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":2,"dmg":1,"dly":8,"pos":[[2.1,0.6,1.6],[2.1,-0.6,1.6],[-2.1,-0.6,1.6],[-2.1,0.6,1.6]],"n":[[-0.0452,-0.0129,0.9989],[-0.0452,0.0129,0.9989],[0.0452,0.0129,0.9989],[0.0452,-0.0129,0.9989]]}},"tie":{"c":5,"r":1.2,"engine_part":"blue_trail","engines":[[0,0,-0.5]],"wp":{"sfx":8,"dmg":1,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"tiex1":{"c":13,"r":1.2,"wp":{"sfx":6,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"junk2":{"c":3,"r":1.2},"generator":{"c":6,"r":2},"mfalcon":{"c":5,"engine_part":"mfalcon_trail","engines":[[0,0,-5.86]],"wp":{"sfx":1,"dmg":1,"dly":45,"pos":[[0.45,1.1,0],[-0.45,1.1,0],[0.45,-1.3,0],[-0.45,1.3,0]],"n":[[0,0,1],[0,0,1],[0,0,1],[0,0,1]]}},"vent":{"c":5,"r":1},"ywing":{"c":7,"r":1,"wp":{"sfx":1,"dmg":1,"dly":18,"pos":[[0.13,0,3.1],[-0.13,0,3.1]],"n":[[0,0,1],[0,0,1]]}}}'
 local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]'
 
 function draw_actor(self,x,y,z,w)
@@ -494,6 +494,7 @@ function unpack_models()
 	-- for all models
 	for m=1,unpack_int() do
 		local model,name,scale={},unpack_string(),unpack_int()
+		
 		-- vertices
 		model.v={}
 		for i=1,unpack_int() do
@@ -717,7 +718,7 @@ _g.update_flying_npc=function(self)
 	v_scale(force,5)
 
  -- difficulty = overg_t scale
-	local stamina=1-smoothstep(24*self.overg_t)
+	local stamina=1-smoothstep(48*self.overg_t)
 	if self.target and not self.target.disabled then
 		-- lead to target
 		can_fire,target_pos=true,{0,0,-15}
@@ -767,7 +768,7 @@ _g.update_flying_npc=function(self)
 	self.overg_t*=0.9
  
 	-- fire solution?
-	if self.model.wp and can_fire and self.fire_t<time_t and in_cone(self.pos,self.target.pos,fwd,0.92,24) then
+	if self.model.wp and can_fire and self.fire_t<time_t and in_cone(self.pos,self.target.pos,fwd,0.92,64) then
  	self:fire(self.target.pos)
 	end
 
@@ -820,31 +821,27 @@ _g.hit_npc=function(self,dmg)
 end
 _g.hit_flying_npc=function(self,dmg,actor)
 	_g.hit_npc(self,dmg)
-	-- todo: wait a bit
+	-- retaliate!
 	if actor==plyr then
 		self.target=plyr
 	end
 end
 
 _g.update_turret=function(self,i,j)
-	if(not plyr) return true
-	
-	self.pos[1],self.pos[2],self.pos[3]=i*ground_scale,abs(i*ground_scale)<8 and ground_level-6 or ground_level,j*ground_scale
+	_g.update_ground_actor(self,i,j)
 
-	-- in range?
-	local angle,m=1,self.m
-	if sqr_dist(self.pos,plyr.pos)<16*16 then
-		local dx,dy=self.pos[1]-plyr.pos[1],self.pos[3]-plyr.pos[3]
-		angle=atan2(dx,dy)-0.25
-		local q=make_q(v_up,angle)
-		m=m_from_q(q)
-		self.m=m
-	end
-	m_set_pos(m,self.pos)
+	if(not plyr) return true	
+	
+	local dx,dy=self.pos[1]-plyr.pos[1],self.pos[3]-plyr.pos[3]
+	local angle=atan2(dx,dy)-0.25
+	-- rotation matrix
+	-- (simpler/faster than using quaternions)
+	local m,c,s=self.m,cos(angle),sin(angle)
+	m[1],m[3],m[9],m[11]=c,s,-s,c
 	
 	-- delay fire for new turret
 	if time_t-self.local_t>45 then
-		self.pause_t=time_t+rnd(45)
+		self.pause_t=time_t+rnd(90)
 	end
 	
 	-- fly low or die!
@@ -854,7 +851,7 @@ _g.update_turret=function(self,i,j)
 	self.local_t=time_t
 	return true
 end
-_g.update_junk=function(self,i,j)
+_g.update_ground_actor=function(self,i,j)
 	self.pos[1],self.pos[2],self.pos[3]=i*ground_scale,abs(i*ground_scale)<8 and ground_level-6 or ground_level,j*ground_scale
 
 	m_set_pos(self.m,self.pos)
@@ -908,7 +905,7 @@ _g.make_proton=function(self,target)
 	make_blt(self,wp,p,v).target=target
 end
 
-local all_actors=json_parse'{"plyr":{"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"dboost":1,"acc":0.2,"model":"xwing","turn":0,"roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","draw":"draw_plyr","update":"update_plyr","hit":"hit_plyr","die":"die_plyr"},"patrol":{"hp":10,"turn_rate":0.045,"acc":0.2,"overg_t":0,"rnd":{"model":["xwing","xwing","ywing"]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor","on_die":"nop"},"tie":{"rnd":{"turn_rate":[0.035,0.042],"acc":[0.42,0.38]},"on_die":"nop","hp":8,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"generator":{"waypt":true,"hp":10,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":12,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"mfalcon":{"turn_rate":0.04,"hp":8,"acc":0.25,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","local_t":0,"pause_t":0,"fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"model":"junk2","side":"bad_side","update":"update_junk","hit":"hit_npc","die":"die_actor"},"exit":{"draw":"nop","update":"update_exit","waypt":true},"vador":{"turn_rate":0.05,"hp":40,"acc":0.3,"overg_t":0,"model":"tiex1","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"}}'
+local all_actors=json_parse'{"plyr":{"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"dboost":1,"acc":0.2,"model":"xwing","turn":0,"roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","draw":"draw_plyr","update":"update_plyr","hit":"hit_plyr","die":"die_plyr"},"patrol":{"hp":10,"turn_rate":0.045,"acc":0.2,"overg_t":0,"rnd":{"model":["xwing","xwing","ywing"]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor","on_die":"nop"},"tie":{"acc":0.6,"turn_rate":0.04,"on_die":"nop","hp":8,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"generator":{"waypt":true,"hp":10,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":12,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"mfalcon":{"on_die":"nop","turn_rate":0.04,"hp":8,"acc":0.25,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","local_t":0,"pause_t":0,"fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"model":"junk2","side":"bad_side","update":"update_ground_actor","hit":"hit_npc","die":"die_actor"},"exit":{"draw":"nop","update":"update_exit","waypt":true},"vador":{"turn_rate":0.05,"hp":40,"acc":0.3,"overg_t":0,"model":"tiex1","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"}}'
 
 function make_actor(src,p,q)
 	-- instance
@@ -968,7 +965,7 @@ _g.update_blast=function(self)
 	if self.frame==8 then
 		self.kind,self.dr=5,-0.2
 		for i=1,self.sparks do
-			local v=make_rnd_v(rnd(self.r))
+			local v=make_rnd_v(self.r)
 			v_add(v,self.pos)
 			make_part("spark",v)
 		end
@@ -1006,7 +1003,7 @@ function blt_obj_col(self,objs)
 			end
 			if hit then
 				for i=1,rnd(8) do
-					local v=make_rnd_v(rnd(self.r))
+					local v=make_rnd_v(rnd(0.5))
 					v_add(v,self.pos)
 					make_part("spark",v)
 				end				
@@ -1088,6 +1085,7 @@ _g.draw_part=function(self,x,y,z,w)
 		color(self.c)
 		if w>1 then
  		for _,v in pairs(self.e) do
+ 		 v=v_clone(v)
   		m_x_v(self.m,v)
   		local x1,y1,z1,w1=cam:project(v[1],v[2],v[3])
   		if z>0 and z1>0 then
@@ -1130,11 +1128,11 @@ function draw_ground(self)
 	local x0,z0=cam.pos[1],cam.pos[3]
 	local dx,dy=x0%scale,z0%scale
 	
-	for i=-6,6 do
+	for i=-4,4 do
 		local ii=scale*i-dx+x0
 		-- don't draw on trench
 		if abs(flr(ii-x0+cam.pos[1]))>=8 then
-			for j=-6,6 do
+			for j=-4,4 do
 				local jj=scale*j-dy+z0
 				local x,y,z,w=cam:project(ii,ground_level,jj)
 				if z>0 then
@@ -1184,11 +1182,11 @@ function init_ground()
 	turrets,trench_actors={},{}
 	for i=0,127 do
 		for j=0,127 do
-		 -- force turret!
-			local r=(i%124==2 and j%8==0) and 1 or rnd()
+		 	-- force turret!
+			local r=(i%124==2 and j%16==0) and 1 or rnd()
 			if r>0.995 then
 				make_ground_actor(i,j,"turret")
-			elseif r>0.98 then
+			elseif r>0.9 then
 				make_ground_actor(i,j,"ground_junk")
 			end
 		end
@@ -1515,7 +1513,7 @@ function start_screen:update()
 end
 
 local title_m=make_m(0,0,0)
-local all_help=json_parse'[{"msg":"⬅️⬆️⬇️➡️: flight control","x":20},{"msg":"menu: invert y-axis","x":30},{"msg":"❎: laser / 🅾️+lock: torpedo","x":12},{"msg":"🅾️: speed boost","x":34},{"msg":"⬇️[p2]: rear view","x":30},{"msg":"⬆️[p2]: external view","x":23}]'
+local all_help=json_parse'[{"msg":"⬅️⬆️⬇️➡️: flight control","x":20},{"msg":"⬅️+🅾️/🅾️+➡️: roll","x":30},{"msg":"❎: laser / 🅾️+lock: torpedo","x":12},{"msg":"⬇️[p2]: rear view","x":30},{"msg":"⬆️[p2]: external view","x":23},{"msg":"menu: invert y-axis","x":30},{"msg":"menu: external view","x":30}]'
 function start_screen:draw()
 	cam.pos[3]+=0.1
 	cam:update()
@@ -1650,7 +1648,7 @@ function _draw()
 
 	cur_screen:draw()
 	
-	-- if(draw_stats) draw_stats()
+	if(draw_stats) draw_stats()
 	-- print(flr(100*stat(1)).."% @"..stat(7).."fps",2,2,7)
 end
 
@@ -1663,6 +1661,10 @@ function _init()
 		invert_y=invert_y==-1 and 1 or -1
 		sfx(0)
 		dset(0,invert_y)
+	end)
+	menuitem(2,"switch view", function() 
+		set_view(not cockpit_view)
+		sfx(0)		
 	end)
 	-- read models from map data
 	unpack_models()
@@ -1771,13 +1773,16 @@ end
 _g.ingress_mission=function()
 	-- set ground level
 	ground_level=plyr.pos[2]-300
+	-- speed up
+	--plyr.boost,plyr.dboost=plyr.acc,1
 	return {make_actor("exit",{cam.pos[1],ground_level+30,cam.pos[3]})}
 end
 _g.egress_mission=function()
 	return {make_actor("exit",{cam.pos[1],ground_level+300,cam.pos[3]})}
 end
 _g.victory_mission=function()
-	cam.flip,plyr_playing=true,false
+ -- slow down	
+	cam.flip,plyr_playing,plyr.dboost=true,false,0.9
 	set_view(false)
 	wait_async(180)
 	-- blast deathstar
