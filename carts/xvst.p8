@@ -1092,7 +1092,7 @@ _g.draw_part=function(self,x,y,z,w)
 	end
 end
 
-all_parts=json_parse'{"laser":{"rnd":{"dly":[80,110]},"acc":3,"kind":0,"update":"update_blt","die":"die_blt","draw":"draw_part"},"ground_laser":{"rnd":{"dly":[95,120]},"acc":0.8,"kind":0,"update":"update_blt","die":"die_blt","draw":"draw_part"},"flash":{"kind":1,"rnd":{"r":[0.5,0.7],"dly":[4,6]},"dr":-0.05},"impact":{"kind":1,"c":10,"rnd":{"r":[0.7,1],"dly":[4,6]},"trail":{"kind":1,"rnd":{"r":[0.2,0.3],"dly":[12,24]},"dr":-0.02},"blast":{"frame":0,"sfx":3,"kind":1,"c":7,"rnd":{"r":[2.5,3],"dly":[8,12],"sparks":[6,12]},"dr":-0.04,"update":"update_blast"},"novae":{"frame":0,"sfx":9,"kind":1,"c":7,"r":30,"rnd":{"dly":[8,12],"sparks":[30,40]},"dr":-0.04,"update":"update_blast"},"proton":{"die_part":"blast","rnd":{"dly":[90,120]},"frame":0,"acc":0.6,"kind":3,"update":"update_proton","die":"die_blt","draw":"draw_part"},"spark":{"kind":6,"dr":0,"r":1,"rnd":{"dly":[48,78]}},"purple_trail":{"kind":7,"c":[14,2,5,1],"rnd":{"r":[0.35,0.4],"dly":[2,4],"dr":[-0.08,-0.05]}},"blue_trail":{"kind":7,"c":[7,12,5,1],"rnd":{"r":[0.3,0.5],"dly":[12,24],"dr":[-0.08,-0.05]}},"mfalcon_trail":{"kind":8,"e":[[-3.24,0,-5.04],[3.24,0,-5.04]],"r":1,"dr":0,"rnd":{"c":[12,7,13],"dly":[1,2]}}}'
+all_parts=json_parse'{"laser":{"rnd":{"dly":[80,110]},"acc":3,"kind":0,"update":"update_blt","die":"die_blt","draw":"draw_part"},"ground_laser":{"rnd":{"dly":[95,120]},"acc":0.8,"kind":0,"update":"update_blt","die":"die_blt","draw":"draw_part"},"flash":{"kind":1,"rnd":{"r":[0.5,0.7],"dly":[4,6]},"dr":-0.05},"impact":{"kind":1,"c":10,"dr":-0.05,"rnd":{"r":[0.7,1],"dly":[4,6]}},"trail":{"kind":1,"rnd":{"r":[0.2,0.3],"dly":[12,24]},"dr":-0.02},"blast":{"frame":0,"sfx":3,"kind":1,"c":7,"rnd":{"r":[2.5,3],"dly":[8,12],"sparks":[6,12]},"dr":-0.04,"update":"update_blast"},"novae":{"frame":0,"sfx":9,"kind":1,"c":7,"r":30,"rnd":{"dly":[8,12],"sparks":[30,40]},"dr":-0.04,"update":"update_blast"},"proton":{"die_part":"blast","rnd":{"dly":[90,120]},"frame":0,"acc":0.6,"kind":3,"update":"update_proton","die":"die_blt","draw":"draw_part"},"spark":{"kind":6,"dr":0,"r":1,"rnd":{"dly":[48,78]}},"purple_trail":{"kind":7,"c":[14,2,5,1],"rnd":{"r":[0.35,0.4],"dly":[2,4],"dr":[-0.08,-0.05]}},"blue_trail":{"kind":7,"c":[7,12,5,1],"rnd":{"r":[0.3,0.5],"dly":[12,24],"dr":[-0.08,-0.05]}},"mfalcon_trail":{"kind":8,"e":[[-3.24,0,-5.04],[3.24,0,-5.04]],"r":1,"dr":0,"rnd":{"c":[12,7,13],"dly":[1,2]}}}'
 
 function make_part(part,p,c)
 	local pt=add(parts,clone(all_parts[part],{pos=v_clone(p),draw=_g.draw_part,c=c}))
@@ -1709,7 +1709,7 @@ end
 -->8
 -- missions
 -- basic actor=target mission
-_g.create_actor_group=function(self)
+_g.create_actors_group=function(self)
 	local npcs={}
 	for _,a in pairs(self.actors) do
 		local p=v_clone(a.pos)
@@ -1734,7 +1734,7 @@ _g.create_flying_group=function(self)
 	-- spawn new enemies
 	local npcs={}
 	for i=1,1+rnd(n) do
-		local a=add(npcs,make_actor(self.tie_cls,p))
+		local a=add(npcs,make_actor("tie",p))
 		-- lock on target
 		-- delay npc firing
 		a.target,a.fire_t=target,time_t+dly
@@ -1757,7 +1757,7 @@ _g.ingress_mission=function()
 			local r=(i%124==2 and j%16==0) and 1 or rnd()
 			if r>0.995 then
 				add(ground_npcs,make_ground_actor(i,j,"turret"))
-			elseif r>0.9 then
+			elseif r>0.95 then
 				make_ground_actor(i,j,"ground_junk")
 			end
 		end
@@ -1803,10 +1803,11 @@ _g.gameover_mission=function()
 	return {}
 end
 
-local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","music":11,"dly":90,"target":8},{"msg":"ground1","music":11,"init":"ingress_mission"},{"init":"create_actor_group","actors":[{"name":"generator","pos":[256,0,256]},{"name":"generator","pos":[-256,0,256]},{"name":"generator","pos":[256,0,-256]},{"name":"generator","pos":[-256,0,-256]}],"target":4},{"msg":"ground2","init":"create_actor_group","actors":[{"name":"vent","pos":[0,-6,96]}],"target":1},{"msg":"victory1","init":"egress_mission","dly":90},{"init":"victory_mission","music":11,"target":1,"dly":30},{"msg":"vador_out","dly":300},{"msg":"victory3","music":14,"init":"gameover_mission","dly":720}]'
+local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","music":11,"dly":90,"target":8},{"msg":"ground1","music":11,"init":"ingress_mission"},{"init":"create_actors_group","actors":[{"name":"generator","pos":[256,0,256]},{"name":"generator","pos":[-256,0,256]},{"name":"generator","pos":[256,0,-256]},{"name":"generator","pos":[-256,0,-256]}],"target":4},{"msg":"ground3","init":"weasel_mission","target":5},{"msg":"ground2","init":"create_actors_group","actors":[{"name":"vent","pos":[0,-6,96]}],"target":1},{"msg":"victory1","init":"egress_mission","dly":90},{"init":"victory_mission","music":11,"target":1,"dly":30},{"msg":"vador_out","dly":300},{"msg":"victory3","music":14,"init":"gameover_mission","dly":720}]'
 
 function next_mission_async()
 	score=0
+	local mission_id=0
 	for i=1,#all_missions do
 		local m=all_missions[i]
 		-- play music at start of new mission
@@ -1816,7 +1817,7 @@ function next_mission_async()
 			wait_async(make_msg(m.msg).dly)
 		end
 		
- 	local kills,target,mission_t=0,m.target or 0,time_t
+ 	local kills,target,current_id=0,m.target or 0,mission_id
 		repeat
 			-- create mission
 			local npcs=0
@@ -1827,7 +1828,7 @@ function next_mission_async()
 					-- die hook
 					a.on_die=function(killed)
 						-- don't register kills on past missions
-						if mission_t<time_t then
+						if current_id==mission_id then
 							npcs-=1
 							if(killed) kills+=1
 						end
@@ -1849,6 +1850,7 @@ function next_mission_async()
 		until kills>=target
 		-- don't record transitions
 		score+=target>0 and 1 or 0
+		mission_id+=1
 	end
 ::gameover::
 	wait_gameover_async()
@@ -2172,7 +2174,7 @@ d005001154412150d76d100000010111111000001000000000001100111510000000000000000000
 
 __map__
 014c4d014b4c015253015152015051014f50014849014748014647014546016162016566017677017172016465017273017071016364016667016e6f016768016f70016b7a016a6b01696a016c6d016061017576016062017577017a6e016974017978016379016d73016c74016878011110010f7b01343d01061f201d1d101f
-010c869a8d869a967a9a8d7a9a969080909080707080707080908da08d8da07973a07973a08d050904090b0a080604030d08060804070e0b0c070405060a0e08040c090d040580a080a083806083808088618083a00e020101040301050600050800060700060a00070800090a00090c000a0b000b0c00080c00050900070b00
+010c8db39a8db3ad73b39a73b3ada080a0a080606080606080a09ac09a9ac07166c07166c09a050904090b0a080604030d08060804070e0b0c070405060a0e08040c090d040580a080a083806083808088618083a00e020101040301050600050800060700060a00070800090a00090c000a0b000b0c00080c00050900070b00
 071f1d10190e1303060ba060b0a060706060706060b0a080b0a080706080706080b07660b0a07370a07386000007010201030401050601070801040901060a010a0b01042110191f01188080a0698097608080698069808060978069a080809780978093967093906a938070937080936a90937096938090939080869075868b
 7086807586758086708b86759086808b868b100804120f11070604140d13050404160b15030204180917010104171012080704110e14060504130c16040304150a18020c04221b210b0a04241923090904232025100f04271e260e0d04281c220c0b04211a240a1004251f270f0e04261d280d109b8d8b8b8d65658d75758d9b
 8b8d9b9b8d75758d65658d8b9b8e8b8b8e65758e65658e8b8b8e9b9b8e75658e75758e9b280201000302000403000504000605000706000807000108000a09000b0a000c0b000d0c000e0d000f0e00100f00091000070f00100800050d000e0600030b000c04000109000a020012110013120014130015140016150017160018
@@ -2198,7 +2200,7 @@ a36d92a36d8ca3658f9fab7da88986c77784e14884924884685d844a80843fa3844ab88468b88492
 638c889689967a98948c9d8883889f8c9d788996969c8e7a9d8c889d74889c727a869894936d919393917a0401000302000107000802000503000604000607000805000a0900090c000b0a000b0c00040a000b06000c07000901000e0d00100d000f0e00100f000810000f0500020d00030e0011120012130013140014150015
 1600190800081300121700181900191a001a1b00162e001708001718001c1d001d1e001e1f001f1b001a1e001d1900181c00202100212200222300232400211d001c20001f2300221e001b0300031500072700210700252000262700272800282900250700021a002625002a2b002b2c002c2d002e2d00292d002c2800272b00
 2a2600112a00142c002b1300122a00152d00111700111800111c00112000112500112600051400230400042900062800012200302f013130013231013233012f36013433013534013635013035013134010e39010a3801373901383a013c3b013d3c013e3d013e3f013b4201403f014140014241013c41013d40011b1600242e
-002924002404002e1f00031600162401373a013a240137160100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+002924002404002e1f00031600162401373a013a2401371601
 __sfx__
 000800001a75021750000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 000200002c060350503b0403e0403365029060216501e0501665015040116400d0400b6300a030076300803007630060300463004030036300263002640016400164001640016300163001630016300163001620
