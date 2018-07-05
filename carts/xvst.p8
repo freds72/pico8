@@ -96,7 +96,7 @@ end
 -- true: cockpit
 local cockpit_view,cam=false
 -- player
-local plyr_playing,score,mission_score,invert_y,plyr=false,0,1
+local plyr_playing,mission_score,invert_y,plyr=false,0,1
 local actors,ground_actors,parts,all_parts={},{},{}
 -- ground constants 
 local ground_scale,ground_colors,ground_level=4,json_parse'[1,13,6]'
@@ -809,7 +809,9 @@ _g.update_plyr=function(self)
 	-- damping
 	self.roll*=0.8
 	self.turn*=0.9
+	self.turn_spring*=0.85
 	self.pitch*=0.85
+	
 	self.boost*=self.dboost
 	
 	-- engine trail
@@ -912,7 +914,7 @@ _g.make_proton=function(self,target)
 	make_blt(self,wp,p,v).target=target
 end
 
-local all_actors=json_parse'{"plyr":{"hp":5,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"dboost":1,"acc":0.2,"model":"xwing","turn":0,"roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","draw":"draw_plyr","update":"update_plyr","hit":"hit_plyr","die":"die_plyr"},"patrol":{"hp":10,"turn_rate":0.045,"acc":0.2,"overg_t":0,"fatigue":8,"rnd":{"model":["xwing","xwing","ywing"]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor","on_die":"nop"},"tie":{"acc":0.6,"turn_rate":0.04,"fatigue":24,"on_die":"nop","hp":8,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"generator":{"waypt":true,"hp":10,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":12,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"mfalcon":{"on_die":"nop","turn_rate":0.03,"fatigue":8,"hp":8,"acc":0.25,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","local_t":0,"pause_t":0,"fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"model":"junk2","side":"bad_side","update":"update_ground_actor","hit":"hit_npc","die":"die_actor"},"waypoint":{"draw":"nop","update":"update_exit","waypt":true},"vador":{"turn_rate":0.05,"fatigue":8,"hp":40,"acc":0.3,"overg_t":0,"model":"tiex1","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"}}'
+local all_actors=json_parse'{"plyr":{"hp":5,"turn_spring":0,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"dboost":1,"acc":0.2,"model":"xwing","turn":0,"roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","draw":"draw_plyr","update":"update_plyr","hit":"hit_plyr","die":"die_plyr"},"patrol":{"hp":10,"turn_rate":0.045,"acc":0.2,"overg_t":0,"fatigue":8,"rnd":{"model":["xwing","xwing","ywing"]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor","on_die":"nop"},"tie":{"acc":0.6,"turn_rate":0.04,"fatigue":24,"on_die":"nop","hp":8,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"generator":{"waypt":true,"hp":10,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":12,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"mfalcon":{"on_die":"nop","turn_rate":0.03,"fatigue":8,"hp":8,"acc":0.25,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","local_t":0,"pause_t":0,"fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"model":"junk2","side":"bad_side","update":"update_ground_actor","hit":"hit_npc","die":"die_actor"},"waypoint":{"draw":"nop","update":"update_exit","waypt":true},"vador":{"turn_rate":0.05,"fatigue":8,"hp":40,"acc":0.3,"overg_t":0,"model":"tiex1","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"}}'
 
 function make_actor(src,p,q)
 	-- instance
@@ -1272,7 +1274,6 @@ end
 
 -- handle player inputs
 -- todo: better split w/ update
-local turn_t,turn_spring=0,0
 function control_plyr(self)
 	
 	local pitch,roll,input=0,0,false
@@ -1299,9 +1300,8 @@ function control_plyr(self)
  else
 		-- flat turn
 		self.turn+=roll
-		turn_t=mid(turn_t+roll,-20,20)
+		self.turn_spring=mid(self.turn_spring+roll,-20,20)
 	end
-	turn_t*=0.8
 	q_x_q(self.q,make_q(v_fwd,self.roll/512))
  
 	q=make_q(v_up,-self.turn/2048)
@@ -1312,16 +1312,16 @@ function control_plyr(self)
 	-- avoid matrix skew
 	q_normz(self.q)
 	
-	-- update pos
-	--local m=m_from_q(self.q)
-	local q=q_clone(self.q)
-	q_x_q(q,make_q(v_fwd,turn_t/128))
+ -- turn bank
+ local q=q_clone(self.q)
+	q_x_q(q,make_q(v_fwd,self.turn_spring/128))
 	local m=m_from_q(q)
 	local fwd=m_fwd(m)
 	v_add(self.pos,fwd,self.acc+self.boost)
 	plyr_ground_col(self.pos)	
+	-- update pos
 	m_set_pos(m,self.pos)
-	self.m=m
+	self.m,self.cam_q=m,q
 	
 	if plyr_playing then
   local prev_target=plyr.target
@@ -1563,7 +1563,7 @@ function game_screen:update()
 		-- do not track dead player
 		if not plyr.disabled then
 			-- update cam
-			cam:track(m_x_xyz(plyr.m,view_offset[1],view_offset[2],cam.flip and -view_offset[3] or view_offset[3]),plyr.q)
+			cam:track(m_x_xyz(plyr.m,view_offset[1],view_offset[2],cam.flip and -view_offset[3] or view_offset[3]),plyr.cam_q)
 		end
 	end
 	
@@ -1605,7 +1605,7 @@ function game_screen:draw()
 					x+=3
 				end
 				-- score?
-				print(padding(score),83,120,9)
+				print(padding(time_t),82,120,9)
 			else
 				set_layer(true)
 				spr(0,0,32,8,4)
@@ -2211,7 +2211,7 @@ a36d92a36d8ca3658f9fab7da88986c77784e14884924884685d844a80843fa3844ab88468b88492
 638c889689967a98948c9d8883889f8c9d788996969c8e7a9d8c889d74889c727a869894936d919393917a0401000302000107000802000503000604000607000805000a0900090c000b0a000b0c00040a000b06000c07000901000e0d00100d000f0e00100f000810000f0500020d00030e0011120012130013140014150015
 1600190800081300121700181900191a001a1b00162e001708001718001c1d001d1e001e1f001f1b001a1e001d1900181c00202100212200222300232400211d001c20001f2300221e001b0300031500072700210700252000262700272800282900250700021a002625002a2b002b2c002c2d002e2d00292d002c2800272b00
 2a2600112a00142c002b1300122a00152d00111700111800111c00112000112500112600051400230400042900062800012200302f013130013231013233012f36013433013534013635013035013134010e39010a3801373901383a013c3b013d3c013e3d013e3f013b4201403f014140014241013c41013d40011b1600242e
-002924002404002e1f00031600162401373a013a2401371601
+002924002404002e1f00031600162401373a013a240137160100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __sfx__
 000800001a75021750000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 000200002c060350503b0403e0403365029060216501e0501665015040116400d0400b6300a030076300803007630060300463004030036300263002640016400164001640016300163001630016300163001620
