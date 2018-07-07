@@ -96,7 +96,7 @@ end
 -- true: cockpit
 local cockpit_view,cam=false
 -- player
-local plyr_playing,mission_score,invert_y,plyr=false,0,1
+local plyr_playing,mission_t,mission_score,invert_y,plyr=false,0,0,1
 local actors,ground_actors,parts,all_parts={},{},{}
 -- ground constants 
 local ground_scale,ground_colors,ground_level=4,json_parse'[1,13,6]'
@@ -119,11 +119,12 @@ function screen_update()
 end
 -- volumetric sound
 local all_vol=json_parse'[0x700.0700,0x600.0600,0x500.0500,0x400.0400,0x300.0300,0x200.0200,0x100.0100,0x100.0100]'
+
 function sfx_v(s,pos)
 	local d=sqr_dist(cam.pos,pos)
 	-- set volume
 	-- todo: move sqrt into volume array
-	local vol=all_vol[mid(flr(#all_vol*sqrt(d)/16+0.5),1,#all_vol)]
+	local vol=lerparray(all_vol,sqrt(d)/16)
 	local src,dst=0x3200+68*s,0x3200+68*63
 	-- 2 notes/loop (eg 4 bytes)
 	-- 32 notes total
@@ -209,10 +210,12 @@ end
 function rndarray(a)
 	return a[flr(rnd(#a))+1]
 end
-local padding_mask="000000"
-function padding(v)
+function lerparray(a,t)
+	return a[mid(flr((#a-1)*t+0.5),1,#a)]
+end
+function padding(v,n)
 	local s=tostr(v)
-	return sub(padding_mask,1,6-#s)..s
+	return sub("000000",1,n-#s)..s
 end
 
 -- https://github.com/morgan3d/misc/tree/master/p8sort
@@ -553,10 +556,9 @@ function draw_model(model,m,x,y,z,w)
 	draw_session_id+=1
 
 	color(model.c)
-	-- camera distance dithering
+	-- distance dithering
 	if w then
-		local d=lerp(1-mid(w/2,0,1),1,#dither_pat)
-		fillp(dither_pat[flr(d)]+0.1)
+		fillp(lerparray(dither_pat,1-w/32)+0.1)
 	end
 	
 	-- cam pos in object space
@@ -1074,7 +1076,7 @@ _g.draw_part=function(self,x,y,z,w)
 	-- proton head
 	elseif self.kind==3 then
 		-- light effect
-		fillp(dither_pat[mid(#dither_pat-flr(w/2),1,#dither_pat)])
+		fillp(lerparray(dither_pat,1-w/32))
 		circfill(x,y,(0.5+rnd(1))*w,8)
 		fillp()
 		circfill(x,y,(0.1+0.2*rnd())*w,10)
@@ -1141,7 +1143,7 @@ function draw_ground(self)
 				local jj=scale*j-dy+z0
 				local x,y,z,w=cam:project(ii,ground_level,jj)
 				if z>0 then
-					pset(x,y,ground_colors[mid(flr(2*w),1,3)])
+					pset(x,y,lerparray(ground_colors,2*w))
 				end
 			end
 		end
@@ -1604,8 +1606,9 @@ function game_screen:draw()
 					rectfill(x,120,x+1,123,i<imax and 11 or 1)
 					x+=3
 				end
-				-- score?
-				print(padding(time_t),82,120,9)
+				-- mission time
+				local seconds=flr(mission_t/60)
+				print(padding(flr(seconds/60),2)..":"..padding(seconds%60,2),82,120,9)
 			else
 				set_layer(true)
 				spr(0,0,32,8,4)
@@ -1651,7 +1654,7 @@ function _init()
 	end)
 	menuitem(2,"switch view", function() 
 		set_view(not cockpit_view)
-		sfx(0)		
+		sfx(0)
 	end)
 	-- read models from map data
 	unpack_models()
@@ -1673,9 +1676,7 @@ function _init()
 		add(stars,make_rnd_v(32))
 	end
 		
-	cam=make_cam(64)
-	
-	cur_screen=start_screen
+	cam,cur_screen=make_cam(64),start_screen
 	music(0)
 end
 
@@ -1703,16 +1704,15 @@ function update_msg()
 end
 function draw_msg()
 	if(not cur_msg) return
-	local y=2
-	rectfill(32,y,49,y+18,0)
-	rect(32,y,49,y+18,1)
-	spr(cur_msg.spr,33,y+1,2,2)
-	print(cur_msg.title,51,y,9)
-	print(cur_msg.txt,51,y+7,7)
+	rectfill(32,y,49,20,0)
+	rect(32,y,49,20,1)
+	spr(cur_msg.spr,33,3,2,2)
+	print(cur_msg.title,51,2,9)
+	print(cur_msg.txt,51,9,7)
 	-- cheap comms static effect
 	if time_t%4>2 then
 		fillp(0b1011000011110100.1)
-		rectfill(33,y,48,y+23,0)
+		rectfill(33,2,48,25,0)
 		fillp()
  end
 end
@@ -1748,12 +1748,12 @@ _g.create_flying_group=function(self)
 		local a=add(npcs,make_actor("tie",p))
 		-- lock on target
 		-- delay npc firing
-		a.target,a.fire_t=target,time_t+dly
+		-- set difficulty
+		a.target,a.fire_t,a.fatigue=target,time_t+dly,self.fatigue[min(self.wave,#self.fatigue)]
 		v_add(p,v,10)
 	end
 	return npcs
 end
-local ground_npcs
 _g.ingress_mission=function()
 	-- set ground level
 	ground_level=plyr.pos[2]-300
@@ -1761,7 +1761,7 @@ _g.ingress_mission=function()
 	plyr.boost,plyr.dboost=plyr.acc,1
 	
 	-- create ground entities
-	turrets,trench_actors,ground_npcs={},{},{}
+	turrets,trench_actors={},{}
 	for i=0,127 do
 		for j=0,127 do
 		 	-- force turret!
@@ -1777,9 +1777,6 @@ _g.ingress_mission=function()
 		make_trench(i)
 	end
 	return {make_actor("waypoint",{cam.pos[1],ground_level+30,cam.pos[3]})}
-end
-_g.weasel_mission=function()
-	return ground_npcs
 end
 _g.egress_mission=function()
 	return {make_actor("waypoint",{cam.pos[1],ground_level+300,cam.pos[3]})}
@@ -1814,13 +1811,13 @@ _g.gameover_mission=function()
 	return {}
 end
 
-local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","music":11,"dly":90,"target":8},{"msg":"ground1","music":11,"init":"ingress_mission"},{"init":"create_actors_group","actors":[{"name":"generator","pos":[256,0,256]},{"name":"generator","pos":[-256,0,256]},{"name":"generator","pos":[256,0,-256]},{"name":"generator","pos":[-256,0,-256]}],"target":4},{"msg":"ground3","init":"weasel_mission","target":5},{"msg":"ground2","init":"create_actors_group","actors":[{"name":"vent","pos":[0,-6,96]}],"target":1},{"msg":"victory1","init":"egress_mission","dly":90},{"init":"victory_mission","music":11,"target":1,"dly":30},{"msg":"vador_out","dly":300},{"msg":"victory3","music":14,"init":"gameover_mission","dly":720}]'
+local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","music":11,"dly":90,"target":15,"fatigue":[48,24,13,5,1]},{"msg":"ground1","music":11,"init":"ingress_mission"},{"init":"create_actors_group","actors":[{"name":"generator","pos":[256,0,256]},{"name":"generator","pos":[-256,0,256]},{"name":"generator","pos":[256,0,-256]},{"name":"generator","pos":[-256,0,-256]}],"target":4},{"msg":"ground2","init":"create_actors_group","actors":[{"name":"vent","pos":[0,-6,96]}],"target":1},{"msg":"victory1","init":"egress_mission","dly":90},{"init":"victory_mission","music":11,"target":1,"dly":30},{"msg":"vador_out","dly":300},{"msg":"victory3","music":14,"init":"gameover_mission","dly":720}]'
  
 function next_mission_async()
 	mission_score=0
-	local mission_id=0
-	for i=2,#all_missions do
+	for i=1,#all_missions do
 		local m=all_missions[i]
+		m.wave,mission_t=0,3000
 		-- play music at start of new mission
 		music(m.music or -1,500)
 		-- wait until message completes
@@ -1832,36 +1829,34 @@ function next_mission_async()
 		repeat
 			-- create mission
 			local npcs=0
+			m.wave+=1
 			-- any mission logic?
 			if m.init then
 				for _,a in pairs(m:init()) do
 					npcs+=1
 					-- die hook
 					a.on_die=function(killed)
-						-- don't register kills on past missions
-						if current_id==mission_id then
-							npcs-=1
-							if(killed) kills+=1
-						end
+						npcs-=1
+						if(killed) kills+=1
 					end
 				end
 			end
 			-- wait kills
-			while plyr and npcs>0 do
+			while mission_t>0 and plyr and npcs>0 do
+				mission_t-=1
 				yield()
 			end
 			-- game over
 			if(not plyr) goto gameover
 			
-			-- failed?
-			if(m.mandatory and kills!=target) goto gameover
+			-- failed/expired?
+			if(kills<target) goto gameover
 
 			-- pause before next mission?
 			if(m.dly) wait_async(m.dly)
 		until kills>=target
 		-- don't record transitions
 		mission_score+=target>0 and 1 or 0
-		mission_id+=1
 	end
 ::gameover::
 	wait_gameover_async()
