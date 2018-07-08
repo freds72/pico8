@@ -90,7 +90,7 @@ function json_parse(str, pos, end_delim)
 	end
 end
 
-local actors={}
+local actors,cam,light={}
 
 -- zbuffer (kind of)
 local drawables
@@ -398,8 +398,8 @@ function trifill(x0,y0,x1,y1,x2,y2,col)
  end
 end
 
-local color_lo={0,1,13,6,7}
-local color_hi={0x10,0xd0,0x60,0x70,0x70}
+local color_lo={1,1,13,6,7}
+local color_hi={0x11,0xd0,0x60,0x70,0x70}
 local dither_pat={0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000}
 
 function draw_model(model,m,x,y,z,w)
@@ -407,9 +407,6 @@ function draw_model(model,m,x,y,z,w)
 	-- cam pos in object space
 	local cam_pos=v_clone(cam.pos)
 	m_inv_x_v(m,cam_pos)
-	
-	local light_dir={x=cos(time_t/128),y=0.5,z=sin(time_t/128)} --v_clone(cam.pos)
-	v_normz(light_dir)
 	
 	-- faces
 	local faces,p={},{}
@@ -434,16 +431,16 @@ function draw_model(model,m,x,y,z,w)
 			add(faces,{key=d,face=f})
 		end
 	end
-	-- todo: sort
+	-- sort faces
 	sort(faces)
 
 	-- draw faces using projected points
 	for _,f in pairs(faces) do
 		f=f.face
-		local c=(#color_lo-1)*v_dot(model.n[f.ni],light_dir)
+		local c=max((#color_lo-1)*v_dot(model.n[f.ni],light.u))
 		-- get floating part
 		local cf=(#dither_pat-1)*(1-(c-flr(c)))
-		--fillp(dither_pat[flr(cf)+1])
+		fillp(dither_pat[flr(cf)+1])
 		c=bor(color_hi[flr(c)+1],color_lo[flr(c)+1])
 		local p0=p[f.vi[1]]
 	 	for i=2,#f.vi-1 do
@@ -469,6 +466,31 @@ function make_npc(p,v,src)
 	local m=m_from_q(a.q)
 	m_set_pos(m,p)
 	a.m=m
+	return add(actors,a)
+end
+
+function make_light_actor(r)
+	local a={
+		pos={x=r,y=0,z=0},
+		u={x=-1,y=0,z=0},
+		update=function(self)
+			local t=time_t/128
+			self.pos={
+				x=r*cos(t),
+				y=0,
+				z=-r*sin(t)
+			}
+			self.u={
+				x=cos(t),
+				y=0,
+				z=-sin(t)
+			}
+			return true
+		end,
+		draw=function(self,x,y,z,w)
+			circfill(x,y,max(1,0.2*w),7)
+		end
+	}
 	return add(actors,a)
 end
 
@@ -550,6 +572,8 @@ function _init()
 	
 	cam=make_cam(64)
 	
+	light=make_light_actor(5)
+
 	actor=make_npc({x=0,y=0,z=0},v_up,"ground_junk")
 end
 
