@@ -30,25 +30,29 @@ local function match(s,tokens)
 end
 local function skip_delim(str, pos, delim, err_if_missing)
  if sub(str,pos,pos)!=delim then
-  if(err_if_missing) assert'delimiter missing'
+  --if(err_if_missing) assert'delimiter missing'
   return pos,false
  end
  return pos+1,true
 end
 local function parse_str_val(str, pos, val)
 	val=val or ''
+	--[[
 	if pos>#str then
 		assert'end of input found while parsing string.'
 	end
+	]]
 	local c=sub(str,pos,pos)
 	if(c=='"') return _g[val] or val,pos+1
 	return parse_str_val(str,pos+1,val..c)
 end
 local function parse_num_val(str,pos,val)
 	val=val or ''
+	--[[
 	if pos>#str then
 		assert'end of input found while parsing string.'
 	end
+	]]
 	local c=sub(str,pos,pos)
 	-- support base 10, 16 and 2 numbers
 	if(not match(c,"-xb0123456789abcdef.")) return tonum(val),pos
@@ -58,7 +62,7 @@ end
 
 function json_parse(str, pos, end_delim)
 	pos=pos or 1
-	if(pos>#str) assert'reached unexpected end of input.'
+	-- if(pos>#str) assert'reached unexpected end of input.'
 	local first=sub(str,pos,pos)
 	if match(first,"{[") then
 		local obj,key,delim_found={},true,true
@@ -66,7 +70,7 @@ function json_parse(str, pos, end_delim)
 		while true do
 			key,pos=json_parse(str, pos, table_delims[first])
 			if(key==nil) return obj,pos
-			if not delim_found then assert'comma missing between table items.' end
+			-- if not delim_found then assert'comma missing between table items.' end
 			if first=="{" then
 				pos=skip_delim(str,pos,':',true)  -- true -> error if missing.
 				obj[key],pos=json_parse(str,pos)
@@ -88,7 +92,7 @@ function json_parse(str, pos, end_delim)
 			local lit_end=pos+#lit_str-1
 			if sub(str,pos,lit_end)==lit_str then return lit_val,lit_end+1 end
 		end
-		assert'invalid json token'
+		-- assert'invalid json token'
 	end
 end
 
@@ -558,7 +562,7 @@ function draw_model(model,m,x,y,z,w)
 	color(model.c)
 	-- distance dithering
 	if w then
-		fillp(lerparray(dither_pat,1-w/32)+0.1)
+		fillp(lerparray(dither_pat,w/2)+0.1)
 	end
 	
 	-- cam pos in object space
@@ -916,7 +920,7 @@ _g.make_proton=function(self,target)
 	make_blt(self,wp,p,v).target=target
 end
 
-local all_actors=json_parse'{"plyr":{"hp":5,"turn_spring":0,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"dboost":1,"acc":0.2,"model":"xwing","turn":0,"roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","draw":"draw_plyr","update":"update_plyr","hit":"hit_plyr","die":"die_plyr"},"patrol":{"hp":10,"turn_rate":0.045,"acc":0.2,"overg_t":0,"fatigue":8,"rnd":{"model":["xwing","xwing","ywing"]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor","on_die":"nop"},"tie":{"acc":0.6,"turn_rate":0.04,"fatigue":48,"on_die":"nop","hp":8,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"generator":{"waypt":true,"hp":10,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":12,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"mfalcon":{"on_die":"nop","turn_rate":0.03,"fatigue":8,"hp":8,"acc":0.25,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","local_t":0,"pause_t":0,"fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"model":"junk2","side":"bad_side","update":"update_ground_actor","hit":"hit_npc","die":"die_actor"},"waypoint":{"draw":"nop","update":"update_exit","waypt":true},"vador":{"turn_rate":0.05,"fatigue":8,"hp":40,"acc":0.3,"overg_t":0,"model":"tiex1","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"}}'
+local all_actors=json_parse'{"plyr":{"hp":5,"turn_spring":0,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"dboost":1,"acc":0.2,"model":"xwing","turn":0,"roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","draw":"draw_plyr","update":"update_plyr","hit":"hit_plyr","die":"die_plyr"},"patrol":{"hp":10,"turn_rate":0.045,"acc":0.2,"overg_t":0,"fatigue":1,"rnd":{"model":["xwing","xwing","ywing"]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor","on_die":"nop"},"tie":{"acc":0.6,"turn_rate":0.04,"fatigue":48,"on_die":"nop","hp":8,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"generator":{"waypt":true,"hp":10,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":12,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"mfalcon":{"on_die":"nop","turn_rate":0.03,"fatigue":8,"hp":8,"acc":0.25,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","local_t":0,"pause_t":0,"fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"model":"junk2","side":"bad_side","update":"update_ground_actor","hit":"hit_npc","die":"die_actor"},"waypoint":{"draw":"nop","update":"update_exit","waypt":true},"vador":{"turn_rate":0.05,"fatigue":12,"hp":40,"acc":0.3,"overg_t":0,"model":"tiex1","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"}}'
 
 function make_actor(src,p,q)
 	-- instance
@@ -1042,25 +1046,39 @@ _g.update_blt=function(self)
 	return true
 end
 
+-- see: https://en.wikipedia.org/wiki/proportional_navigation
 _g.update_proton=function(self)
- if time_t%2==0 then
- 	make_part("trail",self.pos,10)
- end
- -- update orientation to match target
- if self.target and not self.target.disabled then
-		-- old enough?
-		local v=make_v(self.pos,self.target.pos)
-		-- not too close?
-		if v_dot(v,v)>0.25 then
-			v_normz(v)
- 		-- within cone?
- 		if v_dot(self.u,v)>0.6 then
- 			v_add(self.u,v,smoothstep(self.frame/60))
- 			v_normz(self.u)
- 		end
- 	end
- end
- self.frame+=1
+	if time_t%2==0 then
+	make_part("trail",self.pos,10)
+	end
+	-- update orientation to match target
+	local target=self.target
+	if target and not target.disabled and sqr_dist(self.pos,self.target.pos)>4 then
+		-- new vector to target
+		local r_new,rate=make_v(self.pos,target.pos),0
+		-- close enough to blast?
+		if v_dot(r_new,r_new)<1 then
+			target:hit(self.dmg,self.actor)
+			return self:die()
+		end
+		-- 
+		v_normz(r_new)
+		if self.r_old then		
+			local r=make_v(self.r_old,r_new)
+			rate=sqrt(v_dot(r,r))
+		end
+		-- velocity diff
+		local v=m_fwd(target.m)
+		v_scale(v,target.acc)
+		v_add(v,self.u,-self.acc)
+		v_scale(v,rate*3)
+		-- adjust acceleration with new force
+		v_add(v,self.u,self.acc)
+		v_normz(v)
+		self.u,self.r_old=v,r_new
+		self.rate=rate
+	end
+	self.frame+=1
  return _g.update_blt(self)
 end
 
@@ -1076,10 +1094,10 @@ _g.draw_part=function(self,x,y,z,w)
 	-- proton head
 	elseif self.kind==3 then
 		-- light effect
-		fillp(lerparray(dither_pat,1-w/32))
+		fillp(lerparray(dither_pat,1-w/16))
 		circfill(x,y,(0.5+rnd(1))*w,8)
 		fillp()
-		circfill(x,y,(0.1+0.2*rnd())*w,10)
+		circfill(x,y,(0.1+0.2*rnd())*w,10)		
 	elseif self.kind==5 then
 		circ(x,y,w*self.r,7)
 	-- blast particle
@@ -1103,7 +1121,7 @@ _g.draw_part=function(self,x,y,z,w)
 	end
 end
 
-all_parts=json_parse'{"laser":{"rnd":{"dly":[80,110]},"acc":3,"kind":0,"update":"update_blt","die":"die_blt","draw":"draw_part"},"ground_laser":{"rnd":{"dly":[95,120]},"acc":0.8,"kind":0,"update":"update_blt","die":"die_blt","draw":"draw_part"},"flash":{"kind":1,"rnd":{"r":[0.5,0.7],"dly":[4,6]},"dr":-0.05},"impact":{"kind":1,"c":10,"dr":-0.05,"rnd":{"r":[0.7,1],"dly":[4,6]}},"trail":{"kind":1,"rnd":{"r":[0.2,0.3],"dly":[12,24]},"dr":-0.02},"blast":{"frame":0,"sfx":3,"kind":1,"c":7,"rnd":{"r":[2.5,3],"dly":[12,18],"sparks":[6,12]},"dr":-0.04,"update":"update_blast"},"novae":{"frame":0,"sfx":9,"kind":1,"c":7,"r":30,"rnd":{"dly":[8,12],"sparks":[30,40]},"dr":-0.04,"update":"update_blast"},"proton":{"die_part":"blast","rnd":{"dly":[90,120]},"frame":0,"acc":0.6,"kind":3,"update":"update_proton","die":"die_blt","draw":"draw_part"},"spark":{"kind":6,"dr":0,"r":1,"rnd":{"dly":[48,78]}},"purple_trail":{"kind":7,"c":[14,2,5,1],"rnd":{"r":[0.35,0.4],"dly":[2,4],"dr":[-0.08,-0.05]}},"blue_trail":{"kind":7,"c":[7,12,5,1],"rnd":{"r":[0.3,0.5],"dly":[12,24],"dr":[-0.08,-0.05]}},"mfalcon_trail":{"kind":8,"e":[[-3.24,0,-5.04],[3.24,0,-5.04]],"r":1,"dr":0,"rnd":{"c":[12,7,13],"dly":[1,2]}}}'
+all_parts=json_parse'{"laser":{"rnd":{"dly":[80,110]},"acc":3,"kind":0,"update":"update_blt","die":"die_blt","draw":"draw_part"},"ground_laser":{"rnd":{"dly":[95,120]},"acc":0.8,"kind":0,"update":"update_blt","die":"die_blt","draw":"draw_part"},"flash":{"kind":1,"rnd":{"r":[0.5,0.7],"dly":[4,6]},"dr":-0.05},"impact":{"kind":1,"c":10,"dr":-0.05,"rnd":{"r":[0.7,1],"dly":[4,6]}},"trail":{"kind":1,"rnd":{"r":[0.2,0.3],"dly":[12,24]},"dr":-0.02},"blast":{"frame":0,"sfx":3,"kind":1,"c":7,"rnd":{"r":[2.5,3],"dly":[12,18],"sparks":[6,12]},"dr":-0.04,"update":"update_blast"},"novae":{"frame":0,"sfx":9,"kind":1,"c":7,"r":30,"rnd":{"dly":[8,12],"sparks":[30,40]},"dr":-0.04,"update":"update_blast"},"proton":{"die_part":"blast","rnd":{"dly":[180,210]},"frame":0,"acc":0.8,"kind":3,"update":"update_proton","die":"die_blt","draw":"draw_part"},"spark":{"kind":6,"dr":0,"r":1,"rnd":{"dly":[48,78]}},"purple_trail":{"kind":7,"c":[14,2,5,1],"rnd":{"r":[0.35,0.4],"dly":[2,4],"dr":[-0.08,-0.05]}},"blue_trail":{"kind":7,"c":[7,12,5,1],"rnd":{"r":[0.3,0.5],"dly":[12,24],"dr":[-0.08,-0.05]}},"mfalcon_trail":{"kind":8,"e":[[-3.24,0,-5.04],[3.24,0,-5.04]],"r":1,"dr":0,"rnd":{"c":[12,7,13],"dly":[1,2]}}}'
 
 function make_part(part,p,c)
 	local pt=add(parts,clone(all_parts[part],{pos=v_clone(p),draw=_g.draw_part,c=c}))
@@ -1283,8 +1301,8 @@ function control_plyr(self)
 	 -- ⬅️⬆️⬇️➡️🅾️❎
 		if(btn(0)) roll=1 input=true
 		if(btn(1)) roll=-1 input=true
-		if(btn(2)) pitch=-1 input=true
-		if(btn(3)) pitch=1 input=true
+		if(btn(2)) pitch=-1
+		if(btn(3)) pitch=1
 		-- flip y-axis?
 		pitch*=invert_y
 		
@@ -1343,9 +1361,8 @@ function control_plyr(self)
  	end
  	if not input and plyr.proton_ammo>0 and plyr.proton_t<time_t and plyr.lock_t>30 and btnp(4) then
  		plyr:fire_proton(target)
- 		plyr.proton_t=time_t+plyr.model.proton_wp.dly
+ 		plyr.energy,plyr.proton_t=0,time_t+plyr.model.proton_wp.dly
  		plyr.proton_ammo-=1
- 		plyr.energy=0
  	end
  		
  	if self.fire_t<time_t and btn(5) then
@@ -1357,8 +1374,8 @@ function control_plyr(self)
 				v_add(target_pos,m_fwd(target.m),lead_t*target.acc)
  		end
  			
- 		if(plyr.energy>0.08) plyr:fire(target_pos)
- 		plyr.energy=max(plyr.energy-0.08)
+ 		if(plyr.energy>0.05) plyr:fire(target_pos)
+ 		plyr.energy=max(plyr.energy-0.05)
  	end
  end
 end
@@ -1511,10 +1528,12 @@ function start_screen:draw()
 	draw_model(all_models["logo"],title_m)
 	print("freds72 presents",32,4,1)
 	print("attack on the death star",20,78,12)
-	
+
+ --[[
 	local i=flr(time_t/128)%#all_help
 	local h=all_help[i+1]
 	print(h.msg,h.x,108,3)
+	]]
 	
 	if (start_screen_starting and time_t%2==0) or time_t%24<12 then
 		print("press start",44,118,11)
@@ -1607,8 +1626,11 @@ function game_screen:draw()
 					x+=3
 				end
 				-- mission time
-				local seconds=flr(mission_t/60)
-				print(padding(flr(seconds/60),2)..":"..padding(seconds%60,2),82,120,9)
+				local time_ratio,seconds=mission_t/8000,time_t
+				local time_length=22*time_ratio
+				rectfill(82,121,82+time_length,122,8)
+				local seconds_x=time_length*(seconds%60)/60
+				line(82+seconds_x,121,82+seconds_x,122,10)
 			else
 				set_layer(true)
 				spr(0,0,32,8,4)
@@ -1811,13 +1833,13 @@ _g.gameover_mission=function()
 	return {}
 end
 
-local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","music":11,"dly":90,"target":15,"fatigue":[48,24,13,5,1]},{"msg":"ground1","music":11,"init":"ingress_mission"},{"init":"create_actors_group","actors":[{"name":"generator","pos":[256,0,256]},{"name":"generator","pos":[-256,0,256]},{"name":"generator","pos":[256,0,-256]},{"name":"generator","pos":[-256,0,-256]}],"target":4},{"msg":"ground2","init":"create_actors_group","actors":[{"name":"vent","pos":[0,-6,96]}],"target":1},{"msg":"victory1","init":"egress_mission","dly":90},{"init":"victory_mission","music":11,"target":1,"dly":30},{"msg":"vador_out","dly":300},{"msg":"victory3","music":14,"init":"gameover_mission","dly":720}]'
+local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","music":11,"dly":90,"target":15,"fatigue":[48,40,32,24,12]},{"msg":"ground1","music":11,"init":"ingress_mission"},{"init":"create_actors_group","actors":[{"name":"generator","pos":[256,0,256]},{"name":"generator","pos":[-256,0,256]},{"name":"generator","pos":[256,0,-256]},{"name":"generator","pos":[-256,0,-256]}],"target":4},{"msg":"ground2","init":"create_actors_group","actors":[{"name":"vent","pos":[0,-6,96]}],"target":1},{"msg":"victory1","init":"egress_mission","dly":90},{"init":"victory_mission","music":11,"target":1,"dly":30},{"msg":"vador_out","dly":300},{"msg":"victory3","music":14,"init":"gameover_mission","dly":720}]'
  
 function next_mission_async()
 	mission_score=0
 	for i=1,#all_missions do
 		local m=all_missions[i]
-		m.wave,mission_t=0,3000
+		m.wave,mission_t=0,8000
 		-- play music at start of new mission
 		music(m.music or -1,500)
 		-- wait until message completes
@@ -1850,7 +1872,7 @@ function next_mission_async()
 			if(not plyr) goto gameover
 			
 			-- failed/expired?
-			if(kills<target) goto gameover
+			if(mission_t<=0 and kills<target) goto gameover
 
 			-- pause before next mission?
 			if(m.dly) wait_async(m.dly)
@@ -1954,10 +1976,10 @@ aaaaaaaa999998888888840000000000000000000000000000000000000000000000000000000000
 22222222222222222221221111111115999999599555555555555555555555550000000000000999999000000000000000000000000000000000000000000000
 0000000000000000000000000000004888888488488888888888888888888888000000000000000000bbbbbbb0000000000000000000000001d6000000000000
 000000000000000000000000000004888888488488888888888888888888888800000000000000000b0000000b00000000000000000000000000000000000000
-00000000000000000000000000004888888488488888888888888888888888880000000000000000b00bbbbb00b0000000000000000000000000000000000000
-00000000000000000000000000048888884884888888888888888888444444440000000000000000b0b00000b0b0000000000000000000000000000000000000
-00000000000000000000000004488888848848888888888888888884888888880000070000000000b0b00700b0b0000000000000000000000000000000000000
-00000000000000000000000448888888488488888888888888888884888888880000070000000000000007000000000000000055660000000000000000000000
+00000000000000000000000000004888888488488888888888888888888888880000000000000000b00bbbbb00b0000000000000000000000a00000000000000
+00000000000000000000000000048888884884888888888888888888444444440000000000000000b0b00000b0b0000000000000000000009a99999900000000
+00000000000000000000000004488888848848888888888888888884888888880000070000000000b0b00700b0b0000000000000000000009a99999900000000
+00000000000000000000000448888888488488888888888888888884888888880000070000000000000007000000000000000055660000000a00000000000000
 00000000000000000000004888888884884888444444444444488848888888880000777000000000b0b07770b0b0000000005561167600000000000000000000
 00000000000000000000448888888848848884888888888888848848888888880000000000000000b0b00000b0b0000000056617016760000000000000000000
 00000000000000000044888888888488488884888888888888848844444444440000000000000000b00bbbbb00b0000000566610016776000000000000000000
