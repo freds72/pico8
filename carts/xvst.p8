@@ -452,7 +452,7 @@ function m_up(m)
 end
 
 -- models
-local all_models=json_parse'{"logo":{"c":10},"deathstar":{"c":3},"trench1":{"c":13},"turret":{"c":8,"r":1.1,"wp":{"sfx":1,"part":"ground_laser","dmg":1,"dly":24,"pos":[[-0.4,1.6,1.4],[0.4,1.6,1.4]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"engine_part":"purple_trail","engines":[[-0.57,0.44,-1.61],[-0.57,-0.44,-1.61],[0.57,0.44,-1.61],[0.57,-0.44,-1.61]],"proton_wp":{"dmg":4,"part":"proton","sfx":6,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":2,"angle":0.9,"dmg":1,"dly":8,"pos":[[2.1,0.6,1.6],[2.1,-0.6,1.6],[-2.1,-0.6,1.6],[-2.1,0.6,1.6]],"n":[[-0.0452,-0.0129,0.9989],[-0.0452,0.0129,0.9989],[0.0452,0.0129,0.9989],[0.0452,-0.0129,0.9989]]}},"tie":{"c":5,"r":1.2,"engine_part":"blue_trail","engines":[[0,0,-0.5]],"wp":{"sfx":8,"angle":0.92,"dmg":1,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"tiex1":{"c":13,"r":1.2,"wp":{"sfx":6,"angle":0.9,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"junk2":{"c":3,"r":1.2},"generator":{"c":6,"r":2},"mfalcon":{"c":5,"engine_part":"mfalcon_trail","engines":[[0,0,-5.86]],"wp":{"sfx":1,"angle":0,"dmg":1,"dly":45,"pos":[[0.45,1.1,0],[-0.45,1.1,0],[0.45,-1.3,0],[-0.45,1.3,0]],"n":[[0,0,1],[0,0,1],[0,0,1],[0,0,1]]}},"vent":{"c":5,"r":1},"ywing":{"c":7,"r":1,"wp":{"sfx":1,"angle":0.92,"dmg":4,"dly":45,"pos":[[0.13,0,3.1],[-0.13,0,3.1]],"n":[[0,0,1],[0,0,1]]}}}'
+local all_models=json_parse'{"logo":{"c":10},"deathstar":{"c":3},"trench1":{"c":13},"turret":{"c":8,"r":1.1,"wp":{"sfx":1,"part":"ground_laser","dmg":1,"dly":24,"pos":[[-0.4,1.6,1.4],[0.4,1.6,1.4]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"engine_part":"purple_trail","engines":[[-0.57,0.44,-1.61],[-0.57,-0.44,-1.61],[0.57,0.44,-1.61],[0.57,-0.44,-1.61]],"proton_wp":{"dmg":4,"part":"proton","sfx":6,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":2,"angle":0.9,"dmg":1,"dly":8,"pos":[[2.1,0.6,1.6],[2.1,-0.6,1.6],[-2.1,-0.6,1.6],[-2.1,0.6,1.6]],"n":[[-0.0452,-0.0129,0.9989],[-0.0452,0.0129,0.9989],[0.0452,0.0129,0.9989],[0.0452,-0.0129,0.9989]]}},"tie":{"c":5,"r":1.2,"engine_part":"blue_trail","engines":[[0,0,-0.5]],"wp":{"sfx":8,"angle":0.92,"dmg":1,"dly":18,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"tiex1":{"c":13,"r":1.2,"wp":{"sfx":6,"angle":0.9,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"junk2":{"c":3,"r":1.2},"generator":{"c":6,"r":2},"mfalcon":{"c":5,"engine_part":"mfalcon_trail","engines":[[0,0,-5.86]],"wp":{"sfx":1,"angle":0,"dmg":1,"dly":45,"pos":[[0.45,1.1,0],[-0.45,1.1,0],[0.45,-1.3,0],[-0.45,1.3,0]],"n":[[0,0,1],[0,0,1],[0,0,1],[0,0,1]]}},"vent":{"c":5,"r":1},"ywing":{"c":7,"r":1,"wp":{"sfx":1,"angle":0.92,"dmg":4,"dly":45,"pos":[[0.13,0,3.1],[-0.13,0,3.1]],"n":[[0,0,1],[0,0,1]]}}}'
 local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]'
 
 function draw_actor(self,x,y,z,w)
@@ -732,7 +732,7 @@ _g.update_flying_npc=function(self)
 	local stamina=1-smoothstep(self.fatigue*self.overg_t)
 	if self.target and not self.target.disabled then
 		-- lead to target
-		can_fire,target_pos=true,{0,0,-15}
+		can_fire,target_pos=true,{0,0,-rnd(15)}
 		v_add(force,follow(pos,self.target,target_pos),stamina)
 	else
 		-- search for target
@@ -744,7 +744,7 @@ _g.update_flying_npc=function(self)
 		self.wander_t=time_t+120+rnd(60)
 	end
 	-- add some 'noise' even when following a target
-	v_add(force,follow(pos,self,self.wander))--,self.target and 0.2 or 1)
+	v_add(force,follow(pos,self,self.wander))
  -- avoid other actors
 	v_add(force,avoid(self,pos,8),4)
 
@@ -1076,10 +1076,9 @@ _g.update_proton=function(self)
 		v_add(v,self.u,self.acc)
 		v_normz(v)
 		self.u,self.r_old=v,r_new
-		self.rate=rate
 	end
 	self.frame+=1
- return _g.update_blt(self)
+	return _g.update_blt(self)
 end
 
 _g.draw_part=function(self,x,y,z,w)
@@ -1529,11 +1528,9 @@ function start_screen:draw()
 	print("freds72 presents",32,4,1)
 	print("attack on the death star",20,78,12)
 
- --[[
 	local i=flr(time_t/128)%#all_help
 	local h=all_help[i+1]
 	print(h.msg,h.x,108,3)
-	]]
 	
 	if (start_screen_starting and time_t%2==0) or time_t%24<12 then
 		print("press start",44,118,11)
@@ -1660,7 +1657,7 @@ function _draw()
 
 	cur_screen:draw()
 	
-	if(draw_stats) draw_stats()
+	-- if(draw_stats) draw_stats()
 	-- print(flr(100*stat(1)).."% @"..stat(7).."fps",2,2,7)
 end
 
@@ -1674,10 +1671,12 @@ function _init()
 		sfx(0)
 		dset(0,invert_y)
 	end)
-	menuitem(2,"switch view", function() 
+	--[[
+		menuitem(2,"switch view", function() 
 		set_view(not cockpit_view)
 		sfx(0)
 	end)
+	]]
 	-- read models from map data
 	unpack_models()
 	
@@ -1720,8 +1719,8 @@ function update_msg()
 	end
 	
 	if plyr and plyr.hp<2 and low_hp_t<time_t and rnd()>0.95 then
-			make_msg("low_hp")
-			low_hp_t=time_t+cur_msg.repeat_dly
+		make_msg("low_hp")
+		low_hp_t=time_t+cur_msg.repeat_dly
 	end
 end
 function draw_msg()
@@ -1833,7 +1832,7 @@ _g.gameover_mission=function()
 	return {}
 end
 
-local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","music":11,"dly":90,"target":15,"fatigue":[48,40,32,24,12]},{"msg":"ground1","music":11,"init":"ingress_mission"},{"init":"create_actors_group","actors":[{"name":"generator","pos":[256,0,256]},{"name":"generator","pos":[-256,0,256]},{"name":"generator","pos":[256,0,-256]},{"name":"generator","pos":[-256,0,-256]}],"target":4},{"msg":"ground2","init":"create_actors_group","actors":[{"name":"vent","pos":[0,-6,96]}],"target":1},{"msg":"victory1","init":"egress_mission","dly":90},{"init":"victory_mission","music":11,"target":1,"dly":30},{"msg":"vador_out","dly":300},{"msg":"victory3","music":14,"init":"gameover_mission","dly":720}]'
+local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","music":11,"dly":90,"score":1,"target":15,"fatigue":[48,40,32,24,12]},{"msg":"ground1","music":11,"init":"ingress_mission"},{"init":"create_actors_group","score":1,"actors":[{"name":"generator","pos":[256,0,256]},{"name":"generator","pos":[-256,0,256]},{"name":"generator","pos":[256,0,-256]},{"name":"generator","pos":[-256,0,-256]}],"target":4},{"msg":"ground2","score":1,"init":"create_actors_group","actors":[{"name":"vent","pos":[0,-6,96]}],"target":1},{"msg":"victory1","init":"egress_mission","dly":90},{"init":"victory_mission","music":11,"target":1,"score":1,"dly":30},{"msg":"vador_out","dly":300},{"msg":"victory3","music":14,"init":"gameover_mission","dly":720}]'
  
 function next_mission_async()
 	mission_score=0
@@ -1877,8 +1876,8 @@ function next_mission_async()
 			-- pause before next mission?
 			if(m.dly) wait_async(m.dly)
 		until kills>=target
-		-- don't record transitions
-		mission_score+=target>0 and 1 or 0
+		-- 
+		mission_score+=m.score
 	end
 ::gameover::
 	wait_gameover_async()
