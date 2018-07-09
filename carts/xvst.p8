@@ -100,7 +100,7 @@ end
 -- true: cockpit
 local cockpit_view,cam=false
 -- player
-local plyr_playing,mission_t,mission_score,invert_y,plyr=false,0,0,1
+local plyr_playing,mission_t,mission_t_max,mission_score,invert_y,plyr=false,0,1,0,1
 local actors,ground_actors,parts,all_parts={},{},{}
 -- ground constants 
 local ground_scale,ground_colors,ground_level=4,json_parse'[1,13,6]'
@@ -1063,13 +1063,14 @@ _g.update_proton=function(self)
 		end
 		-- 
 		v_normz(r_new)
-		if self.r_old then		
+		if self.r_old then
 			local r=make_v(self.r_old,r_new)
 			rate=sqrt(v_dot(r,r))
 		end
 		-- velocity diff
 		local v=m_fwd(target.m)
-		v_scale(v,target.acc)
+		-- static objects=no acc
+		v_scale(v,target.acc or 0)
 		v_add(v,self.u,-self.acc)
 		v_scale(v,rate*3)
 		-- adjust acceleration with new force
@@ -1423,6 +1424,7 @@ function draw_radar_dots(objs)
 	end
 end
 
+local dx,dy=0,0
 function draw_instr()
 	clip(54,105,22,22)
 	draw_radar_dots(ground_actors)
@@ -1440,18 +1442,19 @@ function draw_instr()
 		end
 	end
 	
-	-- draw lock	
+	-- draw lock
 	if plyr.target then
-		local p=plyr.target.pos		
+		local p=plyr.target.pos
 		local x,y,z,w=cam:project(p[1],p[2],p[3])
+		dx,dy=x-64,64-y
 
   -- torpedo lock
 	 if(plyr.lock_t>30) pal(1,8)
-		spr(110,x-8,y-5,2,2)
-		pal()		
-	else
-			spr(110,64-8,64-5,2,2)
 	end
+	spr(110,64-dx-8,64-dy-5,2,2)
+	pal()
+	dx*=0.9
+	dy*=0.9
 	
 	-- proton ammo
 	for i=0,plyr.proton_ammo-1 do
@@ -1518,7 +1521,7 @@ function start_screen:update()
 end
 
 local title_m=make_m(0,0,0)
-local all_help=json_parse'[{"msg":"⬅️⬆️⬇️➡️: flight control","x":20},{"msg":"⬅️+🅾️/🅾️+➡️: roll","x":30},{"msg":"❎: laser / 🅾️+lock: torpedo","x":12},{"msg":"⬇️[p2]: rear view","x":30},{"msg":"⬆️[p2]: external view","x":23},{"msg":"menu: invert y-axis","x":30},{"msg":"menu: external view","x":30}]'
+local all_help=json_parse'[{"msg":"⬅️⬆️⬇️➡️: flight control","x":20},{"msg":"⬅️+🅾️/🅾️+➡️: roll","x":30},{"msg":"❎: laser / 🅾️+lock: torpedo","x":12},{"msg":"⬇️[p2]: rear view","x":30},{"msg":"⬆️[p2]: external view","x":23},{"msg":"menu: invert y-axis","x":30}]'
 function start_screen:draw()
 	cam.pos[3]+=0.1
 	cam:update()
@@ -1528,9 +1531,11 @@ function start_screen:draw()
 	print("freds72 presents",32,4,1)
 	print("attack on the death star",20,78,12)
 
+	--[[
 	local i=flr(time_t/128)%#all_help
 	local h=all_help[i+1]
 	print(h.msg,h.x,108,3)
+	]]
 	
 	if (start_screen_starting and time_t%2==0) or time_t%24<12 then
 		print("press start",44,118,11)
@@ -1599,7 +1604,10 @@ function game_screen:draw()
 	
 	zbuf_draw()
 
-	draw_msg()
+	if draw_msg() then
+		local seconds=flr(mission_t/60)
+		print(padding(flr(seconds/60),2)..":"..padding(seconds%60,2),56,2,11)
+	end
 		
 	-- draw cockpit
 	if plyr then
@@ -1622,12 +1630,6 @@ function game_screen:draw()
 					rectfill(x,120,x+1,123,i<imax and 11 or 1)
 					x+=3
 				end
-				-- mission time
-				local time_ratio,seconds=mission_t/8000,time_t
-				local time_length=22*time_ratio
-				rectfill(82,121,82+time_length,122,8)
-				local seconds_x=time_length*(seconds%60)/60
-				line(82+seconds_x,121,82+seconds_x,122,10)
 			else
 				set_layer(true)
 				spr(0,0,32,8,4)
@@ -1724,7 +1726,7 @@ function update_msg()
 	end
 end
 function draw_msg()
-	if(not cur_msg) return
+	if(not cur_msg) return true
 	rectfill(32,y,49,20,0)
 	rect(32,y,49,20,1)
 	spr(cur_msg.spr,33,3,2,2)
@@ -1823,22 +1825,14 @@ _g.victory_mission=function()
 	make_actor("waypoint",{x,y+30,z})
 	return {npc}
 end
-_g.gameover_mission=function()
-	plyr.disabled=true
-	set_view(false)
-	wait_async(90)
-	del(actors,plyr)
-	plyr=nil
-	return {}
-end
 
-local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","music":11,"dly":90,"score":1,"target":15,"fatigue":[48,40,32,24,12]},{"msg":"ground1","music":11,"init":"ingress_mission"},{"init":"create_actors_group","score":1,"actors":[{"name":"generator","pos":[256,0,256]},{"name":"generator","pos":[-256,0,256]},{"name":"generator","pos":[256,0,-256]},{"name":"generator","pos":[-256,0,-256]}],"target":4},{"msg":"ground2","score":1,"init":"create_actors_group","actors":[{"name":"vent","pos":[0,-6,96]}],"target":1},{"msg":"victory1","init":"egress_mission","dly":90},{"init":"victory_mission","music":11,"target":1,"score":1,"dly":30},{"msg":"vador_out","dly":300},{"msg":"victory3","music":14,"init":"gameover_mission","dly":720}]'
+local all_missions=json_parse'[{"t":9500,"msg":"attack1","init":"create_flying_group","music":11,"dly":90,"min_kills":15,"fatigue":[48,40,32,24,12]},{"t":600,"msg":"ground1","music":11,"init":"ingress_mission"},{"t":8000,"init":"create_actors_group","actors":[{"name":"generator","pos":[256,0,256]},{"name":"generator","pos":[-256,0,256]},{"name":"generator","pos":[256,0,-256]},{"name":"generator","pos":[-256,0,-256]}],"min_kills":4},{"t":3000,"msg":"ground2","init":"create_actors_group","actors":[{"name":"vent","pos":[0,-6,96]}],"min_kills":1},{"t":3000,"msg":"victory1","init":"egress_mission","dly":90},{"t":8000,"init":"victory_mission","music":11,"min_kills":1,"dly":30},{"t":450,"msg":"vador_out","dly":300},{"t":850,"msg":"victory3","music":14,"dly":720}]'
  
 function next_mission_async()
 	mission_score=0
-	for i=1,#all_missions do
+	for i=2,#all_missions do
 		local m=all_missions[i]
-		m.wave,mission_t=0,8000
+		m.wave,mission_t,mission_t_max=0,m.t,m.t
 		-- play music at start of new mission
 		music(m.music or -1,500)
 		-- wait until message completes
@@ -1846,7 +1840,7 @@ function next_mission_async()
 			wait_async(make_msg(m.msg).dly)
 		end
 		
-		local kills,target,current_id=0,m.target or 0,mission_id
+		local kills,min_kills,current_id=0,m.min_kils or 0,mission_id
 		repeat
 			-- create mission
 			local npcs=0
@@ -1871,15 +1865,22 @@ function next_mission_async()
 			if(not plyr) goto gameover
 			
 			-- failed/expired?
-			if(mission_t<=0 and kills<target) goto gameover
+			if(mission_t<=0 and kills<min_kills) goto gameover
 
 			-- pause before next mission?
 			if(m.dly) wait_async(m.dly)
-		until kills>=target
+		until kills>=min_kills
 		-- 
-		mission_score+=m.score
+		mission_score+=min_kills>1 and 1 or 0
 	end
 ::gameover::
+	if plyr then
+		plyr.disabled=true
+		set_view(false)
+		wait_async(90)
+		del(actors,plyr)
+		plyr=nil
+	end
 	wait_gameover_async()
 end
 
