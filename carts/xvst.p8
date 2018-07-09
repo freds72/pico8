@@ -1451,7 +1451,7 @@ function draw_instr()
   -- torpedo lock
 	 if(plyr.lock_t>30) pal(1,8)
 	end
-	spr(110,64-dx-8,64-dy-5,2,2)
+	spr(110,64+dx-8,64-dy-5,2,2)
 	pal()
 	dx*=0.9
 	dy*=0.9
@@ -1830,7 +1830,7 @@ local all_missions=json_parse'[{"t":9500,"msg":"attack1","init":"create_flying_g
  
 function next_mission_async()
 	mission_score=0
-	for i=2,#all_missions do
+	for i=1,#all_missions do
 		local m=all_missions[i]
 		m.wave,mission_t,mission_t_max=0,m.t,m.t
 		-- play music at start of new mission
