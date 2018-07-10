@@ -100,7 +100,7 @@ end
 -- true: cockpit
 local cockpit_view,cam=false
 -- player
-local plyr_playing,mission_t,mission_t_max,mission_score,invert_y,plyr=false,0,1,0,1
+local plyr_playing,mission_score,invert_y,plyr=false,0,1
 local actors,ground_actors,parts,all_parts={},{},{}
 -- ground constants 
 local ground_scale,ground_colors,ground_level=4,json_parse'[1,13,6]'
@@ -216,10 +216,6 @@ function rndarray(a)
 end
 function lerparray(a,t)
 	return a[mid(flr((#a-1)*t+0.5),1,#a)]
-end
-function padding(v,n)
-	local s=tostr(v)
-	return sub("000000",1,n-#s)..s
 end
 
 -- https://github.com/morgan3d/misc/tree/master/p8sort
@@ -1053,7 +1049,7 @@ _g.update_proton=function(self)
 	end
 	-- update orientation to match target
 	local target=self.target
-	if target and not target.disabled and sqr_dist(self.pos,self.target.pos)>4 then
+	if target and not target.disabled then
 		-- new vector to target
 		local r_new,rate=make_v(self.pos,target.pos),0
 		-- close enough to blast?
@@ -1604,10 +1600,7 @@ function game_screen:draw()
 	
 	zbuf_draw()
 
-	if draw_msg() then
-		local seconds=flr(mission_t/60)
-		print(padding(flr(seconds/60),2)..":"..padding(seconds%60,2),56,2,11)
-	end
+	draw_msg()
 		
 	-- draw cockpit
 	if plyr then
@@ -1628,8 +1621,11 @@ function game_screen:draw()
 				local x,imax=23,flr(8*plyr.energy)+1
 				for i=1,8 do
 					rectfill(x,120,x+1,123,i<imax and 11 or 1)
+					local h=msg_freq(i)
+					rectfill(128-x,122-h,126-x,122+h,9)
 					x+=3
 				end
+				
 			else
 				set_layer(true)
 				spr(0,0,32,8,4)
@@ -1725,6 +1721,10 @@ function update_msg()
 		low_hp_t=time_t+cur_msg.repeat_dly
 	end
 end
+function msg_freq(i)
+	return cur_msg and (2*cos(time_t/96+i/16+rnd(0.25))) or (rnd(0.5)-1)
+end
+
 function draw_msg()
 	if(not cur_msg) return true
 	rectfill(32,y,49,20,0)
@@ -1826,13 +1826,13 @@ _g.victory_mission=function()
 	return {npc}
 end
 
-local all_missions=json_parse'[{"t":9500,"msg":"attack1","init":"create_flying_group","music":11,"dly":90,"min_kills":15,"fatigue":[48,40,32,24,12]},{"t":600,"msg":"ground1","music":11,"init":"ingress_mission"},{"t":8000,"init":"create_actors_group","actors":[{"name":"generator","pos":[256,0,256]},{"name":"generator","pos":[-256,0,256]},{"name":"generator","pos":[256,0,-256]},{"name":"generator","pos":[-256,0,-256]}],"min_kills":4},{"t":3000,"msg":"ground2","init":"create_actors_group","actors":[{"name":"vent","pos":[0,-6,96]}],"min_kills":1},{"t":3000,"msg":"victory1","init":"egress_mission","dly":90},{"t":8000,"init":"victory_mission","music":11,"min_kills":1,"dly":30},{"t":450,"msg":"vador_out","dly":300},{"t":850,"msg":"victory3","music":14,"dly":720}]'
+local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","music":11,"dly":90,"min_kills":15,"fatigue":[48,40,32,24,12]},{"msg":"ground1","music":11,"init":"ingress_mission"},{"init":"create_actors_group","actors":[{"name":"generator","pos":[256,0,256]},{"name":"generator","pos":[-256,0,256]},{"name":"generator","pos":[256,0,-256]},{"name":"generator","pos":[-256,0,-256]}],"min_kills":4},{"msg":"ground2","init":"create_actors_group","actors":[{"name":"vent","pos":[0,-6,96]}],"min_kills":1},{"msg":"victory1","init":"egress_mission","dly":90},{"init":"victory_mission","music":11,"no_skip":true,"min_kills":1,"dly":30},{"msg":"vador_out","dly":300},{"msg":"victory3","music":14,"dly":720}]'
  
 function next_mission_async()
 	mission_score=0
 	for i=1,#all_missions do
 		local m=all_missions[i]
-		m.wave,mission_t,mission_t_max=0,m.t,m.t
+		m.wave=0
 		-- play music at start of new mission
 		music(m.music or -1,500)
 		-- wait until message completes
@@ -1840,7 +1840,7 @@ function next_mission_async()
 			wait_async(make_msg(m.msg).dly)
 		end
 		
-		local kills,min_kills,current_id=0,m.min_kils or 0,mission_id
+		local kills,min_kills=0,m.min_kills or 0
 		repeat
 			-- create mission
 			local npcs=0
@@ -1857,19 +1857,18 @@ function next_mission_async()
 				end
 			end
 			-- wait kills
-			while mission_t>0 and plyr and npcs>0 do
-				mission_t-=1
+			while plyr and npcs>0 do
 				yield()
 			end
 			-- game over
 			if(not plyr) goto gameover
 			
-			-- failed/expired?
-			if(mission_t<=0 and kills<min_kills) goto gameover
+			-- failed?
+			if(m.no_skip and kills<min_kills) goto gameover
 
 			-- pause before next mission?
 			if(m.dly) wait_async(m.dly)
-		until kills>=min_kills
+		until kills<min_kills
 		-- 
 		mission_score+=min_kills>1 and 1 or 0
 	end
