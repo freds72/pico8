@@ -636,7 +636,7 @@ _g.die_actor=function(self)
 	if(self.on_die) self:on_die(true)
 end
 
-_g.update_exit=function(self)
+_g.update_waypoint=function(self)
 	if(not plyr) return false
 	if sqr_dist(self.pos,plyr.pos)<32 then
 		-- confirmation sound
@@ -916,7 +916,7 @@ _g.make_proton=function(self,target)
 	make_blt(self,wp,p,v).target=target
 end
 
-local all_actors=json_parse'{"plyr":{"hp":5,"turn_spring":0,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"dboost":1,"acc":0.2,"model":"xwing","turn":0,"roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","draw":"draw_plyr","update":"update_plyr","hit":"hit_plyr","die":"die_plyr"},"patrol":{"hp":10,"turn_rate":0.045,"acc":0.2,"overg_t":0,"fatigue":1,"rnd":{"model":["xwing","xwing","ywing"]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor","on_die":"nop"},"tie":{"acc":0.6,"turn_rate":0.04,"fatigue":48,"on_die":"nop","hp":8,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"generator":{"waypt":true,"hp":10,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":12,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"mfalcon":{"on_die":"nop","turn_rate":0.03,"fatigue":8,"hp":8,"acc":0.25,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","local_t":0,"pause_t":0,"fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"model":"junk2","side":"bad_side","update":"update_ground_actor","hit":"hit_npc","die":"die_actor"},"waypoint":{"draw":"nop","update":"update_exit","waypt":true},"vador":{"turn_rate":0.05,"fatigue":12,"hp":40,"acc":0.3,"overg_t":0,"model":"tiex1","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"}}'
+local all_actors=json_parse'{"plyr":{"hp":5,"turn_spring":0,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"dboost":1,"acc":0.2,"model":"xwing","turn":0,"roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","draw":"draw_plyr","update":"update_plyr","hit":"hit_plyr","die":"die_plyr"},"patrol":{"hp":10,"turn_rate":0.045,"acc":0.2,"overg_t":0,"fatigue":1,"rnd":{"model":["xwing","xwing","ywing"]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor","on_die":"nop"},"tie":{"acc":0.6,"turn_rate":0.04,"fatigue":48,"on_die":"nop","hp":8,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"generator":{"waypt":true,"hp":10,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":12,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"mfalcon":{"on_die":"nop","turn_rate":0.03,"fatigue":8,"hp":8,"acc":0.25,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","local_t":0,"pause_t":0,"fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"model":"junk2","side":"bad_side","update":"update_ground_actor","hit":"hit_npc","die":"die_actor"},"waypoint":{"draw":"nop","update":"update_waypoint","waypt":true},"vador":{"turn_rate":0.055,"fatigue":8,"hp":40,"acc":0.6,"overg_t":0,"model":"tiex1","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"}}'
 
 function make_actor(src,p,q)
 	-- instance
@@ -1043,6 +1043,7 @@ _g.update_blt=function(self)
 end
 
 -- see: https://en.wikipedia.org/wiki/proportional_navigation
+-- see: https://gamedev.stackexchange.com/questions/112048/finding-the-components-of-proportional-navigation-in-2d
 _g.update_proton=function(self)
 	if time_t%2==0 then
 	make_part("trail",self.pos,10)
@@ -1051,28 +1052,28 @@ _g.update_proton=function(self)
 	local target=self.target
 	if target and not target.disabled then
 		-- new vector to target
-		local r_new,rate=make_v(self.pos,target.pos),0
+		local r=make_v(self.pos,target.pos)
 		-- close enough to blast?
-		if v_dot(r_new,r_new)<1 then
+		local d=v_dot(r,r)
+		if d<1 then
 			target:hit(self.dmg,self.actor)
 			return self:die()
 		end
-		-- 
-		v_normz(r_new)
-		if self.r_old then
-			local r=make_v(self.r_old,r_new)
-			rate=sqrt(v_dot(r,r))
-		end
-		-- velocity diff
+		-- relative velocity
 		local v=m_fwd(target.m)
 		-- static objects=no acc
 		v_scale(v,target.acc or 0)
 		v_add(v,self.u,-self.acc)
-		v_scale(v,rate*3)
-		-- adjust acceleration with new force
-		v_add(v,self.u,self.acc)
-		v_normz(v)
-		self.u,self.r_old=v,r_new
+		-- rotation vector
+		local omega=make_v_cross(r,v)
+		v_scale(omega,1/d)
+		local a=make_v_cross(v,omega)
+		-- n: nav constant
+		v_scale(a,self.n)
+		-- add to current velocity vector
+		v_add(a,self.u,self.acc)		
+		v_normz(a)
+		self.u=a
 	end
 	self.frame+=1
 	return _g.update_blt(self)
@@ -1117,7 +1118,7 @@ _g.draw_part=function(self,x,y,z,w)
 	end
 end
 
-all_parts=json_parse'{"laser":{"rnd":{"dly":[80,110]},"acc":3,"kind":0,"update":"update_blt","die":"die_blt","draw":"draw_part"},"ground_laser":{"rnd":{"dly":[95,120]},"acc":0.8,"kind":0,"update":"update_blt","die":"die_blt","draw":"draw_part"},"flash":{"kind":1,"rnd":{"r":[0.5,0.7],"dly":[4,6]},"dr":-0.05},"impact":{"kind":1,"c":10,"dr":-0.05,"rnd":{"r":[0.7,1],"dly":[4,6]}},"trail":{"kind":1,"rnd":{"r":[0.2,0.3],"dly":[12,24]},"dr":-0.02},"blast":{"frame":0,"sfx":3,"kind":1,"c":7,"rnd":{"r":[2.5,3],"dly":[12,18],"sparks":[6,12]},"dr":-0.04,"update":"update_blast"},"novae":{"frame":0,"sfx":9,"kind":1,"c":7,"r":30,"rnd":{"dly":[8,12],"sparks":[30,40]},"dr":-0.04,"update":"update_blast"},"proton":{"die_part":"blast","rnd":{"dly":[180,210]},"frame":0,"acc":0.8,"kind":3,"update":"update_proton","die":"die_blt","draw":"draw_part"},"spark":{"kind":6,"dr":0,"r":1,"rnd":{"dly":[48,78]}},"purple_trail":{"kind":7,"c":[14,2,5,1],"rnd":{"r":[0.35,0.4],"dly":[2,4],"dr":[-0.08,-0.05]}},"blue_trail":{"kind":7,"c":[7,12,5,1],"rnd":{"r":[0.3,0.5],"dly":[12,24],"dr":[-0.08,-0.05]}},"mfalcon_trail":{"kind":8,"e":[[-3.24,0,-5.04],[3.24,0,-5.04]],"r":1,"dr":0,"rnd":{"c":[12,7,13],"dly":[1,2]}}}'
+all_parts=json_parse'{"laser":{"rnd":{"dly":[80,110]},"acc":3,"kind":0,"update":"update_blt","die":"die_blt","draw":"draw_part"},"ground_laser":{"rnd":{"dly":[95,120]},"acc":0.8,"kind":0,"update":"update_blt","die":"die_blt","draw":"draw_part"},"flash":{"kind":1,"rnd":{"r":[0.5,0.7],"dly":[4,6]},"dr":-0.05},"impact":{"kind":1,"c":10,"dr":-0.05,"rnd":{"r":[0.7,1],"dly":[4,6]}},"trail":{"kind":1,"rnd":{"r":[0.2,0.3],"dly":[12,24]},"dr":-0.02},"blast":{"frame":0,"sfx":3,"kind":1,"c":7,"rnd":{"r":[2.5,3],"dly":[12,18],"sparks":[6,12]},"dr":-0.04,"update":"update_blast"},"novae":{"frame":0,"sfx":9,"kind":1,"c":7,"r":30,"rnd":{"dly":[8,12],"sparks":[30,40]},"dr":-0.04,"update":"update_blast"},"proton":{"die_part":"blast","rnd":{"dly":[180,210],"n":[2,5]},"frame":0,"acc":0.8,"kind":3,"update":"update_proton","die":"die_blt","draw":"draw_part"},"spark":{"kind":6,"dr":0,"r":1,"rnd":{"dly":[48,78]}},"purple_trail":{"kind":7,"c":[14,2,5,1],"rnd":{"r":[0.35,0.4],"dly":[2,4],"dr":[-0.08,-0.05]}},"blue_trail":{"kind":7,"c":[7,12,5,1],"rnd":{"r":[0.3,0.5],"dly":[12,24],"dr":[-0.08,-0.05]}},"mfalcon_trail":{"kind":8,"e":[[-3.24,0,-5.04],[3.24,0,-5.04]],"r":1,"dr":0,"rnd":{"c":[12,7,13],"dly":[1,2]}}}'
 
 function make_part(part,p,c)
 	local pt=add(parts,clone(all_parts[part],{pos=v_clone(p),draw=_g.draw_part,c=c}))
@@ -1527,11 +1528,9 @@ function start_screen:draw()
 	print("freds72 presents",32,4,1)
 	print("attack on the death star",20,78,12)
 
-	--[[
 	local i=flr(time_t/128)%#all_help
 	local h=all_help[i+1]
 	print(h.msg,h.x,108,3)
-	]]
 	
 	if (start_screen_starting and time_t%2==0) or time_t%24<12 then
 		print("press start",44,118,11)
@@ -1621,9 +1620,11 @@ function game_screen:draw()
 				local x,imax=23,flr(8*plyr.energy)+1
 				for i=1,8 do
 					rectfill(x,120,x+1,123,i<imax and 11 or 1)
-					local h=msg_freq(i)
-					rectfill(128-x,122-h,126-x,122+h,9)
 					x+=3
+				end
+				for i=82,105,2 do
+					local h=msg_freq(i)
+					line(i,122-h,i,121+h,9)
 				end
 				
 			else
@@ -1651,8 +1652,8 @@ function _update60()
 end
 
 function _draw()
-	cls(0)
-
+	cls() 
+	
 	cur_screen:draw()
 	
 	-- if(draw_stats) draw_stats()
@@ -1722,7 +1723,7 @@ function update_msg()
 	end
 end
 function msg_freq(i)
-	return cur_msg and (2*cos(time_t/96+i/16+rnd(0.25))) or (rnd(0.5)-1)
+	return cur_msg and (2*cos(time_t/96+i/16+rnd(0.25))) or rnd(1.5)
 end
 
 function draw_msg()
@@ -1743,7 +1744,7 @@ end
 -->8
 -- missions
 -- basic actor=target mission
-_g.create_actors_group=function(self)
+_g.create_ground_group=function(self)
 	local npcs={}
 	for _,a in pairs(self.actors) do
 		local p=v_clone(a.pos)
@@ -1762,7 +1763,7 @@ _g.create_flying_group=function(self)
 		make_msg("help")
 		v_add(p,v,10)
 		-- remove firing delay
-		-- avoid too many ties with npc
+		-- avoid too many tie's with npc
 		dly,n=0,2
 	end
 	-- spawn new enemies
@@ -1826,7 +1827,7 @@ _g.victory_mission=function()
 	return {npc}
 end
 
-local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","music":11,"dly":90,"min_kills":15,"fatigue":[48,40,32,24,12]},{"msg":"ground1","music":11,"init":"ingress_mission"},{"init":"create_actors_group","actors":[{"name":"generator","pos":[256,0,256]},{"name":"generator","pos":[-256,0,256]},{"name":"generator","pos":[256,0,-256]},{"name":"generator","pos":[-256,0,-256]}],"min_kills":4},{"msg":"ground2","init":"create_actors_group","actors":[{"name":"vent","pos":[0,-6,96]}],"min_kills":1},{"msg":"victory1","init":"egress_mission","dly":90},{"init":"victory_mission","music":11,"no_skip":true,"min_kills":1,"dly":30},{"msg":"vador_out","dly":300},{"msg":"victory3","music":14,"dly":720}]'
+local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","music":11,"dly":90,"min_kills":15,"fatigue":[48,40,32,24,12]},{"msg":"ground1","music":11,"init":"ingress_mission"},{"init":"create_ground_group","actors":[{"name":"generator","pos":[256,0,256]},{"name":"generator","pos":[-256,0,256]},{"name":"generator","pos":[256,0,-256]},{"name":"generator","pos":[-256,0,-256]}],"min_kills":4},{"msg":"ground2","init":"create_ground_group","actors":[{"name":"vent","pos":[0,-6,96]}],"min_kills":1},{"msg":"victory1","init":"egress_mission","dly":90},{"init":"victory_mission","music":11,"no_skip":true,"min_kills":1,"dly":30},{"msg":"vador_out","dly":300},{"msg":"victory3","music":14,"dly":720}]'
  
 function next_mission_async()
 	mission_score=0
@@ -1868,9 +1869,9 @@ function next_mission_async()
 
 			-- pause before next mission?
 			if(m.dly) wait_async(m.dly)
-		until kills<min_kills
-		-- 
-		mission_score+=min_kills>1 and 1 or 0
+		until kills>=min_kills
+		--
+		mission_score+=mid(min_kills,0,1)
 	end
 ::gameover::
 	if plyr then
