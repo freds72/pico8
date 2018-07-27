@@ -501,14 +501,48 @@ local wheel_v={
 	{x=-1,y=0,z=0},
 	{x=1,y=0,z=0},
 	}
-local wheel_r={}
+local front_wheel_v={
+	{x=-0.7,y=0,z=-1},
+	{x=0.7,y=0,z=-1},
+	{x=0,y=0,z=-1},
+	{x=-0.7,y=0,z=0},
+	{x=0.7,y=0,z=0},
+	}
+local wheel_r,flat_r={},{}
 for i=0,127 do
 	local t=2*i/127-1
 	wheel_r[i]=sqrt(1-t*t)
+	flat_r[i]=1.1
+end
+for i=0,32 do
+	local r=i/32
+	flat_r[i]=1+0.1*r
+	flat_r[127-i]=1+0.1*r
 end
 
-function make_wheel(p,q)
+function draw_wheel(a,b,tex,top)
+	if a.x>b.x then
+		a,b=b,a
+	end
+	
+	local t,invdx=0,1/(b.x-a.x)
+	for x=a.x,b.x do
+		local w=lerp(a.w,b.w,t)
+		local u=t*b.w/w
+		-- 1d texture for profile
+		local r=w*tex[mid(flr(128*u),0,127)]
+		rectfill(x,a.y-r,x,a.y+r-1,1)
+		if top and r>top.w then
+			top.x,top.w=x,r
+		end
+		t+=invdx
+	end
+end
+
+function make_wheel(p,q,front)
 	local a={
+		v=front and front_wheel_v or wheel_v,
+		scale=front and 0.7 or 1,
 		pos=v_clone(p),
 		q=q and q_clone(q) or make_q(v_up,0),
 		update=function(self)
@@ -519,70 +553,24 @@ function make_wheel(p,q)
 		draw=function(self,x0,y0,z0,w0)
 			local p,m={},self.m
 
-			-- cam pos in object space
-			local cam_pos=v_clone(cam.pos)
-			m_inv_x_v(m,cam_pos)
-
-			local n={x=0,y=0,z=-1}
-			local cn=n.x*cam_pos.x+n.y*cam_pos.y+n.z*cam_pos.z
-
-			for vi=1,#wheel_v do
-				local v=wheel_v[vi]
+			for vi=1,#self.v do
+				local v=self.v[vi]
 				local x,y,z,w=v.x,v.y,v.z
 				x,y,z,w=cam:project(m.m1*x+m.m5*y+m.m9*z+m.m13,m.m2*x+m.m6*y+m.m10*z+m.m14,m.m3*x+m.m7*y+m.m11*z+m.m15)
 				add(p,{x=x,y=y,z=z,w=w})
 			end
 
-			-- draw middle slice
 			local a0,b0=p[3],{x=x0,y=y0,z=z0,w=w0}
-			if a0.x>b0.x then
-				a0,b0=b0,a0
-			end
-			local t,invdx=0,1/(b0.x-a0.x)
-			for x=a0.x,b0.x do
-				local w=lerp(a0.w,b0.w,t)
-				-- rectfill(x,a.y-w,x,a.y+w-1,1)
-				pset(x,a0.y-w,9)
-				pset(x,a0.y+w,9)
-				t+=invdx
-			end						
 
 			-- draw ext side
-			local a,b=p[1],p[2]
-			if a.x>b.x then
-				a,b=b,a
-			end
-			if(cn<=0) pal(7,1)
-			local t,invdx=0,1/(b.x-a.x)
-			for x=a.x,b.x do
-				local w=lerp(a.w,b.w,t)
-				local u=t*b.w/w
-				local r=w*wheel_r[mid(flr(128*u),0,127)]
-				-- rectfill(x,a.y-r,x,a.y+r-1,1)
-				pset(x,a.y-r,8)
-				pset(x,a.y+r,8)
-				--sspr(16*u,0,1,16,x,a.y-w,1,2*w)
-				t+=invdx
-			end
-
+			draw_wheel(p[1],p[2],wheel_r,a0)
+			
 			-- draw int side
-			a,b=p[4],p[5]
-			if a.x>b.x then
-				a,b=b,a
-			end
-			pal(7,1)
-			local t,invdx=0,1/(b.x-a.x)
-			for x=a.x,b.x do
-				local w=lerp(a.w,b.w,t)
-				local u=t*b.w/w
-				-- sspr(16*u,0,1,16,x,a.y-w,1,2*w)
-				local r=w*wheel_r[mid(flr(128*u),0,127)]
-				--rectfill(x,a.y-r,x,a.y+r-1,1)
-				pset(x,a.y-r,8)
-				pset(x,a.y+r,8)
-				t+=invdx
-			end
-			pal()
+			draw_wheel(p[4],p[5],wheel_r,b0)
+			
+			-- draw middle slice
+			draw_wheel(a0,b0,flat_r)
+			
 		end
 	}
 	return add(actors,a)
@@ -651,7 +639,6 @@ function _draw()
 	if(draw_stats) draw_stats()
 end
 
-
 function _init()
 	-- read models from map data
 	unpack_models()
@@ -659,8 +646,11 @@ function _init()
 	cam=make_cam(64)
 	
 	--light=make_light_actor(5)
-
-	make_wheel({x=0,y=0,z=0})
+	local flip_q=make_q(v_up,0.5)
+	make_wheel({x=-3,y=0,z=-1},nil,true)
+	make_wheel({x=-3,y=0,z=1},flip_q,true)
+	make_wheel({x=3,y=0,z=-1.2})
+	make_wheel({x=3,y=0,z=1.2},flip_q)
 end
 
 -->8
