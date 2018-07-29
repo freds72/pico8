@@ -1432,9 +1432,9 @@ function draw_instr()
 	for _,a in pairs(actors) do
 		if a.waypt then
  			local x,y,z,w=cam:project(a.pos[1],a.pos[2],a.pos[3])
- 			if z>0 and w<4 then
+ 			if z>0 and w<3 then
  				x,y=mid(x,4,124),mid(y-2*w,4,124)
- 				spr(41,x-4,y-4)	
+ 				spr(41,x-4,y-4)
 			end
 		end
 	end
@@ -1450,6 +1450,7 @@ function draw_instr()
 	end
 	spr(110,64+dx-8,64-dy-5,2,2)
 	pal()
+	-- spring lock
 	dx*=0.9
 	dy*=0.9
 	
@@ -1813,14 +1814,15 @@ _g.victory_mission=function()
 	-- blast deathstar
 	make_part("novae",{cam.pos[1],cam.pos[2]-32,cam.pos[3]})
 	-- hide deathstar
+	-- kill ground
 	ds_enabled,ground_level=false
 	wait_async(60)
 	set_view(true)
 	cam.flip,plyr_playing=false,true
 	
-	-- track dark vador
 	local x,y,z=plyr.pos[1],plyr.pos[2],plyr.pos[3]
 	local npc,wing=make_actor("vador",{x,y+32,z}),make_actor("mfalcon",{x,y+24,z})
+	-- track dark vador
 	wing.target=npc
 	-- mark rendez-vous point
 	make_actor("waypoint",{x,y+30,z})
