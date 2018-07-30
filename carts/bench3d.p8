@@ -101,7 +101,7 @@ function zbuf_draw()
 	local objs={}
 	for _,d in pairs(drawables) do
 		local p=d.pos
-		local x,y,z,w=cam:project(p.x,p.y,p.z)
+		local x,y,z,w=cam:project(p[1],p[2],p[3])
 		if z>0 then
 			add(objs,{obj=d,key=z,x=x,y=y,z=z,w=w})
 		end
@@ -156,7 +156,7 @@ function smoothstep(t)
 	return t*t*(3-2*t)
 end
 function rndrng(ab)
-	return flr(rndlerp(ab.x,ab.y))
+	return flr(rndlerp(ab[1],ab[2]))
 end
 function rndarray(a)
 	return a[flr(rnd(#a))+1]
@@ -178,7 +178,7 @@ function sort(data)
 end
 
 function sqr_dist(a,b)
-	local dx,dy,dz=b.x-a.x,b.y-a.y,b.z-a.z
+	local dx,dy,dz=b[1]-a[1],b[2]-a[2],b[3]-a[3]
 	if abs(dx)>128 or abs(dy)>128 or abs(dz)>128 then
 		return 32000
 	end
@@ -187,76 +187,74 @@ function sqr_dist(a,b)
 end
 
 -- world axis
-local v_fwd,v_right,v_up,v_zero={x=0,y=0,z=1},{x=1,y=0,z=0},{x=0,y=1,z=0},{x=0,y=0,z=0}
+local v_fwd,v_right,v_up,v_zero={0,0,1},{1,0,0},{0,1,0},{0,0,0}
 
 function v_clone(v)
-	return {x=v.x,y=v.y,z=v.z}
+	return {v[1],v[2],v[3]}
 end
 function v_dot(a,b)
-	return a.x*b.x+a.y*b.y+a.z*b.z
+	return a[1]*b[1]+a[2]*b[2]+a[3]*b[3]
 end
 function v_normz(v)
 	local d=v_dot(v,v)
 	if d>0.001 then
 		d=sqrt(d)
-		v.x/=d
-		v.y/=d
-		v.z/=d
+		v[1]/=d
+		v[2]/=d
+		v[3]/=d
 	end
 	return d
 end
 
 -- matrix functions
 function m_x_v(m,v)
-	local x,y,z=v.x,v.y,v.z
-	v.x,v.y,v.z=m.m1*x+m.m5*y+m.m9*z+m.m13,m.m2*x+m.m6*y+m.m10*z+m.m14,m.m3*x+m.m7*y+m.m11*z+m.m15
+	local x,y,z=v[1],v[2],v[3]
+	v[1],v[2],v[3]=m[1]*x+m[5]*y+m[9]*z+m[13],m[2]*x+m[6]*y+m[10]*z+m[14],m[3]*x+m[7]*y+m[11]*z+m[15]
 end
 -- 3x3 matrix mul (orientation only)
 function o_x_v(m,v)
-	local x,y,z=v.x,v.y,v.z
-	v.x,v.y,v.z=m.m1*x+m.m5*y+m.m9*z,m.m2*x+m.m6*y+m.m10*z,m.m3*x+m.m7*y+m.m11*z
+	local x,y,z=v[1],v[2],v[3]
+	v[1],v[2],v[3]=m[1]*x+m[5]*y+m[9]*z,m[2]*x+m[6]*y+m[10]*z,m[3]*x+m[7]*y+m[11]*z
 end
 function m_x_xyz(m,x,y,z)
 	return {
-		x=m.m1*x+m.m5*y+m.m9*z+m.m13,
-		y=m.m2*x+m.m6*y+m.m10*z+m.m14,
-		z=m.m3*x+m.m7*y+m.m11*z+m.m15}
+		m[1]*x+m[5]*y+m[9]*z+m[13],
+		m[2]*x+m[6]*y+m[10]*z+m[14],
+		m[3]*x+m[7]*y+m[11]*z+m[15]}
 end
 function make_m(p,r)
-	r=r or 0
-	p=p or v_zero
+	p,r=p or v_zero,r or 0
 	local c,s=cos(r),-sin(r)
-	local m={}
-	m.m1,m.m2,m.m3,m.m4=c,0,s,0
-	m.m5,m.m6,m.m7,m.m8=0,1,0,0
-	m.m9,m.m10,m.m11,m.m12=-s,0,c,0
-	m.m13,m.m14,m.m15,m.m16=p.x,p.y,p.z,1
-	return m
+	return {
+		c,0,s,0,
+		0,1,0,0,
+		-s,0,c,0,
+		p[1],p[2],p[3],1}
 end
 
 -- only invert 3x3 part
 function m_inv(m)
-	m.m2,m.m5=m.m5,m.m2
-	m.m3,m.m9=m.m9,m.m3
-	m.m7,m.m10=m.m10,m.m7
+	m[2],m[5]=m[5],m[2]
+	m[3],m[9]=m[9],m[3]
+	m[7],m[10]=m[10],m[7]
 end
 -- inline matrix invert
 -- inc. position
 function m_inv_x_v(m,v)
-	local x,y,z=v.x-m.m13,v.y-m.m14,v.z-m.m15
-	v.x,v.y,v.z=m.m1*x+m.m2*y+m.m3*z,m.m5*x+m.m6*y+m.m7*z,m.m9*x+m.m10*y+m.m11*z
+	local x,y,z=v[1]-m[13],v[2]-m[14],v[3]-m[15]
+	v[1],v[2],v[3]=m[1]*x+m[2]*y+m[3]*z,m[5]*x+m[6]*y+m[7]*z,m[9]*x+m[10]*y+m[11]*z
 end
 function m_set_pos(m,v)
-	m.m13,m.m14,m.m15=v.x,v.y,v.z
+	m[13],m[14],m[15]=v[1],v[2],v[3]
 end
 
 -- returns foward vector from matrix
 function m_fwd(m)
-	return {x=m.m9,y=m.m10,z=m.m11}
+	return {m[9],m[10],m[11]}
 end
 -- returns up vector from matrix
 function m_up(m)
-	return {x=m.m5,y=m.m6,z=m.m7}
+	return {m[5],m[6],m[7]}
 end
 
 -- models
@@ -301,7 +299,7 @@ function unpack_models()
 		-- vertices
 		model.v={}
 		for i=1,unpack_int() do
-			add(model.v,{x=unpack_float(scale),y=unpack_float(scale),z=unpack_float(scale)})
+			add(model.v,{unpack_float(scale),unpack_float(scale),unpack_float(scale)})
 		end
 		
 		-- faces
@@ -312,14 +310,14 @@ function unpack_models()
 				add(f.vi,unpack_int())
 			end
 			-- center point
-			f.center={x=unpack_float(scale),y=unpack_float(scale),z=unpack_float(scale)}
+			f.center={unpack_float(scale),unpack_float(scale),unpack_float(scale)}
 			add(model.f,f)
 		end
 
 		-- normals
 		model.n={}
 		for i=1,unpack_int() do
-			add(model.n,{x=unpack_float(),y=unpack_float(),z=unpack_float()})
+			add(model.n,{unpack_float(),unpack_float(),unpack_float()})
 		end
 		
 		-- n.p cache	
@@ -373,68 +371,24 @@ function trifill(x0,y0,x1,y1,x2,y2,col)
  end
 end
 
-function draw_model(model,m,x,y,z,w)
-
-	-- cam pos in object space
-	local cam_pos=v_clone(cam.pos)
-	m_inv_x_v(m,cam_pos)
-	
-	-- faces
-	local faces,p={},{}
-	for i=1,#model.f do
-		local f,n=model.f[i],model.n[i]
-		-- viz calculation
-		local d=n.x*cam_pos.x+n.y*cam_pos.y+n.z*cam_pos.z
-		if d>=model.cp[i] then
-			-- project vertices
-			for _,vi in pairs(f.vi) do
-				if not p[vi] then
-					local v=model.v[vi]
-					local x,y,z,w=v.x,v.y,v.z
-					x,y,z,w=cam:project(m.m1*x+m.m5*y+m.m9*z+m.m13,m.m2*x+m.m6*y+m.m10*z+m.m14,m.m3*x+m.m7*y+m.m11*z+m.m15)
-					p[vi]={x=x,y=y,z=z,w=w}
-				end
-			end
-			-- distance to camera (in object space)
-			local d=sqr_dist(f.center,cam_pos)
-
-			-- register faces
-			add(faces,{key=d,face=f})
-		end
-	end
-	-- sort faces
-	sort(faces)
-
-	-- draw faces using projected points
-	for _,f in pairs(faces) do
-		f=f.face
-		local p0=p[f.vi[1]]
-	 	for i=2,#f.vi-1 do
-		 	local p1,p2=p[f.vi[i]],p[f.vi[i+1]]
-		 	trifill(p0.x,p0.y,p1.x,p1.y,p2.x,p2.y,model.c)
-		end
-	end
-	fillp()
-end
-
 local all_actors=json_parse'{"car":{"model":"indycar","update":"nop"}}'
 
 local wheel_scale=0.28
 local wheel_v={
-	{x=-wheel_scale,y=0,z=-wheel_scale},
-	{x=wheel_scale,y=0,z=-wheel_scale},
-	{x=0,y=0,z=-wheel_scale},
-	{x=-wheel_scale,y=0,z=0},
-	{x=wheel_scale,y=0,z=0},
-	{x=0,y=0,z=0}
+	{-wheel_scale,0,-wheel_scale},
+	{wheel_scale,0,-wheel_scale},
+	{0,0,-wheel_scale},
+	{-wheel_scale,0,0},
+	{wheel_scale,0,0},
+	{0,0,0}
 }
 local front_wheel_v={
-	{x=-wheel_scale,y=0,z=-0.3},
-	{x=wheel_scale,y=0,z=-0.3},
-	{x=0,y=0,z=-0.3},
-	{x=-wheel_scale,y=0,z=0},
-	{x=wheel_scale,y=0,z=0},
-	{x=0,y=0,z=0}
+	{-wheel_scale,0,-0.3},
+	{wheel_scale,0,-0.3},
+	{0,0,-0.3},
+	{-wheel_scale,0,0},
+	{wheel_scale,0,0},
+	{0,0,0}
 }
 local wheel_r,flat_r={},{}
 for i=0,127 do
@@ -449,45 +403,45 @@ for i=0,32 do
 end
 
 function draw_wheel(a,b,tex,top)
-	if a.x>b.x then
+	if a[1]>b[1] then
 		a,b=b,a
 	end
 	
-	local t,invdx=0,1/(b.x-a.x)
+	local t,invdx=0,1/(b[1]-a[1])
 	color(0)
-	for x=a.x,b.x do
-		local y,w=lerp(a.y,b.y,t),lerp(a.w,b.w,t)
+	for x=a[1],b[1] do
+		local y,w=lerp(a[2],b[2],t),lerp(a.w,b.w,t)
 		local u=t*b.w/w
 		-- 1d texture for profile
 		local r=w*tex[mid(flr(128*u),0,127)]
 		rectfill(x,y-r,x,y+r-1)
 		if top and r>top.w then
-			top.x,top.y,top.w=x,y,w
+			top[1],top[2],top.w=x,y,w
 		end
 		t+=invdx
 	end
 end
 
 function draw_tex_quad(a,b)
-	palt(0,false)
-	if a.x>b.x then
+	--palt(0,false)
+	if a[1]>b[1] then
 		a,b=b,a
 	end
 	
-	local t,invdx=0,1/(b.x-a.x)
+	local t,invdx=0,1/(b[1]-a[1])
 	color(0)
-	for x=a.x,b.x do
-		local y,w=lerp(a.y,b.y,t),lerp(a.w,b.w,t)
+	for x=a[1],b[1] do
+		local y,w=lerp(a[2],b[2],t),lerp(a.w,b.w,t)
 		local u=t*b.w/w
 		w*=0.3
-		sspr(48*u,0,1,16,x,y-1.5*w,1,1.5*w)
+		sspr(64*u,0,1,16,x,y-1.5*w,1,1.5*w)
 		t+=invdx
 	end
  palt()
 end
 local quad_v={
-	{x=-1.65,y=0.08,z=0.355},
-	{x=-0.0,y=0.08,z=0.355}
+	{-1.65,0.08,0.355},
+	{-0.0,0.08,0.355}
 }
 function make_marker(p,angle)
 	local a={
@@ -502,9 +456,9 @@ function make_marker(p,angle)
 
 			for vi=1,#quad_v do
 				local v=quad_v[vi]
-				local x,y,z,w=v.x,v.y,v.z
-				x,y,z,w=cam:project(m.m1*x+m.m5*y+m.m9*z+m.m13,m.m2*x+m.m6*y+m.m10*z+m.m14,m.m3*x+m.m7*y+m.m11*z+m.m15)
-				add(p,{x=x,y=y,z=z,w=w})
+				local x,y,z,w=v[1],v[2],v[3]
+				x,y,z,w=cam:project(m[1]*x+m[5]*y+m[9]*z+m[13],m[2]*x+m[6]*y+m[10]*z+m[14],m[3]*x+m[7]*y+m[11]*z+m[15])
+				add(p,{x,y,z,w=w})
 			end
 
 			draw_tex_quad(p[1],p[2])
@@ -527,9 +481,9 @@ function make_wheel(p,angle,front)
 
 			for vi=1,#self.v do
 				local v=self.v[vi]
-				local x,y,z,w=v.x,v.y,v.z
-				x,y,z,w=cam:project(m.m1*x+m.m5*y+m.m9*z+m.m13,m.m2*x+m.m6*y+m.m10*z+m.m14,m.m3*x+m.m7*y+m.m11*z+m.m15)
-				add(p,{x=x,y=y,z=z,w=w})
+				local x,y,z,w=v[1],v[2],v[3]
+				x,y,z,w=cam:project(m[1]*x+m[5]*y+m[9]*z+m[13],m[2]*x+m[6]*y+m[10]*z+m[14],m[3]*x+m[7]*y+m[11]*z+m[15])
+				add(p,{x,y,z,w=w})
 			end
 
 			local a0,b0=p[3],p[6]
@@ -549,10 +503,10 @@ function make_wheel(p,angle,front)
 end
 
 local car_v={
- {x=-0.3,y=0.1,z=-2.2},
- {x=0.3,y=0.1,z=-2.2},
- {x=0.3,y=0.1,z=1},
- {x=-0.3,y=0.1,z=1}
+ {-0.3,0.1,-2.2},
+ {0.3,0.1,-2.2},
+ {0.3,0.1,1},
+ {-0.3,0.1,1}
 }
 function make_car(p,angle)
 	local a={
@@ -572,13 +526,13 @@ function make_car(p,angle)
 			local cam_pos=v_clone(cam.pos)
 			m_inv_x_v(m,cam_pos)
 	
-			local cn=cam_pos.x
+			local cn=-cam_pos[1]
 			
 			for vi=1,#car_v do
 				local v=car_v[vi]
-				local x,y,z,w=v.x,v.y,v.z
-				x,y,z,w=cam:project(m.m1*x+m.m5*y+m.m9*z+m.m13,m.m2*x+m.m6*y+m.m10*z+m.m14,m.m3*x+m.m7*y+m.m11*z+m.m15)
-				add(p,{x=x,y=y,z=z,w=w})
+				local x,y,z,w=v[1],v[2],v[3]
+				x,y,z,w=cam:project(m[1]*x+m[5]*y+m[9]*z+m[13],m[2]*x+m[6]*y+m[10]*z+m[14],m[3]*x+m[7]*y+m[11]*z+m[15])
+				add(p,{x,y,z,w=w})
 			end
 			
 			if cn>=0 then
@@ -608,13 +562,13 @@ function make_car(p,angle)
 		end
 	}
 	a.wheels={
-		make_wheel({x=0.6,y=0.3,z=0.6},flip_q,true),
+		make_wheel({0.6,0.3,0.6},flip_q,true),
  	-- front
- 		make_wheel({x=-1.9,y=0.3,z=0.6},flip_q),
+ 		make_wheel({-1.9,0.3,0.6},flip_q),
  		-- left side
- 		make_wheel({x=0.6,y=0.3,z=-0.6},nil,true),
+ 		make_wheel({0.6,0.3,-0.6},nil,true),
  	-- front
- 		make_wheel({x=-1.9,y=0.3,z=-0.6})
+ 		make_wheel({-1.9,0.3,-0.6})
 	}
 	
 	return add(actors,a)
@@ -636,11 +590,11 @@ end
 function make_cam(f,x0,y0)
 	x0,y0=x0 or 64,y0 or 64
 	local c={
-		pos={x=0,y=0,z=3},
+		pos={0,0,3},
 		angle=0,
 		focal=f,
 		update=function(self)
-			self.m=make_m(self.pos,self.angle)
+			self.m=make_m(v_zero,self.angle)
 			m_inv(self.m)
 		end,
 		track=function(self,pos,angle)
@@ -649,15 +603,15 @@ function make_cam(f,x0,y0)
 		end,
 		project=function(self,x,y,z)
 			-- world to view
-			x-=self.pos.x
-			y-=self.pos.y
-			z-=self.pos.z
+			x-=self.pos[1]
+			y-=self.pos[2]
+			z-=self.pos[3]
 			local v=m_x_xyz(self.m,x,y,z)
 			-- distance to camera plane
-			if(v.z<0.001) return nil,nil,-1,nil
+			if(v[3]<0.001) return nil,nil,-1,nil
 			-- view to screen
- 			local w=self.focal/v.z
- 			return x0+v.x*w,y0-v.y*w,v.z,w
+ 			local w=self.focal/v[3]
+ 			return x0-v[1]*w,y0-v[2]*w,v[3],w
 		end
 	}
 	return c
@@ -667,7 +621,6 @@ local cam_angle,cam_dist=0.15,8
 
 function _update()
 	time_t+=1
-	time_dt+=1
 	
 	zbuf_clear()
 	
@@ -705,9 +658,9 @@ function _init()
 	cam=make_cam(64)
 	
 	local i=0
- 	make_car({x=0,y=0,z=5*i},0.25)
- 	make_head({x=-0.3,y=0.68,z=5*i})
- 	--make_marker({x=0,y=0,z=0},flip_q)
+ 	make_car({0,0,5*i})
+ 	make_head({-0.3,0.68,5*i})
+ 	--make_marker({0,0,0},flip_q)
 
 end
 
@@ -744,21 +697,21 @@ end
 
 __gfx__
 aaaaaaaaaaa8888aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00000000000000000000000000000000000000000000000000000000000000000000000000000000
-aaaaaaaaaa877778aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00000000000000000000000000000000000000000000000000000000000000000000000000000000
-0a0a0a0aaaa8888aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00000000000000000000000000000000000000000000000000000000000000000000000000000000
-0a0a0a0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00000000000000000000000000000000000000000000000000000000000000000000000000000000
-0a0a0a0aaaaa0000000000aaaaaaaaaaaaaaaaaaaaaaaaaa00000000000000000000000000000000000000000000000000000000000000000000000000000000
-aaaaaaaaaaaa0077000700aaaa33a33aa33aa33a33a33aaa00000000000000000000000000000000000000000000000000000000000000000000000000000000
-aaaaaaaaaaaa0700707700aaaa3aa3a3a3a3a33a3aa33aaa00000000000000000000000000000000000000000000000000000000000000000000000000000000
-aaaaaaaaaaaa0007000700aaaa33aa33aa33a3aa33a3a3aa00000000000000000000000000000000000000000000000000000000000000000000000000000000
-aaaaaaaaaaaa0070000700aaaaaaaaaaaaaaaaaaaaaaaaaa00000000000000000000000000000000000000000000000000000000000000000000000000000000
-aaaaaaaaaaaa0777707770aaaaaaaaaaaaaaaaaaaaaaaaaa00000000000000000000000000000000000000000000000000000000000000000000000000000000
-aaaaaaaaaaaa0000000000aaaaaaaaaaaaaaaaaaaaaaaaaa00000000000000000000000000000000000000000000000000000000000000000000000000000000
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00000000000000000000000000000000000000000000000000000000000000000000000000000000
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00000000000000000000000000000000000000000000000000000000000000000000000000000000
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00000000000000000000000000000000000000000000000000000000000000000000000000000000
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00000000000000000000000000000000000000000000000000000000000000000000000000000000
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00000000000000000000000000000000000000000000000000000000000000000000000000000000
+aaaaaaaaaa877778aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000000000000000000000000000000000000000000000000000000000000000000000000000
+0a0a0a0aaaa8888aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000000000000000000000000000000000000000000000000000000000000000000000000
+0a0a0a0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000000000000000000000000000000000000000000000000000000000000000000000
+0a0a0a0aaaaa0000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000000000000000000000000000000000000000000000000000000000000000000
+aaaaaaaaaaaa0077000700aaaa33a33aa33aa33a33a33aaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000
+aaaaaaaaaaaa0700707700aaaa3aa3a3a3a3a33a3aa33aaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000
+aaaaaaaaaaaa0007000700aaaa33aa33aa33a3aa33a3a3aaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000
+aaaaaaaaaaaa0070000700aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000
+aaaaaaaaaaaa0777707770aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000
+aaaaaaaaaaaa0000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000000000000000000000000000000000000000000000000000000000000000000
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -811,7 +764,7 @@ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00000000000000000000000000000000
 b4a7f8b468585368f8536858b468f8b40120402010506057a8c6604060b090207798e980408060d0e00819c710401030705008a8b4404040a0c0809898e94040
 40807030b8a8c6904090b0c0a008882b60406080c0b008f8e9f030f05070083975703070e0f08829e5e030e0d0f00829c6d030d050f08729e5014001113121a7
 a80461406171514168a80441404151110108a85371407131115108f8040106080806f758080a080808060af7580a08080837d9080a48080ac7c8e90808080a47
-e9080608080a0808080806080a08
+e9080608080a0808080806080a080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __sfx__
 00020000085500d650086500955009550086500955008550086500955008650085500865008550076500855008550076500855007650085500865008650075500765007650076500755008650096500855009550
 010f00002c060350503b0403e0403365029060216501e0501665015040116400d0400b6300a030076300803007630060300463004030036300263002640016400164001640016300163001630016300163001620
