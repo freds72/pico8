@@ -187,7 +187,7 @@ function sqr_dist(a,b)
 end
 
 -- world axis
-local v_fwd,v_right,v_up={x=0,y=0,z=1},{x=1,y=0,z=0},{x=0,y=1,z=0}
+local v_fwd,v_right,v_up,v_zero={x=0,y=0,z=1},{x=1,y=0,z=0},{x=0,y=1,z=0},{x=0,y=0,z=0}
 
 function v_clone(v)
 	return {x=v.x,y=v.y,z=v.z}
@@ -222,42 +222,16 @@ function m_x_xyz(m,x,y,z)
 		y=m.m2*x+m.m6*y+m.m10*z+m.m14,
 		z=m.m3*x+m.m7*y+m.m11*z+m.m15}
 end
-function make_m(x,y,z)
+function make_m(p,r)
+	r=r or 0
+	p=p or v_zero
+	local c,s=cos(r),-sin(r)
 	local m={}
-	for i=1,16 do
-		m["m"+i]=0
-	end
-	m.m1,m.m6,m.m11,m.m16=1,1,1,1
-	m.m13,m.m14,m.m15=x or 0,y or 0,z or 0
+	m.m1,m.m2,m.m3,m.m4=c,0,s,0
+	m.m5,m.m6,m.m7,m.m8=0,1,0,0
+	m.m9,m.m10,m.m11,m.m12=-s,0,c,0
+	m.m13,m.m14,m.m15,m.m16=p.x,p.y,p.z,1
 	return m
-end
-
--- quaternion
-function make_q(v,angle)
-	angle/=2
-	-- fix pico sin
-	local s=-sin(angle)
-	return {x=v.x*s,
-	        y=v.y*s,
-	        z=v.z*s,
-	        w=cos(angle)}
-end
-function q_clone(q)
-	return {x=q.x,y=q.y,z=q.z,w=q.w}
-end
-function m_from_q(q)
-	local x,y,z,w=q.x,q.y,q.z,q.w
-	local x2,y2,z2=x+x,y+y,z+z
-	local xx,xy,xz=x*x2,x*y2,x*z2
-	local yy,yz,zz=y*y2,y*z2,z*z2
-	local wx,wy,wz=w*x2,w*y2,w*z2
-
-	return {
-		m1=1-(yy+zz),m2=xy+wz,m3=xz-wy,m4=0,
-		m5=xy-wz,m6=1-(xx+zz),m7=yz+wx,m8=0,
-		m9=xz+wy,m10=yz-wx,m11=1-(xx+yy),m12=0,
-		m13=0,m14=0,m15=0,m16=1
-	}
 end
 
 -- only invert 3x3 part
@@ -445,22 +419,6 @@ end
 
 local all_actors=json_parse'{"car":{"model":"indycar","update":"nop"}}'
 
-function make_npc(p,q,src)
-	-- instance
-	local a=clone(all_actors[src],{
-		pos=v_clone(p),
-		q=q or make_q(v_up,0),
-		draw=draw_actor
-	})
-	a.model=all_models[a.model]
-
-	-- init orientation
-	local m=m_from_q(a.q)
-	m_set_pos(m,p)
-	a.m=m
-	return add(actors,a)
-end
-
 local wheel_scale=0.28
 local wheel_v={
 	{x=-wheel_scale,y=0,z=-wheel_scale},
@@ -468,6 +426,7 @@ local wheel_v={
 	{x=0,y=0,z=-wheel_scale},
 	{x=-wheel_scale,y=0,z=0},
 	{x=wheel_scale,y=0,z=0},
+	{x=0,y=0,z=0}
 }
 local front_wheel_v={
 	{x=-wheel_scale,y=0,z=-0.3},
@@ -475,6 +434,7 @@ local front_wheel_v={
 	{x=0,y=0,z=-0.3},
 	{x=-wheel_scale,y=0,z=0},
 	{x=wheel_scale,y=0,z=0},
+	{x=0,y=0,z=0}
 }
 local wheel_r,flat_r={},{}
 for i=0,127 do
@@ -529,13 +489,12 @@ local quad_v={
 	{x=-1.65,y=0.08,z=0.355},
 	{x=-0.0,y=0.08,z=0.355}
 }
-function make_marker(p,q)
+function make_marker(p,angle)
 	local a={
 		pos=v_clone(p),
-		q=q and q_clone(q) or make_q(v_up,0),
+		angle=angle or 0,
 		update=function(self)
-			self.m=m_from_q(self.q)
-			m_set_pos(self.m,self.pos)
+			self.m=make_p(self.pos,self.angle)
 			return true
 		end,
 		draw=function(self,x0,y0,z0,w0)
@@ -548,23 +507,22 @@ function make_marker(p,q)
 				add(p,{x=x,y=y,z=z,w=w})
 			end
 
-			draw_tex_quad(p[1],p[2])			
+			draw_tex_quad(p[1],p[2])
 		end
 	}
 	return add(actors,a)
 end
 
-function make_wheel(p,q,front)
+function make_wheel(p,angle,front)
 	local a={
 		v=front and front_wheel_v or wheel_v,
 		pos=v_clone(p),
-		q=q and q_clone(q) or make_q(v_up,0),
+		angle=angle or 0,
 		update=function(self)
-			self.m=m_from_q(self.q)
-			m_set_pos(self.m,self.pos)
+			self.m=make_m(self.pos,self.angle)
 			return true
 		end,
-		draw=function(self,x0,y0,z0,w0)
+		draw=function(self)
 			local p,m={},self.m
 
 			for vi=1,#self.v do
@@ -574,7 +532,7 @@ function make_wheel(p,q,front)
 				add(p,{x=x,y=y,z=z,w=w})
 			end
 
-			local a0,b0=p[3],{x=x0,y=y0,z=z0,w=w0}
+			local a0,b0=p[3],p[6]
 
 			-- draw ext side
 			draw_wheel(p[1],p[2],wheel_r,a0)
@@ -587,6 +545,78 @@ function make_wheel(p,q,front)
 			
 		end
 	}
+	return a
+end
+
+local car_v={
+ {x=-0.3,y=0.1,z=-2.2},
+ {x=0.3,y=0.1,z=-2.2},
+ {x=0.3,y=0.1,z=1},
+ {x=-0.3,y=0.1,z=1}
+}
+function make_car(p,angle)
+	local a={
+		pos=v_clone(p),
+		angle=angle or 0,
+		update=function(self)
+			self.m=make_m(self.pos,self.angle)
+			for _,w in pairs(self.wheels) do
+				w:update()
+			end
+			return true
+		end,
+		draw=function(self,x0,y0,z0,w0)
+			local p,m={},self.m
+
+			-- cam pos in object space
+			local cam_pos=v_clone(cam.pos)
+			m_inv_x_v(m,cam_pos)
+	
+			local cn=cam_pos.x
+			
+			for vi=1,#car_v do
+				local v=car_v[vi]
+				local x,y,z,w=v.x,v.y,v.z
+				x,y,z,w=cam:project(m.m1*x+m.m5*y+m.m9*z+m.m13,m.m2*x+m.m6*y+m.m10*z+m.m14,m.m3*x+m.m7*y+m.m11*z+m.m15)
+				add(p,{x=x,y=y,z=z,w=w})
+			end
+			
+			if cn>=0 then
+				self.wheels[1]:draw()
+				self.wheels[2]:draw()
+			end
+			if cn<=0 then
+				self.wheels[3]:draw()
+				self.wheels[4]:draw()
+			end
+			
+			local v1=p[#p]
+			for i=1,#p do
+				local v0=p[i]
+				draw_tex_quad(v0,v1)
+				v1=v0
+			end
+			if cn<=0 then
+				self.wheels[1]:draw()
+				self.wheels[2]:draw()
+			end
+			if cn>=0 then
+				self.wheels[3]:draw()
+				self.wheels[4]:draw()
+			end
+			
+		end
+	}
+	a.wheels={
+		make_wheel({x=0.6,y=0.3,z=0.6},flip_q,true),
+ 	-- front
+ 		make_wheel({x=-1.9,y=0.3,z=0.6},flip_q),
+ 		-- left side
+ 		make_wheel({x=0.6,y=0.3,z=-0.6},nil,true),
+ 	-- front
+ 		make_wheel({x=-1.9,y=0.3,z=-0.6})
+	}
+	
 	return add(actors,a)
 end
 
@@ -607,15 +637,15 @@ function make_cam(f,x0,y0)
 	x0,y0=x0 or 64,y0 or 64
 	local c={
 		pos={x=0,y=0,z=3},
-		q=make_q(v_up,0),
+		angle=0,
 		focal=f,
 		update=function(self)
-			self.m=m_from_q(self.q)
+			self.m=make_m(self.pos,self.angle)
 			m_inv(self.m)
 		end,
-		track=function(self,pos,q)
+		track=function(self,pos,angle)
 			self.pos=v_clone(pos)
-			self.q=q
+			self.angle=angle
 		end,
 		project=function(self,x,y,z)
 			-- world to view
@@ -650,9 +680,8 @@ function _update()
 	if(btn(3)) cam_dist-=0.1
 	cam_dist=mid(cam_dist,1,32)
 	
-	local q=make_q(v_up,cam_angle)
-	local m=m_from_q(q)
-	cam:track(m_x_xyz(m,0,0.8,-cam_dist),q)
+	local m=make_m(v_zero,cam_angle)
+	cam:track(m_x_xyz(m,0,0.8,-cam_dist),cam_angle)
 	cam:update()
 end
 
@@ -676,16 +705,10 @@ function _init()
 	cam=make_cam(64)
 	
 	local i=0
- 	make_npc({x=0,y=0,z=5*i},make_q(v_up,0.25),"car")
+ 	make_car({x=0,y=0,z=5*i},0.25)
  	make_head({x=-0.3,y=0.68,z=5*i})
- 	make_marker({x=0,y=0,z=0},flip_q)
- 	local flip_q=make_q(v_up,0.5)
- 	-- read
- 	make_wheel({x=0.6,y=0.3,z=-0.6},nil,true)
- 	make_wheel({x=0.6,y=0.3,z=0.6},flip_q,true)
- 	-- front
- 	make_wheel({x=-1.9,y=0.3,z=-0.6})
- 	make_wheel({x=-1.9,y=0.3,z=0.6},flip_q)
+ 	--make_marker({x=0,y=0,z=0},flip_q)
+
 end
 
 -->8
