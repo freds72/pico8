@@ -6,7 +6,7 @@ local actors={}
 
 -- main
 local plyr
-local heightmap={}
+local qmap,hmap={},{}
 function _init()
 	local noise={}
 	local idx_offsets={
@@ -30,9 +30,12 @@ function _init()
 	 {5,5,4,5},
 	 {5,5,5,5}	
 	}
+	local get_noise=function(i,j)
+		return noise[band(i,0x3f)+64*band(j,0x3f)+1]
+	end
  -- returns whether value is above a given level
  local is_solid=function(i,j,level)
-  return noise[band(i,0x3f)+64*band(j,0x3f)+1]>level and 1 or 0
+  return get_noise(i,j)>level and 1 or 0
  end
  -- converts four corners into a single sprite lookup index
  -- cf 'marching square' thingy
@@ -50,15 +53,15 @@ function _init()
   for x=0,63 do
    local c
    -- base noise is strongest
-   c=os2d_eval(x/8,y/8)
+   c=os2d_eval(x/4,y/4)
    -- next is weaker
-   c+=os2d_eval(x/4,y/4)/2
+   c+=os2d_eval(x/2,y/2)/2
    -- and so on
-   c+=os2d_eval(x/2,y/2)/4
+   c+=os2d_eval(x,y)
 
    -- convert -0.2..+1 to 14 cols
    -- (sea level at -0.2)
-   --c=mid(0,(c+0.2)/1.2*14,13)
+   c=mid(0,(c+0.2)/1.2*14,13)/14
 
    -- set in stoooone
    add(noise,c)
@@ -81,7 +84,19 @@ function _init()
    local idx=2*i+2*128*j
   	local code=q_codes[q+1]
   	for k=1,4 do
-   	heightmap[idx+idx_offsets[k]]=code[k]
+   	qmap[idx+idx_offsets[k]]=code[k]
+  	 local h
+  	 if k==1 then
+  	 	h=get_noise(i,j)
+  	 elseif k==2 then
+  	 	h=0.5*get_noise(i,j)+0.5*get_noise(i+1,j)
+				elseif k==3 then 	 	
+  	 	h=0.5*get_noise(i,j)+0.5*get_noise(i,j+1)
+				elseif k==4	then
+  	 	h=(get_noise(i,j)+get_noise(i,j+1)+get_noise(i+1,j)+get_noise(i+1,j+1))/4
+	   end
+	   				
+  	 hmap[idx+idx_offsets[k]]=h
   	end
   end
  end 
@@ -104,12 +119,15 @@ function project(x,y,z)
 	return 64+xe*w,64-ye*w,ze,w
 end
 
-function get_noise(i,j)
-	return heightmap[band(i,0x7f)+128*band(j,0x7f)]
+function get_qcode(i,j)
+	return qmap[band(i,0x7f)+128*band(j,0x7f)]
+end
+function get_height(i,j)
+	return hmap[band(i,0x7f)+128*band(j,0x7f)]
 end
 
 function draw_ground(self)
-	local xscale,zscale,hscale=4,2,2
+	local xscale,zscale,hscale=4,2,4
 	local dx,dz=cam_x%(xscale),cam_z%zscale
 	local nx,ny=flr(cam_x/xscale),flr(cam_z/zscale)
 	-- project anchor points
@@ -128,23 +146,33 @@ function draw_ground(self)
 		local ni=nx
 		-- get cell at i,j
 		for i=-4,4 do
-		 local q=get_noise(ni,nj)
-			local x0,y0=v0[1]+xscale*i*w0,v0[2]
-			local x1,y1=v1[1]+xscale*i*w1,v1[2]
-			local x2,y2=v1[1]+xscale*(i+1)*w1,v1[2]
-			local x3,y3=v0[1]+xscale*(i+1)*w0,v0[2]
+		 local q=get_qcode(ni,nj)
+			local h0,h1,h2,h3=get_height(ni,nj),get_height(ni,nj+1),get_height(ni+1,nj+1),get_height(ni+1,nj)
+			local x0,y0=v0[1]+xscale*i*w0,v0[2]-hscale*w0*h0
+			local x1,y1=v1[1]+xscale*i*w1,v1[2]-hscale*w1*h1
+			local x2,y2=v1[1]+xscale*(i+1)*w1,v1[2]-hscale*w1*h2
+			local x3,y3=v0[1]+xscale*(i+1)*w0,v0[2]-hscale*w0*h3
 
 			if q==1 then
-				trifill(x0,y0,x1,y1,x2,y2,12)		
+				local c2,c3=sget(8*h1,0),sget(8*h3,0)
+				trifill(x0,y0,x1,y1,x2,y2,c2)		
+				trifill(x0,y0,x3,y3,x2,y2,c3)		
 			elseif q==2 then
-				trifill(x3,y3,x2,y2,x1,y1,11)		
+				local c2,c0=sget(8*h2,0),sget(8*h0,0)
+				trifill(x3,y3,x2,y2,x1,y1,c2)		
+				trifill(x0,y0,x3,y3,x1,y1,c0)		
 			elseif q==4 then
-				trifill(x0,y0,x3,y3,x2,y2,8)		
+				local c3,c1=sget(8*h3,0),sget(8*h1,0)
+				trifill(x0,y0,x3,y3,x2,y2,c3)		
+				trifill(x0,y0,x2,y2,x1,y1,c1)		
 			elseif q==8 then
-				trifill(x0,y0,x3,y3,x1,y1,7)
-			elseif q==5 then
-				trifill(x0,y0,x1,y1,x3,y3,5)		
-				trifill(x3,y3,x2,y2,x1,y1,5)		
+				local c0,c2=sget(8*h0,0),sget(8*h2,0)
+				trifill(x0,y0,x3,y3,x1,y1,c0)
+				trifill(x3,y3,x2,y2,x1,y1,c2)
+			else
+				local c=sget(8*h0,0)
+				trifill(x0,y0,x1,y1,x3,y3,c)		
+				trifill(x3,y3,x2,y2,x1,y1,c)		
 			end						   
 			ni+=1
 		end
@@ -188,7 +216,7 @@ function _draw()
 	if btn(5) then
 		for j=0,127 do
 		 for i=0,127 do
-		 	pset(i,j,heightmap[i+128*j])
+		 	pset(i,j,sget(8*hmap[i+128*j],0))
 		 end
 		end
 	else
@@ -454,11 +482,11 @@ function trifill(x0,y0,x1,y1,x2,y2,col)
 end
 
 __gfx__
-0000000000000000000000000000000000dddddd0000dddd0000dddd0000ddddddddd000dddd0000dddd0000dddd0000dddddddddddddddddddddddddddddddd
+1ca9b34500000000000000000000000000dddddd0000dddd0000dddd0000ddddddddd000dddd0000dddd0000dddd0000dddddddddddddddddddddddddddddddd
 00000000000000000000000000000000000ddddd00000ddd0000dddd000ddddddddd0000dddd0000ddd00000ddddd000dddddddddddddddddddddddddddddddd
-00000000d00000000000000d000000000000dddd000000dd0000dddd00ddddddddd00000dddd0000dd000000dddddd00dddddddddddddddddddddddddddddddd
-00000000dd000000000000dd0000000000000ddd0000000d0000dddd0ddddddddd000000dddd0000d0000000ddddddd0dddddddddddddddddddddddddddddddd
-00000000ddd0000000000ddddddddddd000000ddd00000000000ddddddddddddd0000000dddd00000000000ddddddddd00000000ddddddd00ddddddddddddddd
-00000000dddd00000000dddddddddddd0000000ddd0000000000dddddddddddd00000000dddd0000000000dddddddddd00000000dddddd0000dddddddddddddd
-00000000ddddd000000ddddddddddddd00000000ddd000000000dddddddddddd00000000dddd000000000ddddddddddd00000000ddddd000000ddddddddddddd
-00000000dddddd0000dddddddddddddd00000000dddd00000000dddddddddddd00000000dddd00000000dddddddddddd00000000dddd00000000dddddddddddd
+00000000000000000000000d000000000000dddd000000dd0000dddd00ddddddddd00000dddd0000dd000000dddddd00dddddddddddddddddddddddddddddddd
+0000000000000000000000dd0000000000000ddd0000000d0000dddd0ddddddddd000000dddd0000d0000000ddddddd0dddddddddddddddddddddddddddddddd
+000000000000000000000ddddddddddd000000ddd00000000000ddddddddddddd0000000dddd00000000000ddddddddd00000000ddddddd00ddddddddddddddd
+00000000000000000000dddddddddddd0000000ddd0000000000dddddddddddd00000000dddd0000000000dddddddddd00000000dddddd0000dddddddddddddd
+0000000000000000000ddddddddddddd00000000ddd000000000dddddddddddd00000000dddd000000000ddddddddddd00000000ddddd000000ddddddddddddd
+000000000000000000dddddddddddddd00000000dddd00000000dddddddddddd00000000dddd00000000dddddddddddd00000000dddd00000000dddddddddddd
