@@ -5,117 +5,158 @@ __lua__
 local actors={}
 
 -- main
-function smoothstep(t)
-	t=mid(t,0,1)
-	return t*t*(3-2*t)
-end
-
 local plyr
-local clouds={}
-local cache={}
+local heightmap={}
 function _init()
-	grayvid()
+	local noise={}
+	local idx_offsets={
+		0,1,128,129
+	}
+	local q_codes={
+		{0,0,0,0},
+		{0,0,1,0},
+		{0,0,0,2},
+		{0,0,5,5},
+		{0,4,0,0},
+		{2,0,0,8},
+		{0,5,0,5},
+	 {2,5,5,5},
+	 {8,0,0,0},
+	 {5,0,5,0},
+	 {5,1,4,5},
+	 {5,1,5,5},
+	 {5,5,0,0},
+	 {5,5,5,8},
+	 {5,5,4,5},
+	 {5,5,5,5}	
+	}
+ -- returns whether value is above a given level
+ local is_solid=function(i,j,level)
+  return noise[band(i,0x3f)+64*band(j,0x3f)+1]>level and 1 or 0
+ end
+ -- converts four corners into a single sprite lookup index
+ -- cf 'marching square' thingy
+ local marching_code=function(i,j,level)
+  return
+   8*is_solid(i,j,level)+
+   4*is_solid(i+1,j,level)+
+   2*is_solid(i+1,j+1,level)+
+   is_solid(i,j+1,level)
+ end
  
- os2d_noise(5)
+ os2d_noise(48)
+
+ for y=0,63 do
+  for x=0,63 do
+   local c
+   -- base noise is strongest
+   c=os2d_eval(x/8,y/8)
+   -- next is weaker
+   c+=os2d_eval(x/4,y/4)/2
+   -- and so on
+   c+=os2d_eval(x/2,y/2)/4
+
+   -- convert -0.2..+1 to 14 cols
+   -- (sea level at -0.2)
+   --c=mid(0,(c+0.2)/1.2*14,13)
+
+   -- set in stoooone
+   add(noise,c)
+  end
+ end
+
+ --[[ 
+ for j=0,63 do
+  for i=0,63 do
+  	local x,y=i%8,j%8
+   add(noise,(x==0 or y==0) and 1 or 0)
+  end
+ end
+ ]]
  
- plyr=make_plyr()
+ -- convert into marching quadrants
+	for j=0,63 do
+  for i=0,63 do
+   local q=marching_code(i,j,0.2)
+   local idx=2*i+2*128*j
+  	local code=q_codes[q+1]
+  	for k=1,4 do
+   	heightmap[idx+idx_offsets[k]]=code[k]
+  	end
+  end
+ end 
+
+ plyr=make_plyr()	
 end
 
 local cam_x,cam_y,cam_z
-function cam_track(x,y,z)
-	cam_x,cam_y,cam_z=x,y,z
+function cam_track(v)
+	cam_x,cam_y,cam_z=v[1],v[2],v[3]
 end
 
-local cam_cb,cam_sb=cos(0.64),sin(0.60)
-local cam_focal=128
-function cam_project(x,y,z)
-	local y=y-cam_y
-	local z=z-cam_z
-	local ze=-(y*cam_cb+z*cam_sb)
-	-- invalid projection?
-	--if(ze<cam_zfar or ze>=0) return nil,nil,z,nil
-	--if(ze<cam_zfar) printh("too far") return nil,nil,z,nil
-	if(ze>=0) printh("too close") return nil,nil,z,nil
+local cam_focal=48
+function project(x,y,z)
+	local xe=x-cam_x
+	local ye=y-cam_y
+	local ze=z-cam_z
 	
 	local w=-cam_focal/ze
-	local xe=x-cam_x
-	local ye=-y*cam_sb+z*cam_cb
 	return 64+xe*w,64-ye*w,ze,w
 end
 
-function cross(u,v)
-	return 
-		u.y * v.z - u.z * v.y,
-		u.z * v.x - u.x * v.z,
-		u.x * v.y - u.y * v.x
-end
-function vec(u,v)
-	local dx,dy,dz=v.x-u.x,v.y-u.y,v.z-u.z
-	local d=dx*dx+dy*dy+dz*dz
-	d=sqrt(d)
-	return {
-		x=dx/d,
-		y=dy/d,
-		z=dz/d}
-end
-function shade(v0,v1,v2)
-	--if getwinding(v0,v1,v2)>0 then		
- 	color(0)
- 	--line(v0[1],v0[2],v1[1],v1[2])
-  --line(v1[1],v1[2],v2[1],v2[2])
- 	aaline(v0[1],v0[2],v1[1],v1[2])
-  aaline(v1[1],v1[2],v2[1],v2[2])
- --end
-end
-
-function getwinding(v1,v2,v3)
-	local a={v2[1]-v1[1],v2[2]-v1[2]}
-	local b={v3[1]-v1[1],v3[2]-v1[2]}
-	--cross product
-	return a[1]*b[2]-a[2]*b[1]
+function get_noise(i,j)
+	return heightmap[band(i,0x7f)+128*band(j,0x7f)]
 end
 
 function draw_ground(self)
-	local v={}
-	local scale=4
-	local dx,dy=cam_x%scale,cam_y%scale
- local i0,j0=flr(cam_x/scale),flr(cam_y/scale)
+	local xscale,zscale,hscale=4,2,2
+	local dx,dz=cam_x%(xscale),cam_z%zscale
+	local nx,ny=flr(cam_x/xscale),flr(cam_z/zscale)
+	-- project anchor points
+	local p={}
+ local j,sz,sw=j0,1,0
 	
-	local j,sz,sw=j0,1,0
-	for jj=-32,-1,scale do
-		local cy=(j%128+128)%128
-		local i=i0
-		sw=0
-		for ii=-16,16,scale do
-			local cx=(i%128+128)%128
-			local f=2*os2d_eval(cx,cy)
-			local wx,wy=ii-dx+cam_x,jj-dy+cam_y
-			local x,y,z,w=cam_project(wx,wy,f)
-			add(v,{x,y,z,w,x=wx,y=wy,z=f})
-			i+=1
-			sw+=1
-		end
-		j+=1
-		sz+=1
+	for i=8,1,-1 do
+		local x,y,z,w=project(-dx+cam_x,0,-dz+cam_z-i*zscale-4)
+		add(p,{x,y,z,w})
 	end
-	
-	-- strip size
-	for j=0,sz-3 do
-		for i=0,sw-2 do
-			local k=i+sz*j+1
-			shade(
-				v[k],v[k+1],v[k+sz+1])
+
+	local nj=ny
+	for j=2,#p do
+		local v0,v1=p[j-1],p[j]
+		local w0,w1=v0[4],v1[4]
+		local ni=nx
+		-- get cell at i,j
+		for i=-4,4 do
+		 local q=get_noise(ni,nj)
+			local x0,y0=v0[1]+xscale*i*w0,v0[2]
+			local x1,y1=v1[1]+xscale*i*w1,v1[2]
+			local x2,y2=v1[1]+xscale*(i+1)*w1,v1[2]
+			local x3,y3=v0[1]+xscale*(i+1)*w0,v0[2]
+
+			if q==1 then
+				trifill(x0,y0,x1,y1,x2,y2,12)		
+			elseif q==2 then
+				trifill(x3,y3,x2,y2,x1,y1,11)		
+			elseif q==4 then
+				trifill(x0,y0,x3,y3,x2,y2,8)		
+			elseif q==8 then
+				trifill(x0,y0,x3,y3,x1,y1,7)
+			elseif q==5 then
+				trifill(x0,y0,x1,y1,x3,y3,5)		
+				trifill(x3,y3,x2,y2,x1,y1,5)		
+			end						   
+			ni+=1
 		end
+		nj+=1
 	end
-	print("h:"..sz.."w:"..sw,2,12,7)
 end
 
 function make_plyr()
 	return add(actors,{
-		x=0,y=0,z=5,
-		angle=0,
-		dy=0,
-		update=update_actor})
+		pos={0,5,2},
+		update=update_actor
+	})
 end
 
 function update_actor(self)
@@ -124,13 +165,17 @@ end
 local time_t=0
 function _update60()
 	time_t+=1
-	if(btn(0)) plyr.x-=0.1 plyr.angle-=0.01
-	if(btn(1)) plyr.x+=0.1 plyr.angle+=0.01
-	if(btn(2)) plyr.y-=0.1
-	if(btn(3)) plyr.y+=0.1
+	local dx,dy=0,0
+	if(btn(0)) dx=-0.1
+	if(btn(1)) dx=0.1
+	if(btn(2)) dy=-0.1
+	if(btn(3)) dy=0.1
+		
+	plyr.pos[1]+=dx
+	plyr.pos[btn(4) and 2 or 3]+=dy
 	
 	--cam_cb,cam_sb=cos(plyr.y/10),sin(plyr.y/10)
-	cam_track(plyr.x-8,plyr.y,-12)
+	cam_track(plyr.pos)
 	
 	for _,a in pairs(actors) do
 		a:update()
@@ -138,9 +183,18 @@ function _update60()
 end
 
 function _draw()
-	cls(14)
-	draw_ground({})
+	cls(0)
 	
+	if btn(5) then
+		for j=0,127 do
+		 for i=0,127 do
+		 	pset(i,j,heightmap[i+128*j])
+		 end
+		end
+	else
+		draw_ground({})
+	end
+		
  rectfill(0,0,127,8,1)
  print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)
 end
@@ -359,90 +413,46 @@ function os2d_eval(x,y)
 	return val/_os2d_nrm
 end
 -->8
--- aaline
-local ramp={[0]=7,7,7,7,7,6,6,6,13,13,13,5,5,1,1,0}
-function grayvid()
-	for i=0,15 do
-		pal(i,i,0)
-		pal(i,ramp[i],1)
-	 palt(i,false)
-	end
+-- trifill
+function p01_trapeze_h(l,r,lt,rt,y0,y1)
+ lt,rt=(lt-l)/(y1-y0),(rt-r)/(y1-y0)
+ if(y0<0)l,r,y0=l-y0*lt,r-y0*rt,0 
+	y1=min(y1,128)
+	for y0=y0,y1 do
+  rectfill(l,y0,r,y0)
+  l+=lt
+  r+=rt
+ end
 end
-function normvid()
-	for i=0,15 do
-		pal(i,i,0)
-		pal(i,i,1)
-		palt(i,false)
-	end
+function p01_trapeze_w(t,b,tt,bt,x0,x1)
+ tt,bt=(tt-t)/(x1-x0),(bt-b)/(x1-x0)
+ if(x0<0)t,b,x0=t-x0*tt,b-x0*bt,0 
+ x1=min(x1,128)
+ for x0=x0,x1 do
+  rectfill(x0,t,x0,b)
+  t+=tt
+  b+=bt
+ end
 end
-function aaline(x0,y0,x1,y1)
-	local w,h=abs(x1-x0),abs(y1-y0)
-	
-	-- to calculate dist properly,
-	-- do this, but we'll use an
-	-- approximation below instead.
- -- local d=sqrt(w*w+h*h)
- 
- if h>w then
- 	-- order points on y
- 	if y0>y1 then
- 		x0,y0,x1,y1=x1,y1,x0,y0
- 	end
- 
- 	local dx=x1-x0
- 	
- 	-- apply the bias to the 
- 	-- line's endpoints:
- 	y0+=0.5
- 	y1+=0.5
- 
- 	--x0+=0.5 --nixed by -0.5 in loop
- 	--x1+=0.5 --don't need x1 anymore
+function trifill(x0,y0,x1,y1,x2,y2,col)
+ color(col)
+ if(y1<y0)x0,x1,y0,y1=x1,x0,y1,y0
+ if(y2<y0)x0,x2,y0,y2=x2,x0,y2,y0
+ if(y2<y1)x1,x2,y1,y2=x2,x1,y2,y1
+ if max(x2,max(x1,x0))-min(x2,min(x1,x0)) > y2-y0 then
+  col=x0+(x2-x0)/(y2-y0)*(y1-y0)
+  p01_trapeze_h(x0,x0,x1,col,y0,y1)
+  p01_trapeze_h(x1,col,x2,x2,y1,y2)
+ else
+  if(x1<x0)x0,x1,y0,y1=x1,x0,y1,y0
+  if(x2<x0)x0,x2,y0,y2=x2,x0,y2,y0
+  if(x2<x1)x1,x2,y1,y2=x2,x1,y2,y1
+  col=y0+(y2-y0)/(x2-x0)*(x1-x0)
+  p01_trapeze_w(y0,y0,y1,col,x0,x1)
+  p01_trapeze_w(y1,col,y2,y2,x1,x2)
+ end
+end
 
-		-- account for diagonal thickness
-		-- thanks to freds72 for neat trick from https://oroboro.com/fast-approximate-distance/
-  -- 	local k=h/d
-		local k=h/(h*0.9609+w*0.3984)
-		 	
- 	for y=flr(y0)+0.5-y0,flr(y1)+0.5-y0 do	
- 		local x=x0+dx*y/h
- 		-- originally flr(x-0.5)+0.5
- 		-- but now we don't x0+=0.5 so not needed
- 		local px=flr(x)
- 		pset(px,  y0+y,pget(px,  y0+y)*k*(x-px  ))
- 		pset(px+1,y0+y,pget(px+1,y0+y)*k*(px-x+1))
- 	end
- elseif w>0 then
- 	-- order points on x
- 	if x0>x1 then
- 		x0,y0,x1,y1=x1,y1,x0,y0
- 	end
- 
- 	local dy=y1-y0
- 	
- 	-- apply the bias to the 
- 	-- line's endpoints:
- 	x0+=0.5
- 	x1+=0.5
- 
- 	--y0+=0.5 --nixed by -0.5 in loop
- 	--y1+=0.5 --don't need y1 anymore
-	
-		-- account for diagonal thickness
-		-- thanks to freds72 for neat trick from https://oroboro.com/fast-approximate-distance/
-  -- local k=w/d
-		local k=w/(w*0.9609+h*0.3984)
-
- 	for x=flr(x0)+0.5-x0,flr(x1)+0.5-x0 do	
- 		local y=y0+dy*x/w
- 		-- originally flr(y-0.5)+0.5
- 		-- but now we don't y0+=0.5 so not needed
- 		local py=flr(y)
- 		pset(x0+x,py,  pget(x0+x,py  )*k*(y-py  ))
- 		pset(x0+x,py+1,pget(x0+x,py+1)*k*(py-y+1))
- 	end
-	end
-end
 __gfx__
 0000000000000000000000000000000000dddddd0000dddd0000dddd0000ddddddddd000dddd0000dddd0000dddd0000dddddddddddddddddddddddddddddddd
 00000000000000000000000000000000000ddddd00000ddd0000dddd000ddddddddd0000dddd0000ddd00000ddddd000dddddddddddddddddddddddddddddddd
