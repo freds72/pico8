@@ -112,7 +112,7 @@ function zbuf_draw()
 		local p=d.pos
 		local x,y,z,w=cam:project(p[1],p[2],p[3])
 		-- camera is neg-z facing
-		if z<0 then
+		if x>0 and x<128 and y>0 and y<128 and z<0 and z>-64 then
 			add(objs,{obj=d,key=z,x=x,y=y,z=z,w=w})
 		end
 	end
@@ -377,7 +377,7 @@ function m_up(m)
 end
 
 -- models & rendering
-local all_models=json_parse'{"vship":{"c":3}}'
+local all_models=json_parse'{"vship":{"c":3},"tree":{"c":3}}'
 local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]'
 local color_lo={1,1,13,6,7}
 local color_hi={0x11,0xd0,0x60,0x70,0x70}
@@ -392,13 +392,13 @@ function draw_model(model,m,x,y,z,w)
 	for i=1,#model.f do
 		local f,n=model.f[i],model.n[i]
 		-- viz calculation
-		local d=n[1]*cam_pos[1]+n[2]*cam_pos[2]+n[2]*cam_pos[2]
+		local d=n[1]*cam_pos[1]+n[2]*cam_pos[2]+n[3]*cam_pos[3]
 		if d>=model.cp[i] then
 			-- project vertices
 			for _,vi in pairs(f.vi) do
 				if not p[vi] then
 					local v=model.v[vi]
-					local x,y,z=v[1],v[2],v[2]
+					local x,y,z=v[1],v[2],v[3]
 					x,y,z,w=cam:project(m[1]*x+m[5]*y+m[9]*z+m[13],m[2]*x+m[6]*y+m[10]*z+m[14],m[3]*x+m[7]*y+m[11]*z+m[15])
 					p[vi]={x,y,z,w}
 				end
@@ -416,11 +416,15 @@ function draw_model(model,m,x,y,z,w)
 	-- draw faces using projected points
 	for _,f in pairs(faces) do
 		f=f.face
+		--[[
 		local c=max((#color_lo-1)*v_dot(model.n[f.ni],light))
 		-- get floating part
 		local cf=(#dither_pat-1)*(1-(c-flr(c)))
 		fillp(dither_pat[flr(cf)+1])
 		c=bor(color_hi[flr(c)+1],color_lo[flr(c)+1])
+		]]
+		local c=max(v_dot(model.n[f.ni],light))*5
+  c=sget(c+8,model.c)
 		local p0=p[f.vi[1]]
 	 	for i=2,#f.vi-1 do
 		 	local p1,p2=p[f.vi[i]],p[f.vi[i+1]]
@@ -435,7 +439,7 @@ _g.update_plyr=function(self)
 	if self.smoke_t<time_t then
 		self.smoke_t=time_t+rnd(self.smoke_dly)
 		local v=m_up(self.m)
-		v_scale(v,-0.4)
+		v_scale(v,-1)
 		make_part("spark",self.pos,v)
 	end
 
@@ -445,7 +449,7 @@ _g.update_plyr=function(self)
 	return true
 end
 
-local all_actors=json_parse'{"plyr":{"model":"vship","update":"update_plyr","angle":0,"smoke_dly":12,"smoke_t":0}}'
+local all_actors=json_parse'{"plyr":{"model":"vship","update":"update_plyr","angle":0.25,"smoke_dly":12,"smoke_t":0,"acc":0.4},"tree":{"model":"tree","update":"nop","rnd":{"angle":[0,1]}}}'
 
 -- maths
 function sqr_dist(a,b)
@@ -526,13 +530,14 @@ function draw_actor(self,x,y,z,w)
 	end	
 end
 
-function make_actor(src,p,q)
+function make_actor(src,p)
 	-- instance
 	local a=clone(all_actors[src],{
-		pos=v_clone(p),
-		q=q or make_q(v_up,0)
+		pos=v_clone(p)
 	})
 	a.model,a.draw=all_models[a.model],a.draw or draw_actor
+	-- any angle defined in instance?
+	a.q=make_q(v_up,a.angle or 0)
 	-- init orientation
 	local m=m_from_q(a.q)
 	m_set_pos(m,p)
@@ -546,7 +551,7 @@ function make_cam(f)
 	local c={
 		pos={0,0,0},
 		lookat={0,0,0},
-		offset={0,0,8*zscale},
+		offset={0,0,6*zscale},
 		focal=f,	
 		track=function(self,pos)
 			self.pos=v_clone(pos)
@@ -569,13 +574,13 @@ _g.update_part=function(self)
 	local p=self.pos
 	v_add(p,self.v)
 	-- gravity
-	v_add(p,{0,-0.01,0})
+	v_add(p,{0,-0.1,0})
 	-- ground collision
 	local h=get_altitude(p[1],p[3])
 	if p[2]<h then
 		p[2]=h
 		-- todo: proper reflection vector
-		v_scale(self.v,0.8)
+		v_scale(self.v,0.9)
 	end
 	
 	-- force damping
@@ -624,6 +629,7 @@ function get_altitude(x,z)
 end
 
 function draw_ground(self)
+	local imin,imax=-6,6
 	local cx,cz=cam.lookat[1],cam.lookat[3]
 	local dx,dz=cx%xscale,cz%zscale
 	-- cell coordinates
@@ -635,25 +641,32 @@ function draw_ground(self)
 	-- grid depth extent
 	for j=-4,4 do
 	 -- compute grid points centered on lookat pos
-		local x,y,z,w=cam:project(-dx+cx,0,-dz+cz+j*zscale)
+		local x,y,z,w=cam:project(-dx+cx+imin*xscale,0,-dz+cz+j*zscale)
 		add(p,{x,y,z,w,ny+j})
 	end
 
+ local dither={
+ 	[imin]=lerparray(dither_pat,1-dx/xscale),
+ 	[imax]=lerparray(dither_pat,dx/xscale),
+ }
+ 
 	local v0=p[1]
+	v0={v0[1],v0[2],v0[3],v0[4],v0[5]}
 	local w0,nj=v0[4],v0[5]
 	local dw0=xscale*w0
 	for j=2,#p do
 		local v1=p[j]
+	 v1={v1[1],v1[2],v1[3],v1[4],v1[5]}
 		local w1=v1[4]
 		local dw1=xscale*w1
-		local x0,x1=v0[1]-4*dw0,v1[1]-4*dw1
-		local x2,x3=v1[1]-3*dw1,v0[1]-3*dw0
+		local x0,x1=v0[1],v1[1]
+		local x2,x3=v1[1]+dw1,v0[1]+dw0
 		-- depth dither
 		if j==2 then
 			fillp(lerparray(dither_pat,1-dz/zscale)+0.1)
 		end
 		-- grid width extent
-		for i=-4,4 do
+		for i=imin,imax do 		
 			local ni=nx+i
 		 local q=get_qcode(ni,nj)
 			local h0,h1,h2,h3=get_height(ni,nj),get_height(ni,nj+1),get_height(ni+1,nj+1),get_height(ni+1,nj)
@@ -662,6 +675,19 @@ function draw_ground(self)
 			local y2=v1[2]-hscale*w1*h2
 			local y3=v0[2]-hscale*w0*h3
 
+   local fp=dither[i]
+   --if(fp) fillp(fp)
+   
+			if i==imin then
+			 local t=dx/xscale
+				x0=lerp(x0,x3,t)
+				x1=lerp(x1,x2,t)
+			elseif i==imax then
+			 local t=dx/xscale
+				x3=lerp(x0,x3,t)
+				x2=lerp(x1,x2,t)
+			end
+						
 			if q==1 then
 				local c2,c3=get_color(h1,true),get_color(h3)
 				trifill(x0,y0,x1,y1,x2,y2,c2)		
@@ -684,11 +710,11 @@ function draw_ground(self)
 				trifill(x1,y1,x3,y3,x2,y2,c)		
 			end
 			if(fp) fillp()
-			
 			x0,x1=x3,x2
 			x2+=dw1
 			x3+=dw0
 		end
+		
 		v0,w0,dw0=v1,w1,dw1
 		nj+=1
 		fillp()
@@ -709,12 +735,12 @@ function control_plyr()
 
 	local m=m_from_q(plyr.q)
 	-- update pos
-	v_add(plyr.pos,m_fwd(m),0.4)
+	v_add(plyr.pos,m_fwd(m),2*plyr.acc)
 	m_set_pos(m,plyr.pos)	
 	plyr.m=m
 end
 
-function _update60()
+function _update()
 	time_t+=1
 
 	zbuf_clear()
@@ -850,11 +876,22 @@ function _init()
   end
  end 
 
+	local max_tree=100
+	for j=0,63 do
+  for i=0,63 do
+			if max_tree>0 and is_solid(i,j,0.7)==1 then
+				local x,z=(i+0.5)*xscale,(j+0.5)*zscale
+				make_actor("tree",{x,get_altitude(x,z),z})
+				max_tree-=1
+			end
+ 	end
+ end
+ 
 	-- read models from map data
 	unpack_models()
 
 	cam=make_cam(64)
-	plyr=make_actor("plyr",{0,24,0},make_q(v_up,0.25))
+	plyr=make_actor("plyr",{0,24,0})
 end
 
 -->8
@@ -1137,8 +1174,7 @@ function unpack_models()
 	-- for all models
 	for m=1,unpack_int() do
 		local model,name,scale={},unpack_string(),unpack_int()
-		scale=32
-  
+  scale=8
 		-- vertices
 		model.v={}
 		for i=1,unpack_int() do
@@ -1171,13 +1207,16 @@ function unpack_models()
 			add(model.cp,v_dot(n,model.v[f.p0]))
 		end
 
-  
 		-- merge with existing model
 		all_models[name]=clone(model,all_models[name])
 	end
 end
 __gfx__
-1ca9b345000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+1ca9b345000700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000001dc70000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000012e770000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000013b670000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000249a70000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -1237,9 +1276,7 @@ __gfx__
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-105012e13141b1806069080888b7a908b7e6a6080808b8a787b7a9801030102050982878103010302098c738203020306008b778303030105088188740304050
-60772878403040603077c73820302060500818c8303030504087188780b8c9b89816e7080608f8099657c9b87716e708d9e81709960000000000000000000000
+205012e13141b1806069080888b7a908b7e6a6080808b8a787b7a9801030102050982878103010302098c738203020306008b778303030105088188740304050
+60772878403040603077c73820302060500818c8303030504087188780b8c9b89816e7080608f8099657c9b87716e708d9e817099640f1d10101108068083808
+68080808a7080a08a708380848f8d848873748876010301020302828f73030302050e728f7603060407048e8285030502010082828703070408008e8b7803080
+4060c7e8286099e82776e827b988f808e8d90888165688f800000000000000000000000000000000000000000000000000000000000000000000000000000000
