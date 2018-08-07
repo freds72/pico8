@@ -4,7 +4,7 @@ __lua__
 
 -- globals
 local time_t=0
-local actors,light,cam,plyr={},{0,-1,0}
+local actors,parts,light,cam,plyr={},{},{0,1,0}
 
 -- register json context here
 local _tok={
@@ -157,6 +157,9 @@ end
 
 function lerp(a,b,t)
 	return a*(1-t)+b*t
+end
+function lerparray(a,t)
+	return a[mid(flr((#a-1)*t+0.5),1,#a)]
 end
 function rndlerp(a,b)
 	return lerp(b,a,1-rnd())
@@ -390,7 +393,7 @@ function draw_model(model,m,x,y,z,w)
 		local f,n=model.f[i],model.n[i]
 		-- viz calculation
 		local d=n[1]*cam_pos[1]+n[2]*cam_pos[2]+n[2]*cam_pos[2]
-		if d<=model.cp[i] then
+		if d>=model.cp[i] then
 			-- project vertices
 			for _,vi in pairs(f.vi) do
 				if not p[vi] then
@@ -429,13 +432,20 @@ end
 
 _g.update_plyr=function(self)
 
+	if self.smoke_t<time_t then
+		self.smoke_t=time_t+rnd(self.smoke_dly)
+		local v=m_up(self.m)
+		v_scale(v,-0.4)
+		make_part("spark",self.pos,v)
+	end
+
  -- damping
 	self.angle*=0.8
 	
 	return true
 end
 
-local all_actors=json_parse'{"plyr":{"model":"vship","update":"update_plyr","angle":0}}'
+local all_actors=json_parse'{"plyr":{"model":"vship","update":"update_plyr","angle":0,"smoke_dly":12,"smoke_t":0}}'
 
 -- maths
 function sqr_dist(a,b)
@@ -553,6 +563,45 @@ function make_cam(f)
 	return c
 end
 
+-- particles & bullets
+_g.update_part=function(self)
+	if(self.t<time_t or self.r<0) return false
+	local p=self.pos
+	v_add(p,self.v)
+	-- gravity
+	v_add(p,{0,-0.01,0})
+	-- ground collision
+	local h=get_altitude(p[1],p[3])
+	if p[2]<h then
+		p[2]=h
+		-- todo: proper reflection vector
+		v_scale(self.v,0.8)
+	end
+	
+	-- force damping
+	v_scale(self.v,self.dv)
+	
+	self.r+=self.dr
+	return true
+end
+
+_g.draw_part=function(self,x,y,z,w)
+	-- simple part
+	if self.kind==0 then
+		local hw=self.r*w
+		rectfill(x-hw,y-hw,x+hw,y+hw,self.c)
+	end
+end
+
+all_parts=json_parse'{"spark":{"rnd":{"r":[0.2,0.4],"c":[1,15],"dly":[24,32]},"dv":0.9,"dr":0,"kind":0,"update":"update_part"}}'
+
+function make_part(part,p,v)
+	local pt=add(parts,clone(all_parts[part],{pos=v_clone(p),v=v_clone(v),draw=_g.draw_part,c=c}))
+	pt.t,pt.update=time_t+pt.dly,pt.update or _g.update_part
+	if(pt.sfx) sfx_v(pt.sfx,p)
+	return pt
+end
+
 -- map helpers
 local qmap,hmap={},{}
 function get_qcode(i,j)
@@ -599,9 +648,13 @@ function draw_ground(self)
 		local dw1=xscale*w1
 		local x0,x1=v0[1]-4*dw0,v1[1]-4*dw1
 		local x2,x3=v1[1]-3*dw1,v0[1]-3*dw0
+		-- depth dither
+		if j==2 then
+			fillp(lerparray(dither_pat,1-dz/zscale)+0.1)
+		end
 		-- grid width extent
 		for i=-4,4 do
-			local ni=nx+i	
+			local ni=nx+i
 		 local q=get_qcode(ni,nj)
 			local h0,h1,h2,h3=get_height(ni,nj),get_height(ni,nj+1),get_height(ni+1,nj+1),get_height(ni+1,nj)
 			local y0=v0[2]-hscale*w0*h0
@@ -619,8 +672,8 @@ function draw_ground(self)
 				trifill(x0,y0,x3,y3,x1,y1,c0)		
 			elseif q==4 then
 				local c3,c1=get_color(h3,true),get_color(h1)
-				trifill(x0,y0,x3,y3,x2,y2,c3)		
-				trifill(x0,y0,x2,y2,x1,y1,c1)		
+				trifill(x0,y0,x3,y3,x2,y2,c3)
+				trifill(x0,y0,x2,y2,x1,y1,c1)
 			elseif q==8 then
 				local c0,c2=get_color(h0,true),get_color(h2)
 				trifill(x0,y0,x3,y3,x1,y1,c0)
@@ -630,13 +683,15 @@ function draw_ground(self)
 				trifill(x1,y1,x3,y3,x0,y0,c)		
 				trifill(x1,y1,x3,y3,x2,y2,c)		
 			end
-
+			if(fp) fillp()
+			
 			x0,x1=x3,x2
 			x2+=dw1
 			x3+=dw0
 		end
-		v0,w0,dw0=v1,w1,dw1		
+		v0,w0,dw0=v1,w1,dw1
 		nj+=1
+		fillp()
 	end
 end
 
@@ -674,6 +729,7 @@ function _update60()
 	end
 	
 	zbuf_filter(actors)
+	zbuf_filter(parts)
 end
 
 function _draw()
@@ -691,7 +747,7 @@ function _draw()
 		end
 	 pset(64,64,8)
 	else
-		draw_ground()		
+		draw_ground()
 		zbuf_draw()
 	end
 
@@ -798,7 +854,7 @@ function _init()
 	unpack_models()
 
 	cam=make_cam(64)
-	plyr=make_actor("plyr",{0,24,0})
+	plyr=make_actor("plyr",{0,24,0},make_q(v_up,0.25))
 end
 
 -->8
@@ -1081,6 +1137,7 @@ function unpack_models()
 	-- for all models
 	for m=1,unpack_int() do
 		local model,name,scale={},unpack_string(),unpack_int()
+		scale=32
   
 		-- vertices
 		model.v={}
