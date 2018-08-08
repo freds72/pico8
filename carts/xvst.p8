@@ -128,7 +128,7 @@ function sfx_v(s,pos)
 	local d=sqr_dist(cam.pos,pos)
 	-- set volume
 	-- todo: move sqrt into volume array
-	local vol=lerparray(all_vol,sqrt(d)/16)
+	local vol=lerparray(all_vol,sqrt(d)/64)
 	local src,dst=0x3200+68*s,0x3200+68*63
 	-- 2 notes/loop (eg 4 bytes)
 	-- 32 notes total
@@ -234,12 +234,10 @@ end
 
 function sqr_dist(a,b)
 	local dx,dy,dz=b[1]-a[1],b[2]-a[2],b[3]-a[3]
-	-- avoid overflow
-	if abs(dx)>128 or abs(dy)>128 or abs(dz)>128 then
-		return 32000
-	end
-
-	return dx*dx+dy*dy+dz*dz
+ 
+	local d=dx*dx+dy*dy+dz*dz
+	-- overflow?
+	return d<0 and 32000 or d
 end
 
 function make_rnd_v(scale)
@@ -841,7 +839,7 @@ _g.update_turret=function(self,i,j)
 	_g.update_ground_actor(self,i,j)
 
 	if(not plyr) return true
-	
+		
 	local dx,dy=self.pos[1]-plyr.pos[1],self.pos[3]-plyr.pos[3]
 	local angle=atan2(dx,dy)-0.25
 	-- rotation matrix
@@ -851,7 +849,7 @@ _g.update_turret=function(self,i,j)
 	
 	-- delay fire for new turret
 	if time_t-self.local_t>45 then
-		self.pause_t=time_t+rnd(90)
+		self.pause_t=time_t+60+rnd(60)
 	end
 	
 	-- fly low or die!
@@ -993,7 +991,7 @@ end
 
 function blt_obj_col(self,objs)
 	for _,a in pairs(objs) do
-		local r=a.model and a.model.r or nil
+		local r=a.model and a.model.r
 		if r and band(a.side,self.side)==0 then
 			r*=r
 			local hit=false
@@ -1104,6 +1102,7 @@ _g.draw_part=function(self,x,y,z,w)
 	 circ(x,y,self.r*w,self.c[flr(3-3*mid(self.r/0.4,0,1))+1])
 	-- 3d line particles
 	elseif self.kind==8 then
+	 --[[
 		color(self.c)
 		if w>1 then
  		for _,v in pairs(self.e) do
@@ -1115,6 +1114,7 @@ _g.draw_part=function(self,x,y,z,w)
   		end
  		end
  	end
+ 	]]
 	end
 end
 
@@ -1703,7 +1703,7 @@ end
 
 -->8
 -- radio messages
-local all_msgs=json_parse'{"attack1":{"spr":12,"title":"ackbar","txt":"clear tie squadrons","dly":300},"ground1":{"spr":12,"title":"ackbar","txt":"destroy shield\ngenerators","dly":300},"ground2":{"spr":12,"title":"ackbar","txt":"bomb vent","dly":300},"victory1":{"spr":104,"title":"han solo","txt":"get out of here son.\nquick!","dly":300},"victory2":{"spr":12,"title":"ackbar","txt":"victory!","dly":300},"victory3":{"spr":8,"title":"leia","txt":"the rebellion\n thanks you.\nget back home!","dly":300},"help":{"spr":10,"rnd":{"title":["red leader","alpha","delta wing"]},"txt":"help!","dly":300},"vador_out":{"spr":106,"title":"d.vador","txt":"i\'ll be back...","dly":300},"low_hp":{"spr":76,"title":"r2d2","txt":"..--.-..","dly":120,"sfx":5,"rnd":{"repeat_dly":[600,900]}}}'
+local all_msgs=json_parse'{"attack1":{"spr":12,"title":"ackbar","txt":"commence attack\non the deathstar\nclear tie squadrons","dly":300},"ground1":{"spr":12,"title":"ackbar","txt":"destroy shield\ngenerators","dly":300},"ground2":{"spr":12,"title":"ackbar","txt":"shield is down!\nattack reactor vent","dly":300},"getout":{"spr":104,"title":"han solo","txt":"get out kid\nnow!","dly":300},"victory":{"spr":8,"title":"leia","txt":"the rebellion\n thanks you.\nget back home!","dly":300},"help":{"spr":10,"rnd":{"title":["red leader","alpha","delta wing"],"txt":["help!","cover me!","on my six"]},"dly":300},"vador_out":{"spr":106,"title":"d.vador","txt":"i\\'ll be back...","dly":300},"low_hp":{"spr":76,"title":"r2d2","txt":"..--.-..","dly":120,"sfx":5,"rnd":{"repeat_dly":[600,900]}}}'
 local low_hp_t,cur_msg=0
 
 function make_msg(msg)
@@ -1823,13 +1823,14 @@ _g.victory_mission=function()
 	local x,y,z=plyr.pos[1],plyr.pos[2],plyr.pos[3]
 	local npc,wing=make_actor("vador",{x,y+32,z}),make_actor("mfalcon",{x,y+24,z})
 	-- track dark vador
-	wing.target=npc
+	-- dark vador tracks player!
+	wing.target,npc.target=npc,plyr
 	-- mark rendez-vous point
 	make_actor("waypoint",{x,y+30,z})
 	return {npc}
 end
 
-local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","music":11,"dly":90,"min_kills":15,"fatigue":[48,40,32,24,12]},{"msg":"ground1","music":11,"init":"ingress_mission"},{"init":"create_ground_group","actors":[{"name":"generator","pos":[256,0,256]},{"name":"generator","pos":[-256,0,256]},{"name":"generator","pos":[256,0,-256]},{"name":"generator","pos":[-256,0,-256]}],"min_kills":4},{"msg":"ground2","init":"create_ground_group","actors":[{"name":"vent","pos":[0,-6,96]}],"min_kills":1},{"msg":"victory1","init":"egress_mission","dly":90},{"init":"victory_mission","music":11,"no_skip":true,"min_kills":1,"dly":30},{"msg":"vador_out","dly":300},{"msg":"victory3","music":14,"dly":720}]'
+local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","music":11,"dly":90,"min_kills":15,"fatigue":[48,40,32,24,12]},{"msg":"ground1","music":11,"init":"ingress_mission"},{"init":"create_ground_group","actors":[{"name":"generator","pos":[256,0,256]},{"name":"generator","pos":[-256,0,256]},{"name":"generator","pos":[256,0,-256]},{"name":"generator","pos":[-256,0,-256]}],"min_kills":4},{"msg":"ground2","init":"create_ground_group","actors":[{"name":"vent","pos":[0,-6,96]}],"min_kills":1},{"msg":"getout","init":"egress_mission","dly":90},{"init":"victory_mission","music":11,"no_skip":true,"min_kills":1,"dly":30},{"msg":"vador_out","dly":300},{"msg":"victory","music":14,"dly":720}]'
  
 function next_mission_async()
 	mission_score=0
