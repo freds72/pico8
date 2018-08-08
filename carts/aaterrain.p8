@@ -571,8 +571,8 @@ end
 -- camera
 function make_cam(f)
 	local c={
-		pos={0,0,0},
-		lookat={0,0,0},
+		pos={0,24,0},
+		lookat={0,0,-8*8},
 		offset={0,0,6*ground_scale},
 		focal=f,
 		track=function(self,pos)
@@ -632,17 +632,15 @@ end
 -- map helpers
 local qmap,hmap={},{}
 function safe_index(i,j)
-	return band(i,0x7f)+128*band(j,0x7f)
+	return bor(band(i,0x7f),shl(band(j,0x7f),7))
 end
-function get_qcode(i,j)
-	return band(0xf,qmap[safe_index(i,j)])
+function get_raw_qcode(i,j)
+	return qmap[safe_index(i,j)]
 end
 function get_height(i,j)
-	return hmap[safe_index(i,j)]
+	return shl(hmap[safe_index(i,j)],3)
 end
-
-function get_color(i,j)
-	local q=qmap[safe_index(i,j)]
+function get_color(q)
 	return shr(band(0xf0,q),4),shr(band(0xf00,q),8)
 end
 
@@ -674,15 +672,14 @@ function update_ground()
 end
 
 function draw_ground(self)
-	local imin,imax=-4,4
+	local imin,imax=-6,6
 	local cx,cz=cam.lookat[1],cam.lookat[3]
 	local dx,dz=cx%ground_scale,cz%ground_scale
 	-- cell coordinates
 	local nx,ny=flr(cx/ground_scale),flr(cz/ground_scale)
-	-- project anchor points
-	local p={}
- local j,sz,sw=j0,1,0
 	
+	-- project anchor points
+	local p={}	
 	-- grid depth extent
 	for j=-4,4 do
 	 -- compute grid points centered on lookat pos
@@ -709,14 +706,13 @@ function draw_ground(self)
 			fillp(lerparray(dither_pat,1-dz/ground_scale)+0.1)
 		end
 		-- grid width extent
-		for i=imin,imax do
-			local ni=nx+i
-		 local q=get_qcode(ni,nj)
-			local h0,h1,h2,h3=get_height(ni,nj),get_height(ni,nj+1),get_height(ni+1,nj+1),get_height(ni+1,nj)
-			local y0=v0[2]-hscale*w0*h0
-			local y1=v1[2]-hscale*w1*h1
-			local y2=v1[2]-hscale*w1*h2
-			local y3=v0[2]-hscale*w0*h3
+		local ni=nx+imin
+		local h0,h1=get_height(ni,nj),get_height(ni,nj+1)
+		local y0,y1=v0[2]-w0*h0,v1[2]-w1*h1
+		for i=imin,imax do		 
+		 local q=get_raw_qcode(ni,nj)
+			local h2,h3=get_height(ni+1,nj+1),get_height(ni+1,nj)
+			local y2,y3=v1[2]-w1*h2,v0[2]-w0*h3
 
    local fp=dither[i]
    if(fp) fillp(fp)
@@ -732,25 +728,18 @@ function draw_ground(self)
 				x2=lerp(x1,x2,t)
 			end
 		]]
-			local c0,c1=get_color(ni,nj)
-			if q==1 then
-				
-				trifill(x0,y0,x1,y1,x2,y2,c0)		
-				trifill(x0,y0,x3,y3,x2,y2,c1)		
-			elseif q==2 then
-				trifill(x3,y3,x2,y2,x1,y1,c0)		
-				trifill(x0,y0,x3,y3,x1,y1,c1)		
-			elseif q==4 then
-				trifill(x0,y0,x3,y3,x2,y2,c0)
-				trifill(x0,y0,x2,y2,x1,y1,c1)
-			elseif q==8 then
-				trifill(x0,y0,x3,y3,x1,y1,c0)
-				trifill(x3,y3,x2,y2,x1,y1,c1)
-			else
-				trifill(x1,y1,x3,y3,x0,y0,c0)
-				trifill(x1,y1,x3,y3,x2,y2,c1)
+		 -- out of screen tile?
+		 if x3>0 then
+ 			local c_hi,c_lo=get_color(q)
+ 			if band(q,0xf)==1 or band(q,0xf)==4 then
+ 				trifill(x0,y0,x2,y2,x1,y1,c_hi)		
+ 				trifill(x0,y0,x2,y2,x3,y3,c_lo)
+ 			else
+ 				trifill(x1,y1,x3,y3,x0,y0,c_hi)
+ 				trifill(x1,y1,x3,y3,x2,y2,c_lo)		
+ 			end
 			end
-			
+					
 			-- any ground object?
 			local ground_actor=ground_actors[safe_index(ni,nj)]
 			if ground_actor then
@@ -758,9 +747,14 @@ function draw_ground(self)
 			end
 			if(fp) fillp()
 			
+			-- no need to go further, tile is not visible
+			if(x0>127) break
+			
 			x0,x1=x3,x2
+			y0,y1=y3,y2
 			x2+=dw1
 			x3+=dw0
+			ni+=1
 		end
 		
 		v0,w0,dw0=v1,w1,dw1
@@ -910,10 +904,15 @@ function _init()
   	local code=q_codes[q+1]
   	for k=1,4 do
   		q=code[k]
+  		-- hi/lo colors
   		if q==0 then
   			q=bor(q,bor(1*16,1*256))
   		elseif q==5 then
-  			q=bor(q,bor(8*16,4*256))
+  			q=bor(q,bor(4*16,4*256))
+  		elseif q==1 or q==8 then
+	  		q=bor(q,bor(4*16,1*256))  			
+  		elseif q==4 or q==2 then
+	  		q=bor(q,bor(1*16,4*256))  			
   		end
    	qmap[idx+idx_offsets[k]]=q
    	
