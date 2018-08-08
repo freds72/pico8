@@ -4,7 +4,10 @@ __lua__
 
 -- globals
 local time_t=0
-local actors,parts,light,cam,plyr={},{},{0,1,0}
+local actors,ground_actors,parts,light,cam,plyr,active_ground_actors={},{},{},{0,1,0}
+
+-- world units
+local ground_scale,hscale=8,8
 
 -- register json context here
 local _tok={
@@ -360,8 +363,9 @@ function m_inv(m)
 end
 -- inline matrix invert
 -- inc. position
-function m_inv_x_v(m,v)
-	local x,y,z=v[1]-m[13],v[2]-m[14],v[3]-m[15]
+function m_inv_x_v(m,v,p)
+	p=p or 1
+	local x,y,z=v[1]-p*m[13],v[2]-p*m[14],v[3]-p*m[15]
 	v[1],v[2],v[3]=m[1]*x+m[2]*y+m[3]*z,m[5]*x+m[6]*y+m[7]*z,m[9]*x+m[10]*y+m[11]*z
 end
 function m_set_pos(m,v)
@@ -386,6 +390,9 @@ function draw_model(model,m,x,y,z,w)
 	-- cam pos in object space
 	local cam_pos=v_clone(cam.pos)
 	m_inv_x_v(m,cam_pos)
+	-- light dir in object space
+	local l=v_clone(light)
+	m_inv_x_v(m,l,0)
 	
 	-- faces
 	local faces,p={},{}
@@ -423,7 +430,7 @@ function draw_model(model,m,x,y,z,w)
 		fillp(dither_pat[flr(cf)+1])
 		c=bor(color_hi[flr(c)+1],color_lo[flr(c)+1])
 		]]
-		local c=max(v_dot(model.n[f.ni],light))*5
+		local c=max(v_dot(model.n[f.ni],l))*5
   c=sget(c+8,model.c)
 		local p0=p[f.vi[1]]
 	 	for i=2,#f.vi-1 do
@@ -523,7 +530,7 @@ end
 
 function draw_actor(self,x,y,z,w)
 	-- distance culling
-	if w>0.5 then
+	if true then --w>0.5 then
 		draw_model(self.model,self.m,x,y,z,w)
 	else
 		circfill(x,y,1,self.model.c)
@@ -533,11 +540,10 @@ end
 function make_actor(src,p)
 	-- instance
 	local a=clone(all_actors[src],{
-		pos=v_clone(p)
+		pos=v_clone(p),
+		q=q or make_q(v_up,0)
 	})
 	a.model,a.draw=all_models[a.model],a.draw or draw_actor
-	-- any angle defined in instance?
-	a.q=make_q(v_up,a.angle or 0)
 	-- init orientation
 	local m=m_from_q(a.q)
 	m_set_pos(m,p)
@@ -545,14 +551,30 @@ function make_actor(src,p)
 	return add(actors,a)
 end
 
+function make_ground_actor(src,i,j)
+	local x,z=i*ground_scale,j*ground_scale
+	local a=clone(all_actors[src],{
+		pos={x,get_altitude(x,z),z},
+		draw=draw_actor
+	})
+	a.model=all_models[a.model]
+	-- any angle defined in instance?
+	local q=make_q(v_up,a.angle or 0)
+	local m=m_from_q(q)
+	m_set_pos(m,a.pos)
+	a.m=m
+	-- register
+	ground_actors[i+j*128]=a
+	return a
+end
+
 -- camera
-local xscale,zscale,hscale=8,8,8
 function make_cam(f)
 	local c={
 		pos={0,0,0},
 		lookat={0,0,0},
-		offset={0,0,6*zscale},
-		focal=f,	
+		offset={0,0,6*ground_scale},
+		focal=f,
 		track=function(self,pos)
 			self.pos=v_clone(pos)
 			self.lookat=v_clone(pos)
@@ -609,31 +631,54 @@ end
 
 -- map helpers
 local qmap,hmap={},{}
+function safe_index(i,j)
+	return band(i,0x7f)+128*band(j,0x7f)
+end
 function get_qcode(i,j)
-	return qmap[band(i,0x7f)+128*band(j,0x7f)]
+	return band(0xf,qmap[safe_index(i,j)])
 end
 function get_height(i,j)
-	return hmap[band(i,0x7f)+128*band(j,0x7f)]
+	return hmap[safe_index(i,j)]
 end
 
-function get_color(h,major)
-	return sget(7*h,0)
+function get_color(i,j)
+	local q=qmap[safe_index(i,j)]
+	return shr(band(0xf0,q),4),shr(band(0xf00,q),8)
 end
 
 function get_altitude(x,z)
 	-- cell
-	local dx,dz=(band(x,0x7f)%xscale)/xscale,(band(z,0x7f)%zscale/zscale)
-	local i,j=flr(x/xscale),flr(z/zscale)
+	local dx,dz=(band(x,0x7f)%ground_scale)/ground_scale,(band(z,0x7f)%ground_scale/ground_scale)
+	local i,j=flr(x/ground_scale),flr(z/ground_scale)
 	local h0,h1=lerp(get_height(i,j),get_height(i,j+1),1-dz),lerp(get_height(i+1,j),get_height(i+1,j+1),1-dz)
 	return lerp(h0,h1,1-dx)
 end
 
+function update_ground()
+	active_ground_actors={}
+	
+	local pos=plyr and plyr.pos or cam.lookat
+	
+	local i0,j0=flr(pos[1]/ground_scale),flr(pos[3]/ground_scale)
+	for i=i0-4,i0+4 do
+		local cx=band(i,0x7f)
+		for j=j0-4,j0+4 do
+			local cy=band(j,0x7f)
+			local t=ground_actors[cx+cy*128]
+			if t and not t.disabled then
+				t:update(i,j)
+				add(active_ground_actors,t)
+			end
+		end
+	end
+end
+
 function draw_ground(self)
-	local imin,imax=-6,6
+	local imin,imax=-4,4
 	local cx,cz=cam.lookat[1],cam.lookat[3]
-	local dx,dz=cx%xscale,cz%zscale
+	local dx,dz=cx%ground_scale,cz%ground_scale
 	-- cell coordinates
-	local nx,ny=flr(cx/xscale),flr(cz/zscale)
+	local nx,ny=flr(cx/ground_scale),flr(cz/ground_scale)
 	-- project anchor points
 	local p={}
  local j,sz,sw=j0,1,0
@@ -641,32 +686,30 @@ function draw_ground(self)
 	-- grid depth extent
 	for j=-4,4 do
 	 -- compute grid points centered on lookat pos
-		local x,y,z,w=cam:project(-dx+cx+imin*xscale,0,-dz+cz+j*zscale)
+		local x,y,z,w=cam:project(-dx+cx+imin*ground_scale,0,-dz+cz+j*ground_scale)
 		add(p,{x,y,z,w,ny+j})
 	end
 
  local dither={
- 	[imin]=lerparray(dither_pat,1-dx/xscale),
- 	[imax]=lerparray(dither_pat,dx/xscale),
+ 	[imin]=lerparray(dither_pat,1-dx/ground_scale),
+ 	[imax]=lerparray(dither_pat,dx/ground_scale),
  }
  
 	local v0=p[1]
-	v0={v0[1],v0[2],v0[3],v0[4],v0[5]}
 	local w0,nj=v0[4],v0[5]
-	local dw0=xscale*w0
+	local dw0=ground_scale*w0
 	for j=2,#p do
 		local v1=p[j]
-	 v1={v1[1],v1[2],v1[3],v1[4],v1[5]}
 		local w1=v1[4]
-		local dw1=xscale*w1
+		local dw1=ground_scale*w1
 		local x0,x1=v0[1],v1[1]
 		local x2,x3=v1[1]+dw1,v0[1]+dw0
 		-- depth dither
 		if j==2 then
-			fillp(lerparray(dither_pat,1-dz/zscale)+0.1)
+			fillp(lerparray(dither_pat,1-dz/ground_scale)+0.1)
 		end
 		-- grid width extent
-		for i=imin,imax do 		
+		for i=imin,imax do
 			local ni=nx+i
 		 local q=get_qcode(ni,nj)
 			local h0,h1,h2,h3=get_height(ni,nj),get_height(ni,nj+1),get_height(ni+1,nj+1),get_height(ni+1,nj)
@@ -676,40 +719,45 @@ function draw_ground(self)
 			local y3=v0[2]-hscale*w0*h3
 
    local fp=dither[i]
-   --if(fp) fillp(fp)
+   if(fp) fillp(fp)
    
+   	--[[
 			if i==imin then
-			 local t=dx/xscale
+			 local t=dx/ground_scale
 				x0=lerp(x0,x3,t)
 				x1=lerp(x1,x2,t)
 			elseif i==imax then
-			 local t=dx/xscale
+			 local t=dx/ground_scale
 				x3=lerp(x0,x3,t)
 				x2=lerp(x1,x2,t)
 			end
-						
+		]]
+			local c0,c1=get_color(ni,nj)
 			if q==1 then
-				local c2,c3=get_color(h1,true),get_color(h3)
-				trifill(x0,y0,x1,y1,x2,y2,c2)		
-				trifill(x0,y0,x3,y3,x2,y2,c3)		
+				
+				trifill(x0,y0,x1,y1,x2,y2,c0)		
+				trifill(x0,y0,x3,y3,x2,y2,c1)		
 			elseif q==2 then
-				local c2,c0=get_color(h2,true),get_color(h0)
-				trifill(x3,y3,x2,y2,x1,y1,c2)		
-				trifill(x0,y0,x3,y3,x1,y1,c0)		
+				trifill(x3,y3,x2,y2,x1,y1,c0)		
+				trifill(x0,y0,x3,y3,x1,y1,c1)		
 			elseif q==4 then
-				local c3,c1=get_color(h3,true),get_color(h1)
-				trifill(x0,y0,x3,y3,x2,y2,c3)
+				trifill(x0,y0,x3,y3,x2,y2,c0)
 				trifill(x0,y0,x2,y2,x1,y1,c1)
 			elseif q==8 then
-				local c0,c2=get_color(h0,true),get_color(h2)
 				trifill(x0,y0,x3,y3,x1,y1,c0)
-				trifill(x3,y3,x2,y2,x1,y1,c2)
+				trifill(x3,y3,x2,y2,x1,y1,c1)
 			else
-				local c=get_color(h0,q==5)
-				trifill(x1,y1,x3,y3,x0,y0,c)		
-				trifill(x1,y1,x3,y3,x2,y2,c)		
+				trifill(x1,y1,x3,y3,x0,y0,c0)
+				trifill(x1,y1,x3,y3,x2,y2,c1)
+			end
+			
+			-- any ground object?
+			local ground_actor=ground_actors[safe_index(ni,nj)]
+			if ground_actor then
+				ground_actor:draw(x0,y0,0,w0)
 			end
 			if(fp) fillp()
+			
 			x0,x1=x3,x2
 			x2+=dw1
 			x3+=dw0
@@ -736,11 +784,11 @@ function control_plyr()
 	local m=m_from_q(plyr.q)
 	-- update pos
 	v_add(plyr.pos,m_fwd(m),2*plyr.acc)
-	m_set_pos(m,plyr.pos)	
+	m_set_pos(m,plyr.pos)
 	plyr.m=m
 end
 
-function _update()
+function _update60()
 	time_t+=1
 
 	zbuf_clear()
@@ -754,6 +802,8 @@ function _update()
 		end
 	end
 	
+	update_ground()
+	
 	zbuf_filter(actors)
 	zbuf_filter(parts)
 end
@@ -764,8 +814,8 @@ function _draw()
 	-- draw map
 	if btn(5) then
 		local cx,cz=cam.lookat[1],cam.lookat[3]
-		local dx,dz=cx%xscale,cz%zscale
-		local nx,ny=flr(cx/xscale),flr(cz/zscale)		
+		local dx,dz=cx%ground_scale,cz%ground_scale
+		local nx,ny=flr(cx/ground_scale),flr(cz/ground_scale)		
 		for j=-16,16 do
 		 for i=-16,16 do
 		 	pset(64+i,64+j,sget(7*get_height(nx+i,ny+j),0))
@@ -855,11 +905,18 @@ function _init()
  -- convert into marching quadrants
 	for j=0,63 do
   for i=0,63 do
-   local q=marching_code(i,j,0.5)
+   local q=marching_code(i,j,0.2)
    local idx=2*i+2*128*j
   	local code=q_codes[q+1]
   	for k=1,4 do
-   	qmap[idx+idx_offsets[k]]=code[k]
+  		q=code[k]
+  		if q==0 then
+  			q=bor(q,bor(1*16,1*256))
+  		elseif q==5 then
+  			q=bor(q,bor(8*16,4*256))
+  		end
+   	qmap[idx+idx_offsets[k]]=q
+   	
   	 local h
   	 if k==1 then
   	 	h=get_noise(i,j)
@@ -880,14 +937,13 @@ function _init()
 	for j=0,63 do
   for i=0,63 do
 			if max_tree>0 and is_solid(i,j,0.7)==1 then
-				local x,z=(i+0.5)*xscale,(j+0.5)*zscale
-				make_actor("tree",{x,get_altitude(x,z),z})
+				make_ground_actor("tree",2*i,2*j)
 				max_tree-=1
 			end
  	end
  end
  
-	-- read models from map data
+	-- read models from gfx/map data
 	unpack_models()
 
 	cam=make_cam(64)
