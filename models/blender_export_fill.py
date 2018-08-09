@@ -58,6 +58,8 @@ for f in bm.faces:
     # center point
     v = f.calc_center_median_weighted()
     s = s + "{}{}{}".format(pack_float(v.x), pack_float(v.z), pack_float(v.y))
+    # + material id
+    s = s + "{:02x}".format(f.material_index)
 
 #normals
 s = s + "{:02x}".format(len(obdata.polygons))

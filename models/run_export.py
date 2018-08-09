@@ -13,14 +13,15 @@ def call(args):
     #
     return exitcode, out, err
 
-file_list = ['deathstar','junk2','tie','xwing','ywing','title','turret','trench1','vent','mfalcon','generator','tiex1']
+# file_list = ['deathstar','junk2','tie','xwing','ywing','title','turret','trench1','vent','mfalcon','generator','tiex1']
+file_list = ['vship','vtree','a-10']
 s = "{:02x}".format(len(file_list))
 for blend_file in file_list:
     print("Exporting: {}.blend".format(blend_file))
     fd, path = tempfile.mkstemp()
     try:
         os.close(fd)
-        exitcode, out, err = call([os.path.join(blender_dir,"blender.exe"),os.path.join(local_dir,blend_file + ".blend"),"--background","--python",os.path.join(local_dir,"blender_export.py"),"--","--out",path])
+        exitcode, out, err = call([os.path.join(blender_dir,"blender.exe"),os.path.join(local_dir,blend_file + ".blend"),"--background","--python",os.path.join(local_dir,"blender_export_fill.py"),"--","--out",path])
         if err:
             raise Exception('Unable to loadt: {}. Exception: {}'.format(blend_file,err))
         # print("exit: {} \n out:{}\n err: {}\n".format(exitcode,out,err))
