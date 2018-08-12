@@ -1,13 +1,14 @@
 pico-8 cartridge // http://www.pico-8.com
 version 16
 __lua__
-
 -- globals
 local time_t=0
 local actors,ground_actors,parts,light,cam,plyr,active_ground_actors={},{},{},{0,1,0}
 
 -- world units
-local ground_scale,hscale=16,8
+local ground_scale,hscale=16,4
+
+local good_side,bad_side,any_side,no_side=0x1,0x2,0x0,0x3
 
 -- register json context here
 local _tok={
@@ -15,6 +16,9 @@ local _tok={
  ['false']=false}
 function nop() return true end
 local _g={
+	good_side=good_side,
+	bad_side=bad_side,
+	any_side=any_side,
 	nop=nop}
 
 -- json parser
@@ -114,7 +118,7 @@ function zbuf_sort()
 	local ci,cj=flr(cam.lookat[1]/ground_scale),flr(cam.lookat[3]/ground_scale)
 	for _,d in pairs(drawables) do
 		-- find cell location
-		local di,dj=flr(d.pos[1]/ground_scale),flr(d.pos[3]/ground_scale)
+		local di,dj=flr(shr(d.pos[1],4)),flr(shr(d.pos[3],4))
 		if abs(di-ci)<6 and abs(dj-cj)<6 then
 			-- safe index
 			dj=band(dj,0x7f)			
@@ -381,7 +385,7 @@ function m_up(m)
 end
 
 -- models & rendering
-local all_models=json_parse'{"vship":{"c":3},"tree":{"c":3}}'
+local all_models=json_parse'{"vship":{"c":3},"tree":{"c":3,"r":4},"a10":{"gauss_wp":{"pos":[0,0,-3],"part":"gauss_blt","dly":8,"dmg":1}}}'
 local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]'
 local color_lo={1,1,13,6,7}
 local color_hi={0x11,0xd0,0x60,0x70,0x70}
@@ -400,7 +404,7 @@ function draw_model(model,m)
 		local f,n=model.f[i],model.n[i]
 		-- viz calculation
 		local d=n[1]*cam_pos[1]+n[2]*cam_pos[2]+n[3]*cam_pos[3]
-		if d>=model.cp[i] then
+		if true then --if d>=model.cp[i] then
 			-- project vertices
 			for _,vi in pairs(f.vi) do
 				if not p[vi] then
@@ -438,31 +442,43 @@ _g.update_plyr=function(self)
 
 	if self.smoke_t<time_t then
 		self.smoke_t=time_t+rnd(self.smoke_dly)
-		local v=m_up(self.m)
+		local v=m_fwd(self.m)
 		v_scale(v,-1)
-		make_part("spark",self.pos,v)
+		--make_part("smoke",self.pos,v)
 	end
 
  -- damping
 	self.roll*=0.8
 	self.turn*=0.9
-	self.turn_spring*=0.85
-	self.pitch*=0.85
+	self.turn_spring*=0.95
+	self.pitch*=0.91
 	
 	return true
 end
 
-local all_actors=json_parse'{"plyr":{"model":"a10","pitch":0,"roll":0,"turn":0,"turn_spring":0,"update":"update_plyr","angle":0.25,"smoke_dly":12,"smoke_t":0,"acc":0.4},"tree":{"model":"tree","update":"nop","rnd":{"angle":[0,1]}}}'
+_g.die_actor=function(self)
+	make_part("blast",self.pos)
+	self.disabled=true
+	del(actors,self)
+end
+
+_g.hit_npc=function(self,dmg)
+	-- avoid reentrancy
+	if(self.disabled) return
+	self.hp-=dmg
+	if self.hp<=0 then
+		self:die()
+	end
+end
+
+local all_actors=json_parse'{"plyr":{"model":"a10","fire_t":0,"pitch":0,"roll":0,"turn":0,"turn_spring":0,"update":"update_plyr","angle":0.25,"smoke_dly":12,"smoke_t":0,"acc":0.8},"tree":{"model":"tree","hp":4,"update":"nop","hit":"hit_npc","die":"die_actor","rnd":{"angle":[0,1]}}}'
 
 -- maths
 function sqr_dist(a,b)
 	local dx,dy,dz=b[1]-a[1],b[2]-a[2],b[3]-a[3]
-	-- avoid overflow
-	if abs(dx)>128 or abs(dy)>128 or abs(dz)>128 then
-		return 32000
-	end
 
-	return dx*dx+dy*dy+dz*dz
+	dx=dx*dx+dy*dy+dz*dz
+	return dx<0 and 32000 or dx
 end
 
 function make_v(a,b)
@@ -572,8 +588,16 @@ function make_cam(f)
 			v_add(self.pos,self.offset)
 		end,
 		project=function(self,x,y,z)
+		 local v={x,y,z}
+		 v_add(v,self.lookat,-1)
+   local angle=max(-plyr.pitch/64)
+	  local c,s=cos(angle),-sin(angle)
+			z,y=c*v[3]+s*v[2],-s*v[3]+c*v[2]
+			y+=self.lookat[2]  	
+			z+=self.lookat[3]  	
+
   	local xe,ye,ze=x-self.pos[1],y-self.pos[2],z-self.pos[3]
-  	
+
   	local w=-self.focal/ze
   	return 64+xe*w,64-ye*w,ze,w
 		end
@@ -605,19 +629,107 @@ end
 
 _g.draw_part=function(self)
 	local x,y,z,w=cam:project(self.pos[1],self.pos[2],self.pos[3])
+	-- behind camera
+	if(z>=0) return
+	
 	-- simple part
 	if self.kind==0 then
-		local hw=self.r*w
-		rectfill(x-hw,y-hw,x+hw,y+hw,self.c)
+		-- smoke
+		fillp(0xa5a5.1)
+		circfill(x,y,self.r*w,self.c)
+		fillp()
+	elseif self.kind==1 then
+	 -- bullet
+		local v=v_clone(self.pos)
+		v_add(v,self.u,self.acc)
+		local x1,y1,z1,w1=cam:project(v[1],v[2],v[3])
+		if(z1<0) line(x,y,x1,y1,self.c)
+	elseif self.kind==2 then
+	 -- flash
+		circfill(x,y,self.r*w,self.c)
 	end
 end
 
-all_parts=json_parse'{"spark":{"rnd":{"r":[0.2,0.4],"c":[1,15],"dly":[24,32]},"dv":0.9,"dr":0,"kind":0,"update":"update_part"}}'
+_g.die_blt=function(self)
+	make_part(self.die_part or "flash",self.pos,v_up)
+	-- to be removed from set
+	return false
+end
+
+function blt_obj_col(self,objs)
+	for _,a in pairs(objs) do
+		local r=a.model and a.model.r
+		if r and band(a.side,self.side)==0 then
+			r*=r
+			local hit=false
+			-- edge case: base or tip inside sphere
+			if sqr_dist(self.pos,a.pos)<r or sqr_dist(self.prev_pos,a.pos)<r then
+				hit=true
+			else
+				-- point to sphere
+				local ps=make_v(self.pos,a.pos)
+				-- projection on ray
+				local t=v_dot(self.u,ps)
+				if t>=0 and t<=self.acc then
+					-- distance to sphere?
+					local p=v_clone(self.u)
+					v_scale(p,t)
+					hit=sqr_dist(p,a.pos)<r
+				end	
+			end
+			if hit then
+				make_part("flash",self.pos,v_up)
+				a:hit(self.dmg,self.actor)
+				return true
+			end	
+		end
+	end
+	return false
+end
+
+_g.update_blt=function(self)
+	if(self.t<time_t) return false
+	
+	-- ground?
+	local h=get_altitude(self.pos[1],self.pos[3]) 
+ if self.pos[2]<=h then
+		return self:die()
+	end
+
+	self.prev_pos=v_clone(self.pos)
+	v_add(self.pos,self.u,self.acc)
+
+	-- collision?
+	if blt_obj_col(self,actors) or blt_obj_col(self,ground_actors) then
+		return self:die()
+	end
+	
+	return true
+end
+
+
+all_parts=json_parse'{"smoke":{"rnd":{"r":[2,3],"c":[5,6,7],"dly":[24,32]},"dv":0.9,"dr":-0.05,"kind":0,"update":"update_part"},"gauss_blt":{"rnd":{"c":[9,10,9],"dly":[45,58],"acc":[7,7.2]},"dv":0.9,"dr":0,"kind":1,"update":"update_blt","draw":"draw_part","die":"die_blt"},"flash":{"c":7,"rnd":{"r":[1,2],"dly":[4,8]},"dv":1,"dr":-0.05,"kind":2,"update":"update_part"}}'
 
 function make_part(part,p,v)
 	local pt=add(parts,clone(all_parts[part],{pos=v_clone(p),v=v_clone(v),draw=_g.draw_part,c=c}))
 	pt.t,pt.update=time_t+pt.dly,pt.update or _g.update_part
 	if(pt.sfx) sfx_v(pt.sfx,p)
+	return pt
+end
+
+function make_blt(self,wp)
+	-- rebase gun anchor
+	local p=v_clone(wp.pos)
+	m_x_v(self.m,p)
+
+	local pt=add(parts,clone(all_parts[wp.part],{
+			actor=self, --blt owner
+			pos=p,
+			u=m_fwd(self.m),
+			side=self.side,
+			dmg=wp.dmg}))
+	pt.t=time_t+pt.dly
+	if(wp.sfx) sfx(wp.sfx)
 	return pt
 end
 
@@ -630,7 +742,8 @@ function get_raw_qcode(i,j)
 	return qmap[safe_index(i,j)]
 end
 function get_height(i,j)
-	return shl(hmap[safe_index(i,j)],3)
+	-- already scaled
+	return shl(hmap[safe_index(i,j)],4)
 end
 function get_color(q)
 	return shr(band(0xf0,q),4),shr(band(0xf00,q),8)
@@ -638,8 +751,8 @@ end
 
 function get_altitude(x,z)
 	-- cell
-	local dx,dz=(band(x,0x7f)%ground_scale)/ground_scale,(band(z,0x7f)%ground_scale/ground_scale)
-	local i,j=flr(x/ground_scale),flr(z/ground_scale)
+	local dx,dz=shr(band(x,0x7f)%ground_scale,4),shr(band(z,0x7f)%ground_scale,4)
+	local i,j=flr(shr(x,4)),flr(shr(z/4))
 	local h0,h1=lerp(get_height(i,j),get_height(i,j+1),1-dz),lerp(get_height(i+1,j),get_height(i+1,j+1),1-dz)
 	return lerp(h0,h1,1-dx)
 end
@@ -658,31 +771,27 @@ function update_ground()
 			if t and not t.disabled then
 				t:update(i,j)
 				add(active_ground_actors,t)
+			 add(drawables,t)
 			end
 		end
 	end
 end
 
 function draw_tex_quad(a,b,tex)
+	palt(14,true)
 	palt(0,false)
 	local t,invdx,wa,wb=0,1/(b[2]-a[2]),a[4],b[4]
 	for y=a[2],b[2] do
 		local x,w=lerp(a[1],b[1],t),lerp(wa,wb,t)
+		-- persp correction
 		local u=t*wb/w
-		w*=ground_scale
-		-- lod selection
-		-- overkill but fun:)
-		if w<8 then
-			sspr(16,16+16*u,8,1,x,y,w,1)
-		else
-			sspr(16,16*u,16,1,x,y,w,1)
-		end
+		sspr(16,16*u,16,1,x,y,shl(w,4),1)
 		t+=invdx
 	end
 end
 
 function draw_ground(self)
-	local imin,imax=-6,6
+	local imin,imax=-5,5
 	local cx,cz=cam.lookat[1],cam.lookat[3]
 	local dx,dz=cx%ground_scale,cz%ground_scale
 	-- cell coordinates
@@ -691,7 +800,7 @@ function draw_ground(self)
 	-- project anchor points
 	local p={}	
 	-- grid depth extent
-	for j=-4,4 do
+	for j=-8,4 do
 	 -- compute grid points centered on lookat pos
 		local x,y,z,w=cam:project(-dx+cx+imin*ground_scale,0,-dz+cz+j*ground_scale)
 		add(p,{x,y,z,w,ny+j})
@@ -706,7 +815,7 @@ function draw_ground(self)
 	local w0,nj=v0[4],v0[5]
 	local dw0=ground_scale*w0
 	for j=2,#p do
-		local v1=p[j]
+		local v1=p[j]		
 		local w1=v1[4]
 		local dw1=ground_scale*w1
 		local x0,x1=v0[1],v1[1]
@@ -754,13 +863,6 @@ function draw_ground(self)
  			end
 			end
 					
-			-- any ground object?
-			--[[
-			local ground_actor=ground_actors[safe_index(ni,nj)]
-			if ground_actor then
-				ground_actor:draw(x0,y0,0,w0)
-			end
-			]]
 			if(fp) fillp()
 			
 			-- no need to go further, tile is not visible
@@ -776,7 +878,18 @@ function draw_ground(self)
 		local bucket=zbuf[band(nj,0x7f)]
 		if bucket then
 			for _,d in pairs(bucket) do
-				d.obj:draw()
+				d=d.obj
+			 -- draw shadow
+			 local dx,dz=d.pos[1],d.pos[3]
+			 local dy=get_altitude(dx,dz)
+			 local sx0,sy0,sz0,sw0=cam:project(dx,dy,dz-8)
+			 local sx1,sy1,sz1,sw1=cam:project(dx,dy,dz+8)
+			 -- todo: scale shadow based on height
+			 local scale=1-- 1-(dy-d.pos[2])/dy
+			 sw0*=scale
+			 sw1*=scale
+				--draw_tex_quad({sx0-8*sw0,sy0,sz0,sw0},{sx1-4*sw1,sy1,sz1,sw1})
+				d:draw()
 			end
 		end
 		v0,w0,dw0=v1,w1,dw1
@@ -788,26 +901,25 @@ end
 function control_plyr()
 	local pitch,roll,input=0,0,false
  
-	if(btn(0)) roll=1 input=true
-	if(btn(1)) roll=-1 input=true
+	if(btn(0)) roll=-1 input=true
+	if(btn(1)) roll=1 input=true
 	if(btn(2)) pitch=-1
 	if(btn(3)) pitch=1		
 	
-	-- flat turn
-	plyr.turn+=roll
-	plyr.turn_spring=mid(plyr.turn_spring+roll,-20,20)
-	q_x_q(plyr.q,make_q(v_fwd,plyr.roll/512))
- 
-	q=make_q(v_up,-plyr.turn/2048)
-	q_x_q(plyr.q,q)
 
-	plyr.pitch=mid(plyr.pitch-pitch/396,-0.005,0.005)
-	q_x_q(plyr.q,make_q(v_right,plyr.pitch))
+ plyr.angle+=roll
+	plyr.turn_spring+=roll
+	plyr.q=make_q(v_up,-plyr.angle/256)
+	q_x_q(plyr.q,make_q(v_fwd,plyr.turn_spring/128))	
+ 
+	plyr.pitch+=pitch
+	q_x_q(plyr.q,make_q(v_right,-plyr.pitch/96))
+
 	-- avoid matrix skew
 	q_normz(plyr.q)
 	
  -- bank turn
-	q_x_q(plyr.q,make_q(v_fwd,plyr.turn_spring/128))
+	-- q_x_q(plyr.q,make_q(v_fwd,plyr.turn_spring/128))
 
 	local m=m_from_q(plyr.q)
 	local fwd=m_fwd(m)
@@ -816,6 +928,13 @@ function control_plyr()
 	v_add(plyr.pos,fwd,plyr.acc)
 	m_set_pos(m,plyr.pos)
 	plyr.m=m
+	
+	-- brrt
+	if btn(4) and plyr.fire_t<time_t then
+		local wp=plyr.model["gauss_wp"]
+		make_blt(plyr,wp)
+		plyr.fire_t=time_t+wp.dly
+	end	
 end
 
 function _update()
@@ -828,7 +947,11 @@ function _update()
 		-- do not track dead player
 		if not plyr.disabled then
 			-- update cam
-			cam:track(plyr.pos)
+			local lookat=v_clone(plyr.pos)
+			v_add(lookat,m_fwd(plyr.m),24)
+			-- keep altitude
+			lookat[2]=plyr.pos[2]
+			cam:track(lookat)
 		end
 	end
 	
@@ -935,7 +1058,7 @@ function _init()
  -- convert into marching quadrants
 	for j=0,63 do
   for i=0,63 do
-   local q=marching_code(i,j,0.2)
+   local q=marching_code(i,j,0)
    local idx=2*i+2*128*j
   	local code=q_codes[q+1]
   	for k=1,4 do
@@ -944,11 +1067,11 @@ function _init()
   		if q==0 then
   			q=bor(q,bor(1*16,1*256))
   		elseif q==5 then
-  			q=bor(q,bor(4*16,4*256))
+  			q=bor(q,bor(12*16,12*256))
   		elseif q==1 or q==8 then
-	  		q=bor(q,bor(4*16,1*256))  			
+	  		q=bor(q,bor(12*16,1*256))  			
   		elseif q==4 or q==2 then
-	  		q=bor(q,bor(1*16,4*256))  			
+	  		q=bor(q,bor(1*16,12*256))  			
   		end
    	qmap[idx+idx_offsets[k]]=q
    	
@@ -967,6 +1090,40 @@ function _init()
   	end
   end
  end 
+
+	local layers={
+		{level=0.2,c=11},
+		{level=0.5,c=3},
+		{level=0.75,c=5}
+	}
+	for l=1,#layers do
+	 local layer=layers[l]
+ 	for j=0,63 do
+   for i=0,63 do
+    local q=marching_code(i,j,layer.level)
+    local idx=2*i+2*128*j
+   	local code=q_codes[q+1]
+   	for k=1,4 do
+   		q=code[k]
+   		-- hi/lo colors
+   		local prev_q=qmap[idx+idx_offsets[k]]
+   		local hi,lo=get_color(prev_q)
+   		-- replace hi color
+   		hi=layer.c
+   		if q==0 then
+   			q=prev_q
+   		elseif q==5 then
+   			q=bor(q,bor(hi*16,hi*256))
+   		elseif q==1 or q==8 then
+ 	  		q=bor(q,bor(hi*16,lo*256))  			
+   		elseif q==4 or q==2 then
+ 	  		q=bor(q,bor(lo*16,hi*256))  			
+   		end
+    	qmap[idx+idx_offsets[k]]=q
+   	end
+   end
+  end 
+ end
 
 	-- landing strip
 	for j=0,3 do
@@ -990,7 +1147,7 @@ function _init()
 	-- read models from gfx/map data
 	unpack_models()
 
-	cam=make_cam(64)
+	cam=make_cam(96)
 	plyr=make_actor("plyr",{0,24,0})
 end
 
@@ -1314,22 +1471,22 @@ function unpack_models()
 	end
 end
 __gfx__
-1ca9b345000700004070000770000704000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000001dc70004070000770000704000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000012e770004070000770000704000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000013b7b0004070000000000704000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000249a70004070000770000704000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000015d670004070000770000704000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000004070000770000704000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000004070000000000704000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-5c000000000000004070000770000704000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000004070000770000704000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000004070000770000704000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000004070000000000704000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000004070000770000704000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000004070000770000704000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000004070000770000704000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000004070000000000704000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+1ca9b345000700004070000770000704eeeeeeeeeeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000001dc70004070000770000704eeeeeeeeeeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000012e770004070000770000704eeeeee0000eeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000013b7b0004070000000000704eeeeee0000eeeeee00000000000000000033334000000000000000000000000000000000000000000000000000000000
+00000000249a70004070000770000704eeeeee0000eeeeee00000000000000000033334000000000000000000000000000000000000000000000000000000000
+0000000015d670004070000770000704eeeeee0000eeeeee00000000000000000000044000000000000000000000000000000000000000000000000000000000
+00000000000000004070000770000704eeeeee0000eeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000004070000000000704e00000000000000e00000000000000000000000000000000000000000000000000000000000000000000000000000000
+5c000000000000004070000770000704e00000000000000e00000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000004070000770000704ee000000000000ee00000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000004070000770000704eeeeee0000eeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000004070000000000704eeeeee0000eeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000004070000770000704eeeeee0000eeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000004070000770000704eeeeee0000eeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000004070000770000704eeee00000000eeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000004070000000000704eeee00000000eeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000004700007400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000330003330004707007400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00003333033303004700007400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
