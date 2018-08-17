@@ -1386,7 +1386,7 @@ function draw_deathstar(offset)
 	end
 end
 
-local stars,stars_ramp={},json_parse'[1,13,6,7]'
+local stars,stars_ramp={},json_parse'[2,1,13,6]'
 function draw_stars()
 	local hyper_space=plyr and plyr.boost>0
  for _,v in pairs(stars) do
@@ -1703,7 +1703,7 @@ end
 
 -->8
 -- radio messages
-local all_msgs=json_parse'{"attack1":{"spr":12,"title":"ackbar","txt":"commence attack\non the deathstar\nclear tie squadrons","dly":300},"ground1":{"spr":12,"title":"ackbar","txt":"destroy shield\ngenerators","dly":300},"ground2":{"spr":12,"title":"ackbar","txt":"shield is down!\nattack reactor vent","dly":300},"getout":{"spr":104,"title":"han solo","txt":"get out kid\nnow!","dly":300},"victory":{"spr":8,"title":"leia","txt":"the rebellion\n thanks you.\nget back home!","dly":300},"help":{"spr":10,"rnd":{"title":["red leader","alpha","delta wing"],"txt":["help!","cover me!","on my six"]},"dly":300},"vador_out":{"spr":106,"title":"d.vador","txt":"i\\'ll be back...","dly":300},"low_hp":{"spr":76,"title":"r2d2","txt":"..--.-..","dly":120,"sfx":5,"rnd":{"repeat_dly":[600,900]}}}'
+local all_msgs=json_parse'{"attack1":{"spr":12,"title":"ackbar","txt":"commence attack\non the deathstar\nclear tie squadrons","dly":300},"ground1":{"spr":12,"title":"ackbar","txt":"destroy shield\ngenerators","dly":300},"ground2":{"spr":12,"title":"ackbar","txt":"shield is down!\nattack reactor vent","dly":300},"getout":{"spr":104,"title":"han solo","txt":"get out kid\nnow!","dly":300},"victory":{"spr":8,"title":"leia","txt":"the rebellion\n thanks you.\nget back home!","dly":300},"help":{"spr":10,"rnd":{"title":["red leader","alpha","delta wing"],"txt":["help!","cover me!","on my six"]},"dly":300},"vador_out":{"spr":106,"title":"d.vador","txt":"i\'ll be back...","dly":300},"low_hp":{"spr":76,"title":"r2d2","txt":"..--.-..","dly":120,"sfx":5,"rnd":{"repeat_dly":[600,900]}}}'
 local low_hp_t,cur_msg=0
 
 function make_msg(msg)

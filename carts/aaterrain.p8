@@ -108,6 +108,33 @@ function screen_update()
 	camera(shkx,shky)
 end
 
+function sprr(sx,sy,x,y,a,w,scale)
+	scale=scale or 1
+	local ca,sa=cos(a),sin(a)
+ local srcx,srcy,addr,pixel_pair
+ local ddx0,ddy0=ca/scale,sa/scale
+ local mask=shl(0xfff8,(w-1))
+ w*=4	
+ ca*=w-0.5
+ sa*=w-0.5 
+ local dx0,dy0=sa-ca+w,-ca-sa+w
+ w=scale*(2*w-1)
+ for ix=x,x+w do
+  srcx,srcy=dx0,dy0
+  for iy=y,y+w do
+   local c
+   if band(bor(srcx,srcy),mask)==0 then
+   	c=sget(sx+srcx,sy+srcy)
+   	sset(ix,iy,c)
+  	end
+   srcx-=ddy0
+  	srcy+=ddx0
+  end
+  dx0+=ddx0
+  dy0+=ddy0
+ end
+end
+
 -- zbuffer (kind of)
 local drawables,zbuf
 function zbuf_clear()
@@ -440,24 +467,20 @@ end
 
 _g.update_plyr=function(self)
 
-	if self.smoke_t<time_t then
-		self.smoke_t=time_t+rnd(self.smoke_dly)
-		local v=m_fwd(self.m)
-		v_scale(v,-1)
-		--make_part("smoke",self.pos,v)
+ -- auto-stabilize when firing
+ if not plyr.firing then
+  -- damping
+ 	self.roll*=0.8
+ 	self.turn*=0.9
+ 	self.pitch*=0.91
 	end
-
- -- damping
-	self.roll*=0.8
-	self.turn*=0.9
 	self.turn_spring*=0.95
-	self.pitch*=0.91
 	
 	return true
 end
 
 _g.die_actor=function(self)
-	make_part("blast",self.pos)
+	make_blast(self.pos)
 	self.disabled=true
 	del(actors,self)
 end
@@ -561,7 +584,7 @@ end
 function make_ground_actor(src,i,j)
 	local x,z=i*ground_scale,j*ground_scale
 	local a=clone(all_actors[src],{
-		pos={x,get_altitude(x,z),z},
+		pos={x,2*get_altitude(x,z),z},
 		draw=draw_actor
 	})
 	a.model=all_models[a.model]
@@ -588,6 +611,7 @@ function make_cam(f)
 			v_add(self.pos,self.offset)
 		end,
 		project=function(self,x,y,z)
+		 -- todo: make project_v
 		 local v={x,y,z}
 		 v_add(v,self.lookat,-1)
    local angle=max(-plyr.pitch/64)
@@ -611,7 +635,7 @@ _g.update_part=function(self)
 	local p=self.pos
 	v_add(p,self.v)
 	-- gravity
-	v_add(p,{0,-0.1,0})
+	v_add(p,{0,-1,0})
 	-- ground collision
 	local h=get_altitude(p[1],p[3])
 	if p[2]<h then
@@ -624,6 +648,9 @@ _g.update_part=function(self)
 	v_scale(self.v,self.dv)
 	
 	self.r+=self.dr
+	-- animation frame
+	self.frame+=self.df
+	
 	return true
 end
 
@@ -635,7 +662,7 @@ _g.draw_part=function(self)
 	-- simple part
 	if self.kind==0 then
 		-- smoke
-		fillp(0xa5a5.1)
+		fillp(lerparray(dither_pat,1-self.frame)+0.1)
 		circfill(x,y,self.r*w,self.c)
 		fillp()
 	elseif self.kind==1 then
@@ -647,11 +674,24 @@ _g.draw_part=function(self)
 	elseif self.kind==2 then
 	 -- flash
 		circfill(x,y,self.r*w,self.c)
+	elseif self.kind==4 then
+	 -- blast (sprite)
+		local s=flr(6*self.frame)
+		local c0,c1=sget(s,2),sget(max(s-1),2)
+		fillp(lerparray(dither_pat,1-self.frame))
+		circfill(x,y,w*self.r,bor(c1*16,c0))
+		fillp()
+		--pal(7,sget(s,2))
+		--local r=16*w
+		--sspr(16*min(s,3)+48,0,16,16,x-r,y-r,r,r)
+		--pal()
 	end
 end
 
 _g.die_blt=function(self)
-	make_part(self.die_part or "flash",self.pos,v_up)
+	-- make_part(self.die_part or "flash",self.pos,v_up)
+	make_blast(self.pos)
+	
 	-- to be removed from set
 	return false
 end
@@ -700,21 +740,44 @@ _g.update_blt=function(self)
 	v_add(self.pos,self.u,self.acc)
 
 	-- collision?
-	if blt_obj_col(self,actors) or blt_obj_col(self,ground_actors) then
+	if blt_obj_col(self,actors) or blt_obj_col(self,active_ground_actors) then
 		return self:die()
 	end
 	
 	return true
 end
 
-
-all_parts=json_parse'{"smoke":{"rnd":{"r":[2,3],"c":[5,6,7],"dly":[24,32]},"dv":0.9,"dr":-0.05,"kind":0,"update":"update_part"},"gauss_blt":{"rnd":{"c":[9,10,9],"dly":[45,58],"acc":[7,7.2]},"dv":0.9,"dr":0,"kind":1,"update":"update_blt","draw":"draw_part","die":"die_blt"},"flash":{"c":7,"rnd":{"r":[1,2],"dly":[4,8]},"dv":1,"dr":-0.05,"kind":2,"update":"update_part"}}'
+all_parts=json_parse'{"smoke":{"rnd":{"r":[2,3],"c":[5,6,7],"dly":[24,32]},"frame":0,"dv":0.9,"dr":-0.05,"kind":0,"update":"update_part"},"gauss_blt":{"rnd":{"c":[9,10,9],"dly":[45,58],"acc":[7,7.2]},"frame":0,"dv":0.9,"dr":0,"kind":1,"update":"update_blt","draw":"draw_part","die":"die_blt"},"flash":{"c":7,"rnd":{"r":[1,2],"dly":[4,8]},"frame":0,"dv":1,"dr":-0.05,"kind":2,"dr":0,"update":"update_part"},"blast":{"dly":18,"frame":0,"kind":4,"r":12,"dr":0.01,"dv":1,"update":"update_part"}}'
 
 function make_part(part,p,v)
 	local pt=add(parts,clone(all_parts[part],{pos=v_clone(p),v=v_clone(v),draw=_g.draw_part,c=c}))
 	pt.t,pt.update=time_t+pt.dly,pt.update or _g.update_part
+	pt.df=1/pt.dly
 	if(pt.sfx) sfx_v(pt.sfx,p)
 	return pt
+end
+
+function make_blast(p)
+	local pt=make_part("blast",p,v_up)
+	pt.r=6
+	pt.dr=-0.1
+	pt.dv=0
+	for i=1,3 do
+	 local a,o=rnd(),rnd(0.5)
+	 local c,s=cos(o),-sin(o)
+	 -- ranom unit vector
+	 local x,y,z=c*cos(a),s,-c*sin(a)
+	 for j=1,4 do
+	 	local v={x,y,z}
+	 	v_scale(v,2*j)
+	 	v_add(v,p)
+	 	pt=make_part("blast",v,{x,y,z})
+	  pt.r=4/j
+	  pt.dly=12*j
+	  pt.t=time_t+pt.dly
+	  pt.df=1/pt.dly
+	 end
+	end
 end
 
 function make_blt(self,wp)
@@ -729,6 +792,7 @@ function make_blt(self,wp)
 			side=self.side,
 			dmg=wp.dmg}))
 	pt.t=time_t+pt.dly
+ pt.df=1/pt.dly	
 	if(wp.sfx) sfx(wp.sfx)
 	return pt
 end
@@ -777,7 +841,7 @@ function update_ground()
 	end
 end
 
-function draw_tex_quad(a,b,tex)
+function draw_tex_quad(a,b,sx,sy)
 	palt(14,true)
 	palt(0,false)
 	local t,invdx,wa,wb=0,1/(b[2]-a[2]),a[4],b[4]
@@ -785,9 +849,10 @@ function draw_tex_quad(a,b,tex)
 		local x,w=lerp(a[1],b[1],t),lerp(wa,wb,t)
 		-- persp correction
 		local u=t*wb/w
-		sspr(16,16*u,16,1,x,y,shl(w,4),1)
+		sspr(sx,sy+16*u,16,1,x,y,shl(w,4),1)
 		t+=invdx
 	end
+	palt()
 end
 
 function draw_ground(self)
@@ -818,8 +883,8 @@ function draw_ground(self)
 		local v1=p[j]		
 		local w1=v1[4]
 		local dw1=ground_scale*w1
-		local x0,x1=v0[1],v1[1]
-		local x2,x3=v1[1]+dw1,v0[1]+dw0
+		local x0,x1=flr(v0[1]),flr(v1[1])
+		local x2,x3=flr(v1[1]+dw1),flr(v0[1]+dw0)
 		-- depth dither
 		if j==2 then
 			fillp(lerparray(dither_pat,1-dz/ground_scale)+0.1)
@@ -827,11 +892,11 @@ function draw_ground(self)
 		-- grid width extent
 		local ni=nx+imin
 		local h0,h1=get_height(ni,nj),get_height(ni,nj+1)
-		local y0,y1=v0[2]-w0*h0,v1[2]-w1*h1
+		local y0,y1=flr(v0[2]-w0*h0),flr(v1[2]-w1*h1)
 		for i=imin,imax do		 
 		 local q=get_raw_qcode(ni,nj)
 			local h2,h3=get_height(ni+1,nj+1),get_height(ni+1,nj)
-			local y2,y3=v1[2]-w1*h2,v0[2]-w0*h3
+			local y2,y3=flr(v1[2]-w1*h2),flr(v0[2]-w0*h3)
 
    local fp=dither[i]
    if(fp) fillp(fp)
@@ -856,7 +921,7 @@ function draw_ground(self)
  				trifill(x0,y0,x2,y2,x1,y1,c_hi)		
  				trifill(x0,y0,x2,y2,x3,y3,c_lo)
  			elseif q_code==9 then
- 				draw_tex_quad({x0,y0,0,w0},{x1,y1,0,w1})
+ 				draw_tex_quad({x0,y0,0,w0},{x1,y1,0,w1},16,0)
  			else
  				trifill(x1,y1,x3,y3,x0,y0,c_hi)
  				trifill(x1,y1,x3,y3,x2,y2,c_lo)		
@@ -880,15 +945,18 @@ function draw_ground(self)
 			for _,d in pairs(bucket) do
 				d=d.obj
 			 -- draw shadow
+			 --[[
 			 local dx,dz=d.pos[1],d.pos[3]
 			 local dy=get_altitude(dx,dz)
 			 local sx0,sy0,sz0,sw0=cam:project(dx,dy,dz-8)
 			 local sx1,sy1,sz1,sw1=cam:project(dx,dy,dz+8)
-			 -- todo: scale shadow based on height
-			 local scale=1-- 1-(dy-d.pos[2])/dy
-			 sw0*=scale
-			 sw1*=scale
-				--draw_tex_quad({sx0-8*sw0,sy0,sz0,sw0},{sx1-4*sw1,sy1,sz1,sw1})
+			 
+			 local scale=1--1-(dy-d.pos[2])/dy
+			 --sw0*=scale
+			 --sw1*=scale
+				sprr(32,0,48,0,plyr.angle/256,2,0.5)
+				draw_tex_quad({sx0-8*sw0,sy0,sz0,sw0},{sx1-8*sw1,sy1,sz1,sw1},48,0)
+				]]
 				d:draw()
 			end
 		end
@@ -900,12 +968,13 @@ end
 
 function control_plyr()
 	local pitch,roll,input=0,0,false
- 
-	if(btn(0)) roll=-1 input=true
-	if(btn(1)) roll=1 input=true
-	if(btn(2)) pitch=-1
-	if(btn(3)) pitch=1		
-	
+
+	if not plyr.firing then 
+ 	if(btn(0)) roll=-1 input=true
+ 	if(btn(1)) roll=1 input=true
+ 	if(btn(2)) pitch=-1
+ 	if(btn(3)) pitch=1		
+	end
 
  plyr.angle+=roll
 	plyr.turn_spring+=roll
@@ -930,15 +999,22 @@ function control_plyr()
 	plyr.m=m
 	
 	-- brrt
-	if btn(4) and plyr.fire_t<time_t then
-		local wp=plyr.model["gauss_wp"]
-		make_blt(plyr,wp)
-		plyr.fire_t=time_t+wp.dly
+	plyr.firing=false
+	if btn(4) then
+	 if plyr.fire_t<time_t then
+			local wp=plyr.model["gauss_wp"]
+			make_blt(plyr,wp)
+			plyr.fire_t=time_t+wp.dly
+		end
+		plyr.firing=true
+		screen_shake(1)
 	end	
 end
 
 function _update()
 	time_t+=1
+
+ screen_update()
 
 	zbuf_clear()
 	
@@ -961,27 +1037,106 @@ function _update()
 	zbuf_filter(parts)
 end
 
+local padding_mask="0000"
+function padding(n)
+ local 	s=tostr(flr(n))
+	return sub(padding_mask,1,4-#s)..s
+end
+
 function _draw()
 	cls(0)
 	
-	-- draw map
-	if btn(5) then
-		local cx,cz=cam.lookat[1],cam.lookat[3]
-		local dx,dz=cx%ground_scale,cz%ground_scale
-		local nx,ny=flr(cx/ground_scale),flr(cz/ground_scale)		
-		for j=-16,16 do
-		 for i=-16,16 do
-		 	pset(64+i,64+j,sget(7*get_height(nx+i,ny+j),0))
-		 end
+	zbuf_sort()
+	draw_ground()
+ --
+ if plyr then
+ 	local x,y,z,w=cam:project(plyr.pos[1],plyr.pos[2],plyr.pos[3])
+	 local h=get_altitude(plyr.pos[1],plyr.pos[3])
+	 h=plyr.pos[2]-h
+	 rectfill(106,y-7,124,y+1,0)
+	 print(padding(h),108,y-5,11)
+	 rect(106,y-7,124,y+1,11)
+	
+	 rectfill(4,y-7,22,y+1,0)
+	 print(padding(300),6,y-5,11)
+	 rect(4,y-7,22,y+1,11)
+
+	 -- target reticule
+	 local fwd=m_fwd(plyr.m)
+	 if fwd[2]<0 then
+ 	 local t=-h/fwd[2]
+ 	 x,z=plyr.pos[1]+t*fwd[1],plyr.pos[3]+t*fwd[3]
+ 		h=get_altitude(x,z)
+ 		x,y,z,w=cam:project(x,h,z)
+ 		spr(36,x-4,y-3)
 		end
-	 pset(64,64,8)
-	else
-		zbuf_sort()
-		draw_ground()
+
+		-- compass
+		clip(40,32,48,12)
+		local angle=flr(36*plyr.angle/256)
+		local dx=flr(angle%16)
+		for i=-1,2 do
+			local a=((angle+i)%36+36)%36
+			a=tostr(a)
+			print(a,64-dx+i*16-#a,32,11)
+		end
+		for i=-1,2,0.5 do
+			pset(64-dx+i*16,40,11)
+	  if flr(i)==i then
+				pset(64-dx+i*16,41,11)
+	  end
+	 end
+	 clip()
+	 spr(37,64,43)
 	end
 
- rectfill(0,0,127,8,1)
-	print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)		
+ -- radar	
+ spr(6,0,0,2,2)
+ spr(6,15,0,2,2,true)
+ spr(6,0,15,2,2,false,true)
+ spr(6,15,15,2,2,true,true)
+	clip(0,0,31,31)
+	
+	-- select closest targets
+ for _,a in pairs(ground_actors) do
+ 	local v=make_v(a.pos,plyr.pos)
+		v_scale(v,0.1)
+		
+		print("a",15+v[1],15-v[3],11)
+ end
+ pal()
+ palt(0,true)
+ pal(14,0)
+ spr(38,0,0,2,2)
+ spr(38,15,0,2,2,true)
+ spr(38,0,15,2,2,false,true)
+ spr(38,15,15,2,2,true,true)
+ 
+	clip()
+	pal()
+	
+ -- fuel
+ camera(-97,0)
+ spr(8,0,0,2,2)
+ spr(8,15,0,2,2,true)
+ spr(8,0,15,2,2,false,true)
+ spr(8,15,15,2,2,true,true)
+ camera()
+	
+	local angle=time_t/96
+	local c,s=cos(angle),-sin(angle)
+	local x,y=112+14*c,15-14*s
+	local bx,by=112+6*c,15-6*s
+	trifill(bx-2*s,by-2*c,bx+2*s,by+2*c,x,y,7)
+
+ -- status panel
+ -- mission panel? cdu
+ 
+ 	
+	--print("gbu:12",98,2,11)
+	
+	--rectfill(0,0,127,8,1)
+	--print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)		
 end
 
 -- main
@@ -1037,10 +1192,6 @@ function _init()
    -- and so on
    c+=os2d_eval(x,y)
 
-   -- convert -0.2..+1 to 14 cols
-   -- (sea level at -0.2)
-   c=mid(0,(c+0.2)/1.2*14,13)/14
-
    -- set in stoooone
    add(noise,c)
   end
@@ -1058,23 +1209,10 @@ function _init()
  -- convert into marching quadrants
 	for j=0,63 do
   for i=0,63 do
-   local q=marching_code(i,j,0)
+   local q=marching_code(i,j,-0.1)
    local idx=2*i+2*128*j
   	local code=q_codes[q+1]
   	for k=1,4 do
-  		q=code[k]
-  		-- hi/lo colors
-  		if q==0 then
-  			q=bor(q,bor(1*16,1*256))
-  		elseif q==5 then
-  			q=bor(q,bor(12*16,12*256))
-  		elseif q==1 or q==8 then
-	  		q=bor(q,bor(12*16,1*256))  			
-  		elseif q==4 or q==2 then
-	  		q=bor(q,bor(1*16,12*256))  			
-  		end
-   	qmap[idx+idx_offsets[k]]=q
-   	
   	 local h
   	 if k==1 then
   	 	h=get_noise(i,j)
@@ -1086,15 +1224,17 @@ function _init()
   	 	h=(get_noise(i,j)+get_noise(i,j+1)+get_noise(i+1,j)+get_noise(i+1,j+1))/4
 	   end
 				
-  	 hmap[idx+idx_offsets[k]]=h
+  	 hmap[idx+idx_offsets[k]]=max(h)
   	end
   end
  end 
 
 	local layers={
-		{level=0.2,c=11},
-		{level=0.5,c=3},
-		{level=0.75,c=5}
+		{level=0.75,hi=5,lo=11},
+		{level=0.5,lo=3},
+		{level=0,lo=9},
+		{level=-0.1,lo=12},
+		{level=-0.2,lo=1}
 	}
 	for l=1,#layers do
 	 local layer=layers[l]
@@ -1107,11 +1247,16 @@ function _init()
    		q=code[k]
    		-- hi/lo colors
    		local prev_q=qmap[idx+idx_offsets[k]]
-   		local hi,lo=get_color(prev_q)
-   		-- replace hi color
-   		hi=layer.c
+   		local hi,lo
+   		if prev_q then
+   			hi,lo=get_color(prev_q)
+ 	  		-- replace hi color
+	   		lo=layer.lo
+   		else
+   			hi,lo=layer.hi,layer.lo
+   		end
    		if q==0 then
-   			q=prev_q
+   			q=bor(q,bor(lo*16,lo*256))
    		elseif q==5 then
    			q=bor(q,bor(hi*16,hi*256))
    		elseif q==1 or q==8 then
@@ -1471,38 +1616,38 @@ function unpack_models()
 	end
 end
 __gfx__
-1ca9b345000700004070000770000704eeeeeeeeeeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000001dc70004070000770000704eeeeeeeeeeeeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000012e770004070000770000704eeeeee0000eeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000013b7b0004070000000000704eeeeee0000eeeeee00000000000000000033334000000000000000000000000000000000000000000000000000000000
-00000000249a70004070000770000704eeeeee0000eeeeee00000000000000000033334000000000000000000000000000000000000000000000000000000000
-0000000015d670004070000770000704eeeeee0000eeeeee00000000000000000000044000000000000000000000000000000000000000000000000000000000
-00000000000000004070000770000704eeeeee0000eeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000004070000000000704e00000000000000e00000000000000000000000000000000000000000000000000000000000000000000000000000000
-5c000000000000004070000770000704e00000000000000e00000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000004070000770000704ee000000000000ee00000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000004070000770000704eeeeee0000eeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000004070000000000704eeeeee0000eeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000004070000770000704eeeeee0000eeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000004070000770000704eeeeee0000eeeeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000004070000770000704eeee00000000eeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000004070000000000704eeee00000000eeee00000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000004700007400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000330003330004707007400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00003333033303004700007400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000003333000004707007400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00003333333000004700007400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00033305503300004707007400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00330045000330004700007400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000044003330004707007400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000040003300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000440000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000440000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000440000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00004440000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00004444000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00044444400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+1ca9b345000700004070000770000704eeeeeeeeeeeeeeee00000000000333330000000000077777000000000000000000000000000000000000000000000000
+0000000001dc70004070000770000704eeee00000000eeee00000000333100030000000077750007000000000000000000000000000000000000000000000000
+7985100012e770004070000770000704eeee00000000eeee00000033100000030000007750700007000000000000000000000000000000000000000000000000
+0000000013b7b0004070000000000704eeeeeee00eeeeeee00000310000000030000075000500000000000000000000000000000000000000000000000000000
+00000000249a70004070000000000704eeeeeee00eeeeeee00003000000000030000700000000000000000000000000000000000000000000000000000000000
+0000000015d670004070000000000704eeeeee0000eeeeee00030300000000030007070000000000000000000000000000000000000000000000000000000000
+00000000000000004070000000000704eeeeee0000eeeeee00310030000000030075007000000000000000000000000000000000000000000000000000000000
+00000000000000004070000000000704ee000000000000ee00300003000000030070000000000000000000000000000000000000000000000000000000000000
+5c000000000000004070000770000704e00000000000000e03100000000133330750000000000000000000000000000000000000000000000000000000000000
+00000000000000004070000770000704e00000000000000e03000000003310030700000000000000000000000000000000000000000000000000000000000000
+00000000000000004070000770000704eeeeee0000eeeeee030000000310000b0775000000000000000000000000000000000000000000000000000000000000
+00000000000000004070000000000704eeeeee0000eeeeee310000001300000b7500000000000000000000000000000000000000000000000000000000000000
+00000000000000004070000000000704eeeeee0000eeeeee30000000310000bb7000000000000000000000000000000000000000000000000000000000000000
+00000000000000004070000000000704eeeeee0000eeeeee30000000300000007000000000000000000000000000000000000000000000000000000000000000
+00000000000000004070000000000704eeeeeee00eeeeeee300000003000b0007000000000000000000000000000000000000000000000000000000000000000
+00000000000000004070000000000704eeeeeeeeeeeeeeee3333333333bbb00b7770000000000000000000000000000000000000000000000000000000000000
+00000000000000004070000000000704000bb00000b00000eeeeeeeeeee000000000000000000000000000000000000000000000000000000000000000000000
+0000033000333000407000000000070400b00b000bbb0000eeeeeeee000000000000000000000000000000000000000000000000000000000000000000000000
+00003333033303004070000000000704bb0000bbbbbbb000eeeeee00000000000000000000000000000000000000000000000000000000000000000000000000
+0000000333300000407000000000070400b00b0000000000eeeee000000000000000000000000000000000000000000000000000000000000000000000000000
+00003333333000004070000000000704000bb00000000000eeee0000000000000000000000000000000000000000000000000000000000000000000000000000
+000333055033000040700000000007040000000000000000eee00000000000000000000000000000000000000000000000000000000000000000000000000000
+003300450003300040700000000007040000000000000000ee000000000000000000000000000000000000000000000000000000000000000000000000000000
+000000440033300040700000000007040000000000000000ee000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000040003300004070000000000704eeeeeeee00000000e0000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000040000000004070770770770704e76eeeee00000000e0000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000440000000004070770770770704e7776eee00000000e0000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000440000000004070770770770704e777776e0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000440000000004070770770770704e777776e0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00004440000000004070770770770704e7776eee0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00004444000000004070770770770704e76eeeee0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00044444400000004070000000000704eeeeeeee0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
