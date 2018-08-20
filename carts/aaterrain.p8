@@ -428,14 +428,11 @@ function draw_model(model,m)
 	
 	-- faces
 	local faces,p={},{}
-	local flipn=1
 	for i=1,#model.f do
 		local f,n=model.f[i],model.n[i]
 		-- viz calculation
-		local d=n[1]*cam_pos[1]+n[2]*cam_pos[2]+n[3]*cam_pos[3]		
-		if f.double_sided and d<model.cp[i] then
-			flipn=-1
-		end
+		local d=v_dot(n,cam_pos)
+		f.flipn=(f.double_sided and d<model.cp[i]) and -1 or 1
 		
 		if f.double_sided or d>=model.cp[i] then
 			-- project vertices
@@ -460,7 +457,7 @@ function draw_model(model,m)
 	-- draw faces using projected points
 	for _,f in pairs(faces) do
 		f=f.face
-		local c=max(flipn*v_dot(model.n[f.ni],l))*5
+		local c=max(f.flipn*v_dot(model.n[f.ni],l))*5
   c=sget(c+8,f.c)
 		local p0=p[f.vi[1]]
 	 	for i=2,#f.vi-1 do
@@ -614,22 +611,24 @@ function make_cam(f)
 		lookat={0,0,-7*ground_scale},
 		offset={0,0,4*ground_scale},
 		focal=f,
+		-- camera rotation
+		c=1,s=0,
 		track=function(self,pos)
 			self.pos=v_clone(pos)
 			self.lookat=v_clone(pos)
-			v_add(self.pos,self.offset)
+			local angle=max(-plyr.pitch/64,0.02)
+			self.c,self.s=cos(angle),-sin(angle)
+			local r=4*ground_scale
+			v_add(self.pos,{0,r*self.s,r*self.c})
 		end,
 		project=function(self,x,y,z)
-		 -- todo: make project_v
-		 local v={x,y,z}
-		 v_add(v,self.lookat,-1)
-   local angle=max(-plyr.pitch/64,0.02)
-	  local c,s=cos(angle),-sin(angle)
-			z,y=c*v[3]+s*v[2],-s*v[3]+c*v[2]
-			y+=self.lookat[2]  	
-			z+=self.lookat[3]  	
+			-- todo: make project_v
+			x-=self.lookat[1]
+			y-=self.lookat[2]
+			z-=self.lookat[3]
+			z,y=self.c*z+self.s*y,-self.s*z+self.c*y
 
-  	local xe,ye,ze=x-self.pos[1],y-self.pos[2],z-self.pos[3]
+  	local xe,ye,ze=x,y,z-4*ground_scale
 
   	local w=-self.focal/ze
   	return 64+xe*w,64-ye*w,ze,w
@@ -756,6 +755,15 @@ _g.update_blt=function(self)
 	return true
 end
 
+_g.update_emitter=function(self)
+	if time_t%4==0 then
+		make_part(self.part,self.pos,v_up)
+	end
+	
+	return _g.update_part(self)
+end
+
+
 all_parts=json_parse'{"smoke":{"rnd":{"r":[2,3],"c":[5,6,7],"dly":[24,32]},"frame":0,"dv":0.9,"dr":-0.05,"kind":0,"update":"update_part"},"gauss_blt":{"rnd":{"c":[9,10,9],"dly":[45,58],"acc":[7,7.2]},"frame":0,"dv":0.9,"dr":0,"kind":1,"update":"update_blt","draw":"draw_part","die":"die_blt"},"flash":{"c":7,"rnd":{"r":[1,2],"dly":[4,8]},"frame":0,"dv":1,"dr":-0.05,"kind":2,"dr":0,"update":"update_part"},"blast":{"dly":18,"frame":0,"kind":4,"r":12,"dr":0.01,"dv":1,"update":"update_part"}}'
 
 function make_part(part,p,v)
@@ -780,7 +788,7 @@ function make_blast(p)
 	 	local v={x,y,z}
 	 	v_scale(v,2*j)
 	 	v_add(v,p)
-	 	pt=make_part("blast",v,{x,y,z})
+	 	pt=make_part("smoke_emitter",v,{x,y,z})
 	  pt.r=4/j
 	  pt.dly=12*j
 	  pt.t=time_t+pt.dly
@@ -889,11 +897,11 @@ function draw_ground(self)
 	local w0,nj=v0[4],v0[5]
 	local dw0=ground_scale*w0	
 	for j=2,#p do
-		local v1=p[j]		
+		local v1=p[j]
 		local w1=v1[4]
 		local dw1=ground_scale*w1
-		local x0,x1=flr(v0[1]),flr(v1[1])
-		local x2,x3=flr(v1[1]+dw1),flr(v0[1]+dw0)
+		local x0,x1=v0[1],v1[1]
+		local x2,x3=v1[1]+dw1,v0[1]+dw0
 		-- depth dither
 		if j==2 then
 			fillp(lerparray(dither_pat,1-dz/ground_scale)+0.1)
@@ -902,7 +910,7 @@ function draw_ground(self)
 		local ni=nx+imin
 		local h0,h1=get_height(ni,nj),get_height(ni,nj+1)
 		local y0,y1=flr(v0[2]-w0*h0),flr(v1[2]-w1*h1)
-		for i=imin,imax do		 
+		for i=imin,imax do
 		 local q=get_raw_qcode(ni,nj)
 			local h2,h3=get_height(ni+1,nj+1),get_height(ni+1,nj)
 			local y2,y3=flr(v1[2]-w1*h2),flr(v0[2]-w0*h3)
@@ -925,7 +933,13 @@ function draw_ground(self)
 		 if x3>0 then
  			local c_hi,c_lo=get_color(q)
  			local q_code=band(q,0xf)
- 			
+ 			--[[
+ 			color(c_hi)
+ 			line(x0,y0,x1,y1)
+ 			line(x1,y1,x2,y2)
+ 			line(x2,y2,x3,y3)
+ 			line(x0,y0,x3,y3)
+ 			]]
  			if q_code==1 or q_code==4 then
  				trifill(x0,y0,x2,y2,x1,y1,c_hi)		
  				trifill(x0,y0,x2,y2,x3,y3,c_lo)
@@ -935,6 +949,7 @@ function draw_ground(self)
  				trifill(x1,y1,x3,y3,x0,y0,c_hi)
  				trifill(x1,y1,x3,y3,x2,y2,c_lo)		
  			end
+ 			
 			end
 					
 			if(fp) fillp()
@@ -1008,7 +1023,8 @@ function control_plyr()
 	
 	-- update pos
 	v_add(plyr.pos,fwd,plyr.acc)
-	v_add(plyr.pos,v_grav,1-plyr.acc/0.8)
+	--todo perf check only
+	--v_add(plyr.pos,v_grav,1-plyr.acc/0.8)
 	m_set_pos(m,plyr.pos)
 	plyr.m=m
 	
@@ -1192,8 +1208,8 @@ function _draw()
  line(70,8,70+6*cos(angle),8+6*sin(angle),7)
 	--print("gbu:12",98,2,11)
 	
-	--rectfill(0,0,127,8,1)
-	--print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)		
+	rectfill(0,0,127,8,1)
+	print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)		
 end
 
 -- main
@@ -1351,6 +1367,7 @@ function _init()
 
 	cam=make_cam(96)
 	plyr=make_actor("plyr",{0,24,0})
+	--plyr.l_acc,plyr.r_acc=0,0
 end
 
 -->8
