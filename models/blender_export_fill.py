@@ -2,6 +2,7 @@ import bpy
 import bmesh
 import argparse
 import sys
+import mathutils
 
 argv = sys.argv
 if "--" not in argv:
@@ -17,6 +18,7 @@ except Exception as e:
     sys.exit(repr(e))
 
 obdata = bpy.context.object.data
+obj = bpy.context.object
 
 # charset
 charset="_0123456789abcdefghijklmnopqrstuvwxyz"
@@ -26,6 +28,16 @@ def pack_float(x):
     if len(h)!=2:
         raise Exception('Unable to convert: {} into a byte: {}'.format(x,h))
     return h
+
+p8_colors = ['000000','1D2B53','7E2553','008751','AB5236','5F574F','C2C3C7','FFF1E8','FF004D','FFA300','FFEC27','00E436','29ADFF','83769C','FF77A8','FFCCAA']
+def diffuse_to_p8color(rgb):
+    h = "{:02X}{:02X}{:02X}".format(int(round(255*rgb.r)),int(round(255*rgb.g)),int(round(255*rgb.b)))
+    try:
+        #print("diffuse:{} -> {}\n".format(rgb,p8_colors.index(h)))
+        return p8_colors.index(h)
+    except Exception as e:
+        # unknown color: purple!
+        return 14
 
 # model data
 s = ""
@@ -58,8 +70,12 @@ for f in bm.faces:
     # center point
     v = f.calc_center_median_weighted()
     s = s + "{}{}{}".format(pack_float(v.x), pack_float(v.z), pack_float(v.y))
-    # + material id
-    s = s + "{:02x}".format(f.material_index)
+    # + color
+    slot = obj.material_slots[f.material_index]
+    mat = slot.material
+    s = s + "{:02x}".format(diffuse_to_p8color(mat.diffuse_color))
+    # + dual-sided?
+    s = s + "{:02x}".format(0 if mat.game_settings.use_backface_culling else 1)
 
 #normals
 s = s + "{:02x}".format(len(obdata.polygons))
