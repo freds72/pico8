@@ -413,7 +413,7 @@ function m_up(m)
 end
 
 -- models & rendering
-local all_models=json_parse'{"vship":{"c":3},"tree":{"c":3,"r":4},"a10":{"gauss_wp":{"pos":[0,0,-3],"part":"gauss_blt","dly":8,"dmg":1}},"tower":{}}'
+local all_models=json_parse'{"tree":{"c":3,"r":4},"a10":{"gauss_wp":{"pos":[0,0,-3],"part":"gauss_blt","dly":8,"dmg":1}},"tower":{}}'
 local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]'
 local color_lo={1,1,13,6,7}
 local color_hi={0x11,0xd0,0x60,0x70,0x70}
@@ -465,7 +465,6 @@ function draw_model(model,m)
 		 	trifill(p0[1],p0[2],p1[1],p1[2],p2[1],p2[2],c)
 		end
 	end
-	fillp()
 end
 
 _g.update_plyr=function(self)
@@ -1337,8 +1336,8 @@ function _init()
 			hmap[idx+idx_offsets[k]]=0.2
 		end
 	end
-	make_ground_actor("tower",2,4)
-
+	local a=make_ground_actor("tower",2,4)
+	m_set_pos(a.m,{16,0.2,34})
 	
 	local max_tree=100
 	for j=0,63 do
@@ -1354,7 +1353,7 @@ function _init()
 	unpack_models()
 
 	cam=make_cam(96)
-	plyr=make_actor("plyr",{0,24,0})
+	plyr=make_actor("plyr",{0,44,0})
 	--plyr.l_acc,plyr.r_acc=0,0
 end
 
