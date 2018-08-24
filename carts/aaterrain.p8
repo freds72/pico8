@@ -413,7 +413,7 @@ function m_up(m)
 end
 
 -- models & rendering
-local all_models=json_parse'{"tree":{"c":3,"r":4},"a10":{"gauss_wp":{"pos":[0,0,-3],"part":"gauss_blt","dly":8,"dmg":1}},"tower":{},"t72":{}}'
+local all_models=json_parse'{"tree":{"c":3,"r":4},"a10":{"gauss_wp":{"pos":[0,0,-3],"part":"gauss_blt","dly":8}},"tower":{},"t72":{"gun":{"pos":[0,4,0],"part":"gun_blt","dly":8}}}'
 local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]'
 local color_lo={1,1,13,6,7}
 local color_hi={0x11,0xd0,0x60,0x70,0x70}
@@ -458,13 +458,19 @@ function draw_model(model,m)
 	for _,f in pairs(faces) do
 		f=f.face
 		local c=max(f.flipn*v_dot(model.n[f.ni],l))*5
-  c=sget(c+8,f.c)
+			-- gradient lookup table
+			-- todo:assign lookup when unpacking
+  local c0,c1=sget(c+8,f.c),sget(c+8,max(f.c-1))
+  fillp(lerparray(dither_pat,c%1))
+		
 		local p0=p[f.vi[1]]
+		c=bor(shl(c1,4),c0)
 	 	for i=2,#f.vi-1 do
 		 	local p1,p2=p[f.vi[i]],p[f.vi[i+1]]
 		 	trifill(p0[1],p0[2],p1[1],p1[2],p2[1],p2[2],c)
 		end
 	end
+	fillp()
 end
 
 _g.update_plyr=function(self)
@@ -497,6 +503,10 @@ _g.hit_npc=function(self,dmg)
 	if self.hp<=0 then
 		self:die()
 	end
+end
+
+_g.update_ground_npc=function(self)
+	
 end
 
 local all_actors=json_parse'{"plyr":{"model":"a10","l_acc":0.8,"r_acc":0.8,"l_fuel":3000,"r_fuel":3000,"fire_t":0,"pitch":0,"roll":0,"turn":0,"turn_spring":0,"update":"update_plyr","angle":0.25,"smoke_dly":12,"smoke_t":0},"tower":{"model":"tower","update":"nop"},"tree":{"model":"tree","hp":4,"update":"nop","hit":"hit_npc","die":"die_actor","rnd":{"angle":[0,1]}},"t72":{"model":"t72","hp":4,"update":"nop","hit":"hit_npc","die":"die_actor","rnd":{"angle":[0,1]}}}'
@@ -758,7 +768,7 @@ _g.update_emitter=function(self)
 	return _g.update_part(self)
 end
 
-all_parts=json_parse'{"smoke":{"rnd":{"r":[2,3],"c":[5,6,7],"dly":[24,32]},"frame":0,"dv":0.9,"dr":-0.05,"kind":0,"update":"update_part"},"gauss_blt":{"rnd":{"c":[7,10,10],"dly":[45,58],"acc":[7,7.2]},"frame":0,"dv":0.9,"dr":0,"kind":1,"update":"update_blt","draw":"draw_part","die":"die_blt"},"flash":{"c":7,"rnd":{"r":[1,2],"dly":[4,8]},"frame":0,"dv":1,"dr":-0.05,"kind":2,"dr":0,"update":"update_part"},"blast":{"dly":18,"frame":0,"kind":2,"r":8,"dr":-0.8,"dv":0,"c":7,"update":"update_part"},"debris":{"part":"fire","frame":0,"kind":-1,"r":1,"dr":0,"dv":1,"rnd":{"acc":[0.8,1.5],"dly":[24,40]},"update":"update_emitter"},"fire":{"rnd":{"r":[1,2],"dly":[18,24]},"frame":0,"dv":0.9,"dr":0.05,"kind":4,"update":"update_part"}}'
+all_parts=json_parse'{"smoke":{"rnd":{"r":[2,3],"c":[5,6,7],"dly":[24,32]},"frame":0,"dv":0.9,"dr":-0.05,"kind":0},"gauss_blt":{"dmg":2,"rnd":{"c":[7,10,10],"dly":[45,58],"acc":[7,7.2]},"frame":0,"dv":0.9,"dr":0,"kind":1,"update":"update_blt","draw":"draw_part","die":"die_blt"},"flash":{"c":7,"rnd":{"r":[1,2],"dly":[4,8]},"frame":0,"dv":1,"dr":-0.05,"kind":2,"dr":0},"blast":{"dly":18,"frame":0,"kind":2,"r":8,"dr":-0.8,"dv":0,"c":7},"debris":{"part":"fire","frame":0,"kind":-1,"r":1,"dr":0,"dv":1,"rnd":{"acc":[0.8,1.5],"dly":[24,40]},"update":"update_emitter"},"fire":{"rnd":{"r":[1,2],"dly":[18,24]},"frame":0,"dv":0.9,"dr":0.05,"kind":4}}'
 
 function make_part(part,p,v)
 	local pt=add(parts,clone(all_parts[part],{pos=v_clone(p),v=v_clone(v),draw=_g.draw_part,c=c}))
@@ -773,7 +783,7 @@ function make_blast(p)
 	for i=1,3 do
 	 local a,o=rnd(),rnd(0.5)
 	 local c,s=cos(o),-sin(o)
-	 -- ranom unit vector
+	 -- ranom unit vector (half dome)
 	 local x,y,z=c*cos(a),s,-c*sin(a)
 	 local v={2*x,2*y,2*z}
 		v_add(v,p)
@@ -790,10 +800,9 @@ function make_blt(self,wp)
 			actor=self, --blt owner
 			pos=p,
 			u=m_fwd(self.m),
-			side=self.side,
-			dmg=wp.dmg}))
+			side=self.side}))
 	pt.t=time_t+pt.dly
- pt.df=1/pt.dly	
+	pt.df=1/pt.dly
 	if(wp.sfx) sfx(wp.sfx)
 	return pt
 end

@@ -6,7 +6,7 @@ __lua__
 
 -- game globals
 local time_t=0
-local good_side,bad_side,any_side,no_side=0x1,0x2,0x0,0x3
+local good_side,bad_side,no_side=0x1,0x2,0x3
 
 -- register json context here
 local _tok={
@@ -16,7 +16,6 @@ function nop() return true end
 local _g={
 	good_side=good_side,
 	bad_side=bad_side,
-	any_side=any_side,
 	nop=nop}
 
 -- json parser
@@ -35,6 +34,7 @@ local function skip_delim(str, pos, delim, err_if_missing)
  end
  return pos+1,true
 end
+
 local function parse_str_val(str, pos, val)
 	val=val or ''
 	--[[
@@ -43,7 +43,17 @@ local function parse_str_val(str, pos, val)
 	end
 	]]
 	local c=sub(str,pos,pos)
-	if(c=='"') return _g[val] or val,pos+1
+	-- lookup global refs
+	-- if(c=='"') return _g[val] or val,pos+1
+	
+	if c=='"' then
+		local f=_g[val]
+		if f then
+	 	val=function(...) return f(...) end
+	 end
+	 return val,pos+1
+	end
+
 	return parse_str_val(str,pos+1,val..c)
 end
 local function parse_num_val(str,pos,val)
@@ -234,8 +244,12 @@ end
 
 function sqr_dist(a,b)
 	local dx,dy,dz=b[1]-a[1],b[2]-a[2],b[3]-a[3]
+  local d=dx*dx
+  if(d<0) return 32000
+  d+=dy*dy
+  if(d<0) return 32000
+  d+=dz*dz
  
-	local d=dx*dx+dy*dy+dz*dz
 	-- overflow?
 	return d<0 and 32000 or d
 end
@@ -446,7 +460,7 @@ function m_up(m)
 end
 
 -- models
-local all_models=json_parse'{"logo":{"c":10},"deathstar":{"c":3},"trench1":{"c":13},"turret":{"c":8,"r":1.1,"wp":{"sfx":1,"part":"ground_laser","dmg":1,"dly":24,"pos":[[-0.4,1.6,1.4],[0.4,1.6,1.4]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"engine_part":"purple_trail","engines":[[-0.57,0.44,-1.61],[-0.57,-0.44,-1.61],[0.57,0.44,-1.61],[0.57,-0.44,-1.61]],"proton_wp":{"dmg":4,"part":"proton","sfx":6,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":2,"angle":0.9,"dmg":1,"dly":8,"pos":[[2.1,0.6,1.6],[2.1,-0.6,1.6],[-2.1,-0.6,1.6],[-2.1,0.6,1.6]],"n":[[-0.0452,-0.0129,0.9989],[-0.0452,0.0129,0.9989],[0.0452,0.0129,0.9989],[0.0452,-0.0129,0.9989]]}},"tie":{"c":5,"r":1.2,"engine_part":"blue_trail","engines":[[0,0,-0.5]],"wp":{"sfx":8,"angle":0.92,"dmg":1,"dly":18,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"tiex1":{"c":13,"r":1.2,"wp":{"sfx":6,"angle":0.9,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"junk2":{"c":3,"r":1.2},"generator":{"c":6,"r":2},"mfalcon":{"c":5,"engine_part":"mfalcon_trail","engines":[[0,0,-5.86]],"wp":{"sfx":1,"angle":0,"dmg":1,"dly":45,"pos":[[0.45,1.1,0],[-0.45,1.1,0],[0.45,-1.3,0],[-0.45,1.3,0]],"n":[[0,0,1],[0,0,1],[0,0,1],[0,0,1]]}},"vent":{"c":5,"r":1},"ywing":{"c":7,"r":1,"wp":{"sfx":1,"angle":0.92,"dmg":4,"dly":45,"pos":[[0.13,0,3.1],[-0.13,0,3.1]],"n":[[0,0,1],[0,0,1]]}}}'
+local all_models=json_parse'{"logo":{"c":10},"deathstar":{"c":3},"trench1":{"c":13},"turret":{"c":8,"r":1.1,"wp":{"sfx":1,"part":"ground_laser","dmg":1,"dly":48,"pos":[[-0.4,1.6,1.4],[0.4,1.6,1.4]],"n":[[0,0,1],[0,0,1]]}},"xwing":{"c":7,"r":0.8,"engine_part":"purple_trail","engines":[[-0.57,0.44,-1.61],[-0.57,-0.44,-1.61],[0.57,0.44,-1.61],[0.57,-0.44,-1.61]],"proton_wp":{"dmg":4,"part":"proton","sfx":6,"dly":60,"pos":[0,-0.4,1.5],"n":[0,0,1]},"wp":{"sfx":2,"angle":0.9,"dmg":1,"dly":8,"pos":[[2.1,0.6,1.6],[2.1,-0.6,1.6],[-2.1,-0.6,1.6],[-2.1,0.6,1.6]],"n":[[-0.0452,-0.0129,0.9989],[-0.0452,0.0129,0.9989],[0.0452,0.0129,0.9989],[0.0452,-0.0129,0.9989]]}},"tie":{"c":5,"r":1.2,"engine_part":"blue_trail","engines":[[0,0,-0.5]],"wp":{"sfx":8,"angle":0.92,"dmg":1,"dly":18,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"tiex1":{"c":13,"r":1.2,"wp":{"sfx":6,"angle":0.9,"dmg":2,"dly":24,"pos":[[0.7,-0.7,0.7],[-0.7,-0.7,0.7]],"n":[[0,0,1],[0,0,1]]}},"junk2":{"c":3,"r":1.2},"generator":{"c":6,"r":2},"mfalcon":{"c":5,"engine_part":"mfalcon_trail","engines":[[0,0,-5.86]],"wp":{"sfx":1,"angle":0,"dmg":1,"dly":45,"pos":[[0.45,1.1,0],[-0.45,1.1,0],[0.45,-1.3,0],[-0.45,1.3,0]],"n":[[0,0,1],[0,0,1],[0,0,1],[0,0,1]]}},"vent":{"c":5,"r":1},"ywing":{"c":7,"r":1,"wp":{"sfx":1,"angle":0.92,"dmg":4,"dly":45,"pos":[[0.13,0,3.1],[-0.13,0,3.1]],"n":[[0,0,1],[0,0,1]]}}}'
 local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]'
 
 function draw_actor(self,x,y,z,w)
@@ -775,7 +789,7 @@ _g.update_flying_npc=function(self)
 	-- fire solution?
 	local wp=self.model.wp
 	if wp and can_fire and self.fire_t<time_t and in_cone(self.pos,self.target.pos,fwd,wp.angle,64) then
- 	self:fire(self.target.pos)
+ 	self:fire(self.target)
 	end
 
 	return true
@@ -854,7 +868,7 @@ _g.update_turret=function(self,i,j)
 	
 	-- fly low or die!
 	if plyr.pos[2]>self.pos[2]+5 and self.pause_t<time_t then
-		self:fire(plyr.pos)
+		self:fire(plyr)
 	end
 	self.local_t=time_t
 	return true
@@ -886,12 +900,21 @@ _g.make_laser=function(self,target)
 	local p=v_clone(wp.pos[i])
 	m_x_v(self.m,p)
 	-- direction override?
-	local v
-	if target then
-		v=make_v(p,target)
+	local v=target and v_clone(target.pos) or v_clone(wp.n[i])
+	-- make sure npc can miss!
+	if target and self.fire_luck>rnd() then
+		-- compute lead for moving targets
+		if target.acc then
+			local blt=all_parts[wp.part or "laser"]
+		  -- crude 2 step converge
+		  for i=1,2 do
+				local lead_t=sqrt(sqr_dist(v,self.pos))/blt.acc
+				v_add(v,m_fwd(target.m),lead_t*target.acc)
+			end
+		end
+		v_add(v,p,-1)
 		v_normz(v) 
 	else
-		v=v_clone(wp.n[i])
 		o_x_v(self.m,v)
 	end
 	self.laser_i+=1
@@ -914,7 +937,7 @@ _g.make_proton=function(self,target)
 	make_blt(self,wp,p,v).target=target
 end
 
-local all_actors=json_parse'{"plyr":{"hp":5,"turn_spring":0,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"dboost":1,"acc":0.2,"model":"xwing","turn":0,"roll":0,"pitch":0,"laser_i":0,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","draw":"draw_plyr","update":"update_plyr","hit":"hit_plyr","die":"die_plyr"},"patrol":{"hp":10,"turn_rate":0.045,"acc":0.2,"overg_t":0,"fatigue":1,"rnd":{"model":["xwing","xwing","ywing"]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor","on_die":"nop"},"tie":{"acc":0.6,"turn_rate":0.04,"fatigue":48,"on_die":"nop","hp":8,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"},"generator":{"waypt":true,"hp":10,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":12,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"mfalcon":{"on_die":"nop","turn_rate":0.03,"fatigue":8,"hp":8,"acc":0.25,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","local_t":0,"pause_t":0,"fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"model":"junk2","side":"bad_side","update":"update_ground_actor","hit":"hit_npc","die":"die_actor"},"waypoint":{"draw":"nop","update":"update_waypoint","waypt":true},"vador":{"turn_rate":0.055,"fatigue":8,"hp":40,"acc":0.6,"overg_t":0,"model":"tiex1","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"}}'
+local all_actors=json_parse'{"plyr":{"hp":5,"turn_spring":0,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"dboost":1,"acc":0.2,"model":"xwing","turn":0,"roll":0,"pitch":0,"laser_i":0,"fire_luck":1,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","draw":"draw_plyr","update":"update_plyr","hit":"hit_plyr","die":"die_plyr"},"patrol":{"hp":10,"turn_rate":0.045,"acc":0.2,"overg_t":0,"fatigue":1,"rnd":{"model":["xwing","xwing","ywing"],"fire_luck":[0.7,0.9]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor","on_die":"nop"},"tie":{"acc":0.6,"turn_rate":0.04,"fatigue":48,"on_die":"nop","hp":8,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor","fire_luck":0.7},"generator":{"waypt":true,"hp":10,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":12,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"mfalcon":{"on_die":"nop","turn_rate":0.03,"fatigue":8,"hp":8,"acc":0.25,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_luck":0.8,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","local_t":0,"pause_t":0,"fire_luck":0.5,"fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"model":"junk2","side":"bad_side","update":"update_ground_actor","hit":"hit_npc","die":"die_actor"},"waypoint":{"draw":"nop","update":"update_waypoint","waypt":true},"vador":{"turn_rate":0.055,"fatigue":8,"hp":40,"acc":0.6,"overg_t":0,"model":"tiex1","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_luck":0.8,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"}}'
 
 function make_actor(src,p,q)
 	-- instance
@@ -966,7 +989,7 @@ function make_cam(f)
 end
 
 _g.update_part=function(self)
-	if(self.t<time_t or self.r<0) return false
+	if(self.t<time_t or self.r<=0) return false
 	self.r+=self.dr
 	return true
 end
@@ -1362,16 +1385,8 @@ function control_plyr(self)
  		plyr.proton_ammo-=1
  	end
  		
- 	if self.fire_t<time_t and btn(5) then
-			local target_pos=target and v_clone(target.pos)
-			-- compute lead for moving targets
-			if target and target.acc then
-			 -- crude estimate
-				local lead_t=1.2*sqrt(sqr_dist(target_pos,plyr.pos))/all_parts["laser"].acc
-				v_add(target_pos,m_fwd(target.m),lead_t*target.acc)
- 		end
- 			
- 		if(plyr.energy>0.05) plyr:fire(target_pos)
+ 	if self.fire_t<time_t and btn(5) and plyr.energy>0.05 then
+ 		plyr:fire(target)
  		plyr.energy=max(plyr.energy-0.05)
  	end
  end
@@ -1435,6 +1450,8 @@ function draw_instr()
  			if z>0 and w<3 then
  				x,y=mid(x,4,124),mid(y-2*w,4,124)
  				spr(41,x-4,y-4)
+ 				local d=sqr_dist(plyr.pos,a.pos)
+ 				print(d,x-8,y-9,12)
 			end
 		end
 	end
@@ -1658,7 +1675,7 @@ function _draw()
 	cur_screen:draw()
 	
 	-- if(draw_stats) draw_stats()
-	-- print(flr(100*stat(1)).."% @"..stat(7).."fps",2,2,7)
+	print(flr(100*stat(1)).."% @"..stat(7).."fps",2,2,7)
 end
 
 
@@ -1791,7 +1808,7 @@ _g.ingress_mission=function()
 		for j=0,127 do
 		 	-- force turret!
 			local r=(i%124==2 and j%16==0) and 1 or rnd()
-			if r>0.995 then
+			if r>0.998 then
 				add(ground_npcs,make_ground_actor(i,j,"turret"))
 			elseif r>0.99 then
 				make_ground_actor(i,j,"ground_junk")
@@ -1834,7 +1851,7 @@ local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","mu
  
 function next_mission_async()
 	mission_score=0
-	for i=1,#all_missions do
+	for i=2,#all_missions do
 		local m=all_missions[i]
 		m.wave=0
 		-- play music at start of new mission
