@@ -44,16 +44,7 @@ local function parse_str_val(str, pos, val)
 	]]
 	local c=sub(str,pos,pos)
 	-- lookup global refs
-	-- if(c=='"') return _g[val] or val,pos+1
-	
-	if c=='"' then
-		local f=_g[val]
-		if f then
-	 	val=function(...) return f(...) end
-	 end
-	 return val,pos+1
-	end
-
+ if(c=='"') return _g[val] or val,pos+1
 	return parse_str_val(str,pos+1,val..c)
 end
 local function parse_num_val(str,pos,val)
@@ -113,7 +104,7 @@ local cockpit_view,cam=false
 local plyr_playing,mission_score,invert_y,plyr=false,0,1
 local actors,ground_actors,parts,all_parts={},{},{}
 -- ground constants 
-local ground_scale,ground_colors,ground_level=4,json_parse'[1,13,6]'
+local ground_shift,ground_colors,ground_level=2,json_parse'[1,13,6]'
 
 -- screen management
 local start_screen,game_screen,gameover_screen,cur_screen={},{},{}
@@ -874,7 +865,7 @@ _g.update_turret=function(self,i,j)
 	return true
 end
 _g.update_ground_actor=function(self,i,j)
-	self.pos[1],self.pos[2],self.pos[3]=i*ground_scale,abs(i*ground_scale)<8 and ground_level-6 or ground_level,j*ground_scale
+	self.pos[1],self.pos[2],self.pos[3]=shl(i,ground_shift),abs(shl(i,ground_shift))<8 and ground_level-6 or ground_level,shl(j,ground_shift)
 
 	m_set_pos(self.m,self.pos)
 end
@@ -979,10 +970,10 @@ function make_cam(f)
 			local v=m_x_xyz(self.m,x,y,z)
 			-- distance to camera plane
 			v[3]-=1
-			if(v[3]<0.001) return nil,nil,-1,nil
+			-- if(v[3]<0.001) return nil,nil,-1,nil
 			-- view to screen
- 			local w=self.focal/v[3]
- 			return 64+v[1]*w,64-v[2]*w,v[3],w
+ 		local w=self.focal/v[3]
+ 		return 64+v[1]*w,64-v[2]*w,v[3],w
 		end
 	}
 	return c
@@ -1160,7 +1151,6 @@ function draw_ground(self)
 	end
 	-- rebase height
 	cy-=ground_level
-	if(cy<0) return
 	if cy>128 then
 		cy-=64
 		draw_deathstar(-min(6,cy/32))
@@ -1173,34 +1163,55 @@ function draw_ground(self)
 	local x0,z0=cam.pos[1],cam.pos[3]
 	local dx,dy=x0%scale,z0%scale
 	
+	-- draw trench
+	for i=-3,3,6 do
+		-- heights
+		for h=-6,0,6 do
+ 	 local tx0,ty0
+ 		for j=-4,4 do
+ 			local jj=scale*j-dy+z0
+ 			local x,y,z,w=cam:project(i,ground_level+h,jj)
+ 			if z>0 then
+ 			 if tx0 then
+ 			 	line(tx0,ty0,x,y,8)
+ 			 end
+ 			 tx0,ty0=x,y
+ 			end
+		 end
+		end
+	end
+ 
+ -- below ground level
+	if(cy<0) return
 	for i=-4,4 do
 		local ii=scale*i-dx+x0
 		-- don't draw on trench
-		if abs(flr(ii-x0+cam.pos[1]))>=8 then
-			for j=-4,4 do
-				local jj=scale*j-dy+z0
-				local x,y,z,w=cam:project(ii,ground_level,jj)
-				if z>0 then
-					pset(x,y,lerparray(ground_colors,2*w))
-				end
-			end
-		end
+		if abs(flr(ii-x0+cam.pos[1]))>8 then
+ 		for j=-4,4 do
+ 			local jj=scale*j-dy+z0
+ 			local x,y,z,w=cam:project(ii,ground_level,jj)
+ 			if z>0 then
+ 				pset(x,y,6)--lerparray(ground_colors,2*w))
+ 			end
+ 		end
+ 	end
 	end
 end
 local trench_scale,turrets,trench_actors=6
 function make_ground_actor(i,j,src,y)
-	local x,y,z=i*ground_scale,y or 0,j*ground_scale
+	local x,y,z=shl(i,ground_shift),y or 0,shl(j,ground_shift)
 	local a=clone(all_actors[src],{
 		pos={x,y,z},
 		m=make_m(x,y,z),
 		draw=draw_actor
 	})
 	a.model=all_models[a.model]
-	turrets[i+j*128]=a
+	turrets[i+shl(j,7)]=a
 	return a
 end
 
 function make_trench(i)
+ --[[
 	local x,y,z=0,0,i*trench_scale
 	local t={
 		pos={x,y,z},
@@ -1220,6 +1231,7 @@ function make_trench(i)
 	}
 	m_set_pos(t.m,t.pos)
 	add(trench_actors,t)
+ ]]
 end
 
 function update_ground()
@@ -1230,12 +1242,12 @@ function update_ground()
 	local pos=plyr and plyr.pos or cam.pos
 	if(pos[2]>ground_level+96) return
 
-	local i0,j0=flr(pos[1]/ground_scale),flr(pos[3]/ground_scale)
+	local i0,j0=flr(shr(pos[1],ground_shift)),flr(shr(pos[3],ground_shift))
 	for i=i0-16,i0+16 do
 		local cx=band(i,0x7f)
 		for j=j0-16,j0+16 do
 			local cy=band(j,0x7f)
-			local t=turrets[cx+cy*128]
+			local t=turrets[cx+shl(cy,7)]
 			if t and not t.disabled then
 				t:update(i,j)
 				add(drawables,t)
