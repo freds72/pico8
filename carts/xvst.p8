@@ -233,14 +233,15 @@ function sort(data)
  end
 end
 
+-- edge cases:
+-- a: -23	-584	-21
+-- b: 256	-595	256
 function sqr_dist(a,b)
 	local dx,dy,dz=b[1]-a[1],b[2]-a[2],b[3]-a[3]
-  local d=dx*dx
-  if(d<0) return 32000
-  d+=dy*dy
-  if(d<0) return 32000
-  d+=dz*dz
- 
+	if abs(dx)>128 or abs(dy)>128 or abs(dz)>128 then
+		return 32000
+	end
+	local d=dx*dx+dy*dy+dz*dz 
 	-- overflow?
 	return d<0 and 32000 or d
 end
@@ -854,7 +855,7 @@ _g.update_turret=function(self,i,j)
 	
 	-- delay fire for new turret
 	if time_t-self.local_t>45 then
-		self.pause_t=time_t+60+rnd(60)
+		self.pause_t=time_t+30+rnd(30)
 	end
 	
 	-- fly low or die!
@@ -897,9 +898,12 @@ _g.make_laser=function(self,target)
 		-- compute lead for moving targets
 		if target.acc then
 			local blt=all_parts[wp.part or "laser"]
-		  -- crude 2 step converge
-		  for i=1,2 do
-				local lead_t=sqrt(sqr_dist(v,self.pos))/blt.acc
+	  -- crude 2 step converge
+	  local lead_t=0
+	  for i=1,2 do
+				lead_t=sqrt(sqr_dist(v,p))/blt.acc-lead_t
+				-- not converging
+				-- if(lead_t<0) break
 				v_add(v,m_fwd(target.m),lead_t*target.acc)
 			end
 		end
@@ -928,7 +932,7 @@ _g.make_proton=function(self,target)
 	make_blt(self,wp,p,v).target=target
 end
 
-local all_actors=json_parse'{"plyr":{"hp":5,"turn_spring":0,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"dboost":1,"acc":0.2,"model":"xwing","turn":0,"roll":0,"pitch":0,"laser_i":0,"fire_luck":1,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","draw":"draw_plyr","update":"update_plyr","hit":"hit_plyr","die":"die_plyr"},"patrol":{"hp":10,"turn_rate":0.045,"acc":0.2,"overg_t":0,"fatigue":1,"rnd":{"model":["xwing","xwing","ywing"],"fire_luck":[0.7,0.9]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor","on_die":"nop"},"tie":{"acc":0.6,"turn_rate":0.04,"fatigue":48,"on_die":"nop","hp":8,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor","fire_luck":0.7},"generator":{"waypt":true,"hp":10,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":12,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"mfalcon":{"on_die":"nop","turn_rate":0.03,"fatigue":8,"hp":8,"acc":0.25,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_luck":0.8,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","local_t":0,"pause_t":0,"fire_luck":0.5,"fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"model":"junk2","side":"bad_side","update":"update_ground_actor","hit":"hit_npc","die":"die_actor"},"waypoint":{"draw":"nop","update":"update_waypoint","waypt":true},"vador":{"turn_rate":0.055,"fatigue":8,"hp":40,"acc":0.6,"overg_t":0,"model":"tiex1","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_luck":0.8,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"}}'
+local all_actors=json_parse'{"plyr":{"hp":5,"turn_spring":0,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"dboost":1,"acc":0.2,"model":"xwing","turn":0,"roll":0,"pitch":0,"laser_i":0,"fire_luck":1,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","draw":"draw_plyr","update":"update_plyr","hit":"hit_plyr","die":"die_plyr"},"patrol":{"hp":10,"turn_rate":0.045,"acc":0.2,"overg_t":0,"fatigue":1,"rnd":{"model":["xwing","xwing","ywing"],"fire_luck":[0.7,0.9]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor","on_die":"nop"},"tie":{"acc":0.6,"turn_rate":0.04,"fatigue":48,"on_die":"nop","hp":8,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor","fire_luck":0.7},"generator":{"waypt":true,"hp":10,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":12,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"mfalcon":{"on_die":"nop","turn_rate":0.03,"fatigue":8,"hp":8,"acc":0.25,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_luck":0.8,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","local_t":0,"pause_t":0,"fire_luck":1,"fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"model":"junk2","side":"bad_side","update":"update_ground_actor","hit":"hit_npc","die":"die_actor"},"waypoint":{"draw":"nop","update":"update_waypoint","waypt":true},"vador":{"turn_rate":0.055,"fatigue":8,"hp":40,"acc":0.6,"overg_t":0,"model":"tiex1","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_luck":0.8,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"}}'
 
 function make_actor(src,p,q)
 	-- instance
@@ -970,13 +974,17 @@ function make_cam(f)
 			local v=m_x_xyz(self.m,x,y,z)
 			-- distance to camera plane
 			v[3]-=1
-			-- if(v[3]<0.001) return nil,nil,-1,nil
+			if(v[3]<0.001) return nil,nil,-1,nil
 			-- view to screen
  		local w=self.focal/v[3]
  		return 64+v[1]*w,64-v[2]*w,v[3],w
 		end
 	}
 	return c
+end
+-- 3d to 2d helper function for vectors
+function v_project(v)
+	return cam:project(v[1],v[2],v[3])
 end
 
 _g.update_part=function(self)
@@ -1094,7 +1102,7 @@ end
 _g.draw_part=function(self,x,y,z,w)
  -- laser
 	if self.kind==0 then
-		local x1,y1,z1,w1=cam:project(self.prev_pos[1],self.prev_pos[2],self.prev_pos[3])
+		local x1,y1,z1,w1=v_project(self.prev_pos)
 		if z>0 and z1>0 then
 			line(x,y,x1,y1,time_t%2==0 and self.c or 10)
 		end
@@ -1116,19 +1124,17 @@ _g.draw_part=function(self,x,y,z,w)
 	 circ(x,y,self.r*w,self.c[flr(3-3*mid(self.r/0.4,0,1))+1])
 	-- 3d line particles
 	elseif self.kind==8 then
-	 --[[
-		color(self.c)
 		if w>1 then
+			color(self.c)
  		for _,v in pairs(self.e) do
  		 v=v_clone(v)
   		m_x_v(self.m,v)
-  		local x1,y1,z1,w1=cam:project(v[1],v[2],v[3])
+  		local x1,y1,z1,w1=v_project(v)
   		if z>0 and z1>0 then
   			line(x,y,x1,y1)
   		end
  		end
  	end
- 	]]
 	end
 end
 
@@ -1141,6 +1147,7 @@ function make_part(part,p,c)
 	return pt
 end
 
+local trench_section=json_parse'[[-6,0],[-6,-6],[6,-6],[6,0]]'	
 function draw_ground(self)
 	local cy=cam.pos[2]
 
@@ -1164,24 +1171,39 @@ function draw_ground(self)
 	local dx,dy=x0%scale,z0%scale
 	
 	-- draw trench
-	for i=-3,3,6 do
-		-- heights
-		for h=-6,0,6 do
- 	 local tx0,ty0
- 		for j=-4,4 do
- 			local jj=scale*j-dy+z0
- 			local x,y,z,w=cam:project(i,ground_level+h,jj)
- 			if z>0 then
- 			 if tx0 then
- 			 	line(tx0,ty0,x,y,8)
- 			 end
- 			 tx0,ty0=x,y
- 			end
-		 end
+	local strips={}
+ for _,xy in pairs(trench_section) do
+  local tx0,ty0,strip
+ 	for j=-4,4 do 		 
+ 	 strips[j]=strips[j] or {}
+ 		local jj=scale*j-dy+z0
+ 		local x,y,z,w=cam:project(xy[1],ground_level+xy[2],jj)
+ 		if z>0 then
+		  local fp=lerparray(dither_pat,w/2)+0.1
+		  local c=lerparray(ground_colors,2*w)
+ 		 if tx0 then
+ 	 		fillp(fp)
+ 	 		color(c)
+ 		 	line(tx0,ty0,x,y)
+ 		 end
+		 	add(strips[j],{x,y,fp,c})
+ 		 tx0,ty0=x,y
+ 		end
+  end
+ end
+ for _,strip in pairs(strips) do
+		local p0=strip[1]
+		for i=2,#strip do
+			local p1=strip[i]
+	  fillp(p0[3])
+	  color(p0[4])
+			line(p0[1],p0[2],p1[1],p1[2])
+			p0=p1
 		end
-	end
+ end
+ fillp()
  
- -- below ground level
+ -- below ground level?
 	if(cy<0) return
 	for i=-4,4 do
 		local ii=scale*i-dx+x0
@@ -1191,7 +1213,7 @@ function draw_ground(self)
  			local jj=scale*j-dy+z0
  			local x,y,z,w=cam:project(ii,ground_level,jj)
  			if z>0 then
- 				pset(x,y,6)--lerparray(ground_colors,2*w))
+ 				pset(x,y,lerparray(ground_colors,2*w))
  			end
  		end
  	end
@@ -1208,30 +1230,6 @@ function make_ground_actor(i,j,src,y)
 	a.model=all_models[a.model]
 	turrets[i+shl(j,7)]=a
 	return a
-end
-
-function make_trench(i)
- --[[
-	local x,y,z=0,0,i*trench_scale
-	local t={
-		pos={x,y,z},
-		m=m_from_q(make_q(v_up,i%2==0 and 0.5 or 0)),
-		side=no_side,
-		model=all_models["trench1"],
-		update=function(self)
-			local dz=cam.pos[3]-cam.pos[3]%(2*trench_scale)
-			local z=i*trench_scale+dz			
-			self.pos[2],self.pos[3],self.m[14],self.m[15]=ground_level,z,ground_level,z
-			return true
-		end,
-		draw=function(self,x,y,z,w)
-		 if(w>1) draw_model(self.model,self.m,x,y,z,w)
-		 -- no lod
-		end
-	}
-	m_set_pos(t.m,t.pos)
-	add(trench_actors,t)
- ]]
 end
 
 function update_ground()
@@ -1254,11 +1252,6 @@ function update_ground()
 				add(ground_actors,t)
 			end
 		end
-	end
-	-- trench
-	for _,t in pairs(trench_actors) do
-		t:update()
-		add(drawables,t)
 	end
 end
 
@@ -1413,11 +1406,11 @@ function draw_deathstar(offset)
 	end
 end
 
-local stars,stars_ramp={},json_parse'[2,1,13,6]'
+local stars,stars_ramp={},json_parse'[1,2,13,12]'
 function draw_stars()
 	local hyper_space=plyr and plyr.boost>0
  for _,v in pairs(stars) do
-		local x,y,z,w=cam:project(v[1],v[2],v[3])
+		local x,y,z,w=v_project(v)
 		if z>0 and z<32 then
 			color(stars_ramp[min(flr(4*w/12)+1,#stars_ramp)])
 			if hyper_space and v.x then
@@ -1458,12 +1451,10 @@ function draw_instr()
 	-- draw waypoints
 	for _,a in pairs(actors) do
 		if a.waypt then
- 			local x,y,z,w=cam:project(a.pos[1],a.pos[2],a.pos[3])
+ 			local x,y,z,w=v_project(a.pos)
  			if z>0 and w<3 then
  				x,y=mid(x,4,124),mid(y-2*w,4,124)
  				spr(41,x-4,y-4)
- 				local d=sqr_dist(plyr.pos,a.pos)
- 				print(d,x-8,y-9,12)
 			end
 		end
 	end
@@ -1471,7 +1462,7 @@ function draw_instr()
 	-- draw lock
 	if plyr.target then
 		local p=plyr.target.pos
-		local x,y,z,w=cam:project(p[1],p[2],p[3])
+		local x,y,z,w=v_project(p)
 		dx,dy=x-64,64-y
 
   -- torpedo lock
@@ -1815,7 +1806,7 @@ _g.ingress_mission=function()
 	plyr.boost,plyr.dboost=plyr.acc,1
 	
 	-- create ground entities
-	turrets,trench_actors={},{}
+	turrets={}
 	for i=0,127 do
 		for j=0,127 do
 		 	-- force turret!
@@ -1826,9 +1817,6 @@ _g.ingress_mission=function()
 				make_ground_actor(i,j,"ground_junk")
 			end
 		end
-	end
-	for i=-10,10 do
-		make_trench(i)
 	end
 	return {make_actor("waypoint",{cam.pos[1],ground_level+30,cam.pos[3]})}
 end
@@ -1992,7 +1980,7 @@ aaaaaaaa999998888888840000000000000000000000000000000000000000000000000000000000
 00000000000000122100448888888888884000000000000000000000000000000006776677776000000000000000000000666655666666000000000000000000
 000000000000012221000048888888888884000000000000000000000000000088000000aaaaaaaa000000000000000000000000000000000000000000000000
 000000000000012210000004488888888888400000000000000000000000000080000000a000000a000000000000000000000000000000000000000000000000
-000000000000122210000000044888888888840000000000000000000000000000000000a000000a00b0b000000bbbbb00000000000bbbbb0000000000000000
+000000000000122210000000044888888888840000000000000000000000000000000000a000000a00b0b000000bbbbb00000000000bbbbb00000000012dc000
 0000000000001221000000000004488888888840000000000000000000000000000000000a0000a00b000b0000b00000b000000000b00000b000000000000000
 0000000000112221000000000000048888888884000000000000000000000000000000000a0000a00000000000b00700b000000000b00700b000000000000000
 00000001112222100000000000000044888888884000000000000000000000000000000000a00a000b000b000000070000000000000007000000000000000000
