@@ -481,79 +481,6 @@ function draw_actor(self,x,y,z,w)
 	-- if(self.model.r) circ(x,y,self.model.r*w,7)
 end
 
--- unpack models
-local mem=0x1000
-function unpack_int()
-	local i=peek(mem)
-	mem+=1
-	return i
-end
-function unpack_float(scale)
-	local f=(unpack_int()-128)/32	
-	return f*(scale or 1)
-end
--- valid chars for model names
-local itoa='_0123456789abcdefghijklmnopqrstuvwxyz'
-function unpack_string()
-	local s=""
-	for i=1,unpack_int() do
-		local c=unpack_int()
-		s=s..sub(itoa,c,c)
-	end
-	return s
-end
-function unpack_models()
-	-- for all models
-	for m=1,unpack_int() do
-		local model,name,scale={},unpack_string(),unpack_int()
-		
-		-- vertices
-		model.v={}
-		for i=1,unpack_int() do
-			add(model.v,{unpack_float(scale),unpack_float(scale),unpack_float(scale)})
-		end
-		
-		-- faces
-		model.f={}
-		for i=1,unpack_int() do
-			local f={unpack_int(),unpack_int()}
-			for k=1,f[2] do
-				add(f,unpack_int())
-			end
-			add(model.f,f)
-		end
-
-		-- normals
-		model.n={}
-		for i=1,unpack_int() do
-			add(model.n,{unpack_float(),unpack_float(),unpack_float()})
-		end
-		
-		-- n.p cache	
-		model.cp={}
-		for i=1,#model.f do
-			local f=model.f[i]
-			add(model.cp,v_dot(model.n[i],model.v[f[1]]))
-		end
-				
-		-- edges
-		model.e={}
-		for i=1,unpack_int() do
-			add(model.e,{
-				-- start
-				unpack_int(),
-				-- end
-				unpack_int(),
-				-- always visible?
-				unpack_int()==1 and true or -1
-			})
-		end
-
-		-- merge with existing model
-		all_models[name]=clone(model,all_models[name])
-	end
-end
-
 -- little hack to perform in-place data updates
 local draw_session_id=0
 function draw_model(model,m,x,y,z,w)
@@ -896,15 +823,18 @@ _g.make_laser=function(self,target)
 	-- make sure npc can miss!
 	if target and self.fire_luck>rnd() then
 		-- compute lead for moving targets
-		if target.acc then
+		local target_acc=target.acc
+		if target_acc then
+		 -- don't forget boost for player!
+		 target_acc+=(target.boost or 0)
 			local blt=all_parts[wp.part or "laser"]
-	  -- crude 2 step converge
-	  local lead_t=0
-	  for i=1,2 do
+			-- crude 2 step converge
+			local lead_t=0
+			for i=1,2 do
 				lead_t=sqrt(sqr_dist(v,p))/blt.acc-lead_t
 				-- not converging
-				-- if(lead_t<0) break
-				v_add(v,m_fwd(target.m),lead_t*target.acc)
+				if(lead_t<0) break
+				v_add(v,m_fwd(target.m),lead_t*target_acc)
 			end
 		end
 		v_add(v,p,-1)
@@ -932,7 +862,7 @@ _g.make_proton=function(self,target)
 	make_blt(self,wp,p,v).target=target
 end
 
-local all_actors=json_parse'{"plyr":{"hp":5,"turn_spring":0,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"dboost":1,"acc":0.2,"model":"xwing","turn":0,"roll":0,"pitch":0,"laser_i":0,"fire_luck":1,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","draw":"draw_plyr","update":"update_plyr","hit":"hit_plyr","die":"die_plyr"},"patrol":{"hp":10,"turn_rate":0.045,"acc":0.2,"overg_t":0,"fatigue":1,"rnd":{"model":["xwing","xwing","ywing"],"fire_luck":[0.7,0.9]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor","on_die":"nop"},"tie":{"acc":0.6,"turn_rate":0.04,"fatigue":48,"on_die":"nop","hp":8,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor","fire_luck":0.7},"generator":{"waypt":true,"hp":10,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":12,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"mfalcon":{"on_die":"nop","turn_rate":0.03,"fatigue":8,"hp":8,"acc":0.25,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_luck":0.8,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","local_t":0,"pause_t":0,"fire_luck":1,"fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"model":"junk2","side":"bad_side","update":"update_ground_actor","hit":"hit_npc","die":"die_actor"},"waypoint":{"draw":"nop","update":"update_waypoint","waypt":true},"vador":{"turn_rate":0.055,"fatigue":8,"hp":40,"acc":0.6,"overg_t":0,"model":"tiex1","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_luck":0.8,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"}}'
+local all_actors=json_parse'{"plyr":{"hp":5,"turn_spring":0,"safe_t":0,"energy":1,"energy_t":0,"boost":0,"dboost":1,"acc":0.2,"model":"xwing","turn":0,"roll":0,"pitch":0,"laser_i":0,"fire_luck":1,"fire_t":0,"fire":"make_laser","lock_t":0,"proton_t":0,"proton_ammo":4,"fire_proton":"make_proton","side":"good_side","draw":"draw_plyr","update":"update_plyr","hit":"hit_plyr","die":"die_plyr"},"patrol":{"hp":10,"turn_rate":0.045,"acc":0.2,"overg_t":0,"fatigue":1,"rnd":{"model":["xwing","xwing","ywing"],"fire_luck":[0.7,0.9]},"side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor","on_die":"nop"},"tie":{"acc":0.6,"turn_rate":0.04,"fatigue":48,"on_die":"nop","hp":8,"overg_t":0,"model":"tie","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor","fire_luck":0.7},"generator":{"waypt":true,"hp":10,"model":"generator","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"vent":{"waypt":true,"hp":12,"model":"vent","side":"bad_side","update":"nop","hit":"hit_npc","die":"die_actor"},"mfalcon":{"on_die":"nop","turn_rate":0.03,"fatigue":8,"hp":8,"acc":0.25,"overg_t":0,"model":"mfalcon","side":"good_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_luck":0.8,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_npc","die":"die_actor"},"turret":{"hp":2,"model":"turret","side":"bad_side","local_t":0,"pause_t":0,"fire_luck":0.8,"fire_t":0,"laser_i":0,"fire":"make_laser","update":"update_turret","hit":"hit_npc","die":"die_actor"},"ground_junk":{"hp":2,"model":"junk2","side":"bad_side","update":"update_ground_actor","hit":"hit_npc","die":"die_actor"},"waypoint":{"draw":"nop","update":"update_waypoint","waypt":true},"vador":{"turn_rate":0.055,"fatigue":8,"hp":40,"acc":0.6,"overg_t":0,"model":"tiex1","side":"bad_side","wander_t":0,"lock_t":0,"laser_i":0,"fire_luck":0.8,"fire_t":0,"fire":"make_laser","update":"update_flying_npc","hit":"hit_flying_npc","die":"die_actor"}}'
 
 function make_actor(src,p,q)
 	-- instance
@@ -1172,36 +1102,35 @@ function draw_ground(self)
 	
 	-- draw trench
 	local strips={}
- for _,xy in pairs(trench_section) do
-  local tx0,ty0,strip
- 	for j=-4,4 do 		 
- 	 strips[j]=strips[j] or {}
- 		local jj=scale*j-dy+z0
- 		local x,y,z,w=cam:project(xy[1],ground_level+xy[2],jj)
- 		if z>0 then
-		  local fp=lerparray(dither_pat,w/2)+0.1
-		  local c=lerparray(ground_colors,2*w)
- 		 if tx0 then
- 	 		fillp(fp)
- 	 		color(c)
- 		 	line(tx0,ty0,x,y)
- 		 end
-		 	add(strips[j],{x,y,fp,c})
- 		 tx0,ty0=x,y
- 		end
-  end
- end
- for _,strip in pairs(strips) do
+	for _,xy in pairs(trench_section) do
+		local tx0,ty0,strip
+		for j=-4,4 do 		 
+			strips[j]=strips[j] or {}
+			local jj=scale*j-dy+z0
+			local x,y,z,w=cam:project(xy[1],ground_level+xy[2],jj)
+			if z>0 then
+				local fp=lerparray(dither_pat,w/2)+0.1
+				local c=lerparray(ground_colors,2*w)
+				if tx0 then
+					fillp(fp)
+					line(tx0,ty0,x,y,c)
+				end
+				add(strips[j],{x,y,fp,c})
+				tx0,ty0=x,y
+			end
+		end
+	end
+	for _,strip in pairs(strips) do
 		local p0=strip[1]
 		for i=2,#strip do
 			local p1=strip[i]
-	  fillp(p0[3])
-	  color(p0[4])
+			fillp(p0[3])
+			color(p0[4])
 			line(p0[1],p0[2],p1[1],p1[2])
 			p0=p1
 		end
- end
- fillp()
+	end
+	fillp()
  
  -- below ground level?
 	if(cy<0) return
@@ -1678,7 +1607,7 @@ function _draw()
 	cur_screen:draw()
 	
 	-- if(draw_stats) draw_stats()
-	print(flr(100*stat(1)).."% @"..stat(7).."fps",2,2,7)
+	-- print(flr(100*stat(1)).."% @"..stat(7).."fps",2,2,7)
 end
 
 
@@ -1690,13 +1619,11 @@ function _init()
 		invert_y=invert_y==-1 and 1 or -1
 		sfx(0)
 		dset(0,invert_y)
-	end)
-	--[[
-		menuitem(2,"switch view", function() 
+	end)	
+	menuitem(2,"switch view", function() 
 		set_view(not cockpit_view)
 		sfx(0)
 	end)
-	]]
 	-- read models from map data
 	unpack_models()
 	
@@ -1723,7 +1650,7 @@ end
 
 -->8
 -- radio messages
-local all_msgs=json_parse'{"attack1":{"spr":12,"title":"ackbar","txt":"commence attack\non the deathstar\nclear tie squadrons","dly":300},"ground1":{"spr":12,"title":"ackbar","txt":"destroy shield\ngenerators","dly":300},"ground2":{"spr":12,"title":"ackbar","txt":"shield is down!\nattack reactor vent","dly":300},"getout":{"spr":104,"title":"han solo","txt":"get out kid\nnow!","dly":300},"victory":{"spr":8,"title":"leia","txt":"the rebellion\n thanks you.\nget back home!","dly":300},"help":{"spr":10,"rnd":{"title":["red leader","alpha","delta wing"],"txt":["help!","cover me!","on my six"]},"dly":300},"vador_out":{"spr":106,"title":"d.vador","txt":"i\'ll be back...","dly":300},"low_hp":{"spr":76,"title":"r2d2","txt":"..--.-..","dly":120,"sfx":5,"rnd":{"repeat_dly":[600,900]}}}'
+local all_msgs=json_parse'{"attack1":{"spr":12,"title":"ackbar","txt":"commence attack\non the deathstar\nclear tie squadrons","dly":300},"ground1":{"spr":12,"title":"ackbar","txt":"destroy shield\ngenerators","dly":300},"ground2":{"spr":12,"title":"ackbar","txt":"shield is down!\nattack reactor vent","dly":300},"getout":{"spr":104,"title":"han solo","txt":"get out kid\nnow!","dly":300},"gethelp":{"spr":104,"title":"han solo","txt":"kid?\nwe could use you!","dly":300},"victory":{"spr":8,"title":"leia","txt":"the rebellion\n thanks you.\nget back home!","dly":300},"help":{"spr":10,"rnd":{"title":["red leader","alpha","delta wing"],"txt":["help!","cover me!","on my six"]},"dly":300},"vador_out":{"spr":106,"title":"d.vador","txt":"i\'ll be back...","dly":300},"low_hp":{"spr":76,"title":"r2d2","txt":"..--.-..","dly":120,"sfx":5,"rnd":{"repeat_dly":[600,900]}}}'
 local low_hp_t,cur_msg=0
 
 function make_msg(msg)
@@ -1824,7 +1751,7 @@ _g.egress_mission=function()
 	return {make_actor("waypoint",{cam.pos[1],ground_level+300,cam.pos[3]})}
 end
 _g.victory_mission=function()
- -- slow down	
+ 	-- slow down	
 	cam.flip,plyr_playing,plyr.dboost=true,false,0.9
 	set_view(false)
 	wait_async(180)
@@ -1836,7 +1763,9 @@ _g.victory_mission=function()
 	wait_async(60)
 	set_view(true)
 	cam.flip,plyr_playing=false,true
-	
+	return {}
+end
+_g.vador_in=function()
 	local x,y,z=plyr.pos[1],plyr.pos[2],plyr.pos[3]
 	local npc,wing=make_actor("vador",{x,y+32,z}),make_actor("mfalcon",{x,y+24,z})
 	-- track dark vador
@@ -1847,11 +1776,11 @@ _g.victory_mission=function()
 	return {npc}
 end
 
-local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","music":11,"dly":90,"min_kills":15,"fatigue":[48,40,32,24,12]},{"msg":"ground1","music":11,"init":"ingress_mission"},{"init":"create_ground_group","actors":[{"name":"generator","pos":[256,0,256]},{"name":"generator","pos":[-256,0,256]},{"name":"generator","pos":[256,0,-256]},{"name":"generator","pos":[-256,0,-256]}],"min_kills":4},{"msg":"ground2","init":"create_ground_group","actors":[{"name":"vent","pos":[0,-6,96]}],"min_kills":1},{"msg":"getout","init":"egress_mission","dly":90},{"init":"victory_mission","music":11,"no_skip":true,"min_kills":1,"dly":30},{"msg":"vador_out","dly":300},{"msg":"victory","music":14,"dly":720}]'
+local all_missions=json_parse'[{"msg":"attack1","init":"create_flying_group","music":11,"dly":90,"min_kills":15,"fatigue":[48,40,32,24,12]},{"msg":"ground1","music":11,"init":"ingress_mission"},{"init":"create_ground_group","actors":[{"name":"generator","pos":[256,0,256]},{"name":"generator","pos":[-256,0,256]},{"name":"generator","pos":[256,0,-256]},{"name":"generator","pos":[-256,0,-256]}],"min_kills":4},{"msg":"ground2","init":"create_ground_group","actors":[{"name":"vent","pos":[0,-6,96]}],"min_kills":1},{"msg":"getout","init":"egress_mission","dly":90},{"init":"victory_mission","music":11,"dly":30},{"msg":"gethelp","init":"vador_in","no_skip":true,"min_kills":1,"dly":30},{"msg":"vador_out","dly":300},{"msg":"victory","music":14,"dly":720}]'
  
 function next_mission_async()
 	mission_score=0
-	for i=2,#all_missions do
+	for i=1,#all_missions do
 		local m=all_missions[i]
 		m.wave=0
 		-- play music at start of new mission
@@ -1959,6 +1888,79 @@ function wait_async(t,fn)
 	for i=1,t do
 		if(not fn(i)) return
 		yield()
+	end
+end
+-->8
+-- unpack models
+local mem=0x1000
+function unpack_int()
+	local i=peek(mem)
+	mem+=1
+	return i
+end
+function unpack_float(scale)
+	local f=(unpack_int()-128)/32	
+	return f*(scale or 1)
+end
+-- valid chars for model names
+local itoa='_0123456789abcdefghijklmnopqrstuvwxyz'
+function unpack_string()
+	local s=""
+	for i=1,unpack_int() do
+		local c=unpack_int()
+		s=s..sub(itoa,c,c)
+	end
+	return s
+end
+function unpack_models()
+	-- for all models
+	for m=1,unpack_int() do
+		local model,name,scale={},unpack_string(),unpack_int()
+		
+		-- vertices
+		model.v={}
+		for i=1,unpack_int() do
+			add(model.v,{unpack_float(scale),unpack_float(scale),unpack_float(scale)})
+		end
+		
+		-- faces
+		model.f={}
+		for i=1,unpack_int() do
+			local f={unpack_int(),unpack_int()}
+			for k=1,f[2] do
+				add(f,unpack_int())
+			end
+			add(model.f,f)
+		end
+
+		-- normals
+		model.n={}
+		for i=1,unpack_int() do
+			add(model.n,{unpack_float(),unpack_float(),unpack_float()})
+		end
+		
+		-- n.p cache	
+		model.cp={}
+		for i=1,#model.f do
+			local f=model.f[i]
+			add(model.cp,v_dot(model.n[i],model.v[f[1]]))
+		end
+				
+		-- edges
+		model.e={}
+		for i=1,unpack_int() do
+			add(model.e,{
+				-- start
+				unpack_int(),
+				-- end
+				unpack_int(),
+				-- always visible?
+				unpack_int()==1 and true or -1
+			})
+		end
+
+		-- merge with existing model
+		all_models[name]=clone(model,all_models[name])
 	end
 end
 __gfx__
