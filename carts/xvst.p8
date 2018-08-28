@@ -180,9 +180,6 @@ function zbuf_filter(array)
 end
 
 function clone(src,dst)
-	-- safety checks
-	-- if(src==dst) assert()
-	-- if(type(src)!="table") assert()
 	dst=dst or {}
 	for k,v in pairs(src) do
 		if(not dst[k]) dst[k]=v
@@ -1252,7 +1249,6 @@ function control_plyr(self)
 	
 	local pitch,roll,input=0,0,false
 	if plyr_playing then
-	 -- ⬅️⬆️⬇️➡️🅾️❎
 		if(btn(0)) roll=1 input=true
 		if(btn(1)) roll=-1 input=true
 		if(btn(2)) pitch=-1
@@ -1468,7 +1464,7 @@ function start_screen:update()
 end
 
 local title_m=make_m(0,0,0)
-local all_help=json_parse'[{"msg":"⬅️⬆️⬇️➡️: flight control","x":20},{"msg":"⬅️+🅾️/🅾️+➡️: roll","x":30},{"msg":"❎: laser / 🅾️+lock: torpedo","x":12},{"msg":"⬇️[p2]: rear view","x":30},{"msg":"⬆️[p2]: external view","x":23},{"msg":"menu: invert y-axis","x":30}]'
+local all_help=json_parse'[[20,"⬅️⬆️⬇️➡️: flight control"],[30,"⬅️+🅾️/🅾️+➡️: roll"],[12,"❎: laser / 🅾️+lock: torpedo"],[30,"⬇️[p2]: rear view"],[23,"⬆️[p2]: external view"]]'
 function start_screen:draw()
 	cam.pos[3]+=0.1
 	cam:update()
@@ -1480,7 +1476,7 @@ function start_screen:draw()
 
 	local i=flr(time_t/128)%#all_help
 	local h=all_help[i+1]
-	print(h.msg,h.x,108,3)
+	print(h[2],h[1],108,3)
 	
 	if (start_screen_starting and time_t%2==0) or time_t%24<12 then
 		print("press start",44,118,11)
@@ -1492,7 +1488,7 @@ function wait_gameover_async()
 	cur_screen=gameover_screen
 	wait_async(600,function()
 		if btnp(4) or btnp(5) then
-			-- "eat" btnp to avoid immediate restart
+			-- eat btnp to avoid immediate restart
 			yield()
 			return false
 		end
