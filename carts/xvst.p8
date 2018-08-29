@@ -1332,13 +1332,15 @@ function draw_deathstar(offset)
 end
 
 local stars,stars_ramp={},json_parse'[1,2,13,12]'
+-- infinite starfield
 function draw_stars()
 	local hyper_space=plyr and plyr.boost>0
  for _,v in pairs(stars) do
 		local x,y,z,w=v_project(v)
 		if z>0 and z<32 then
 			color(stars_ramp[min(flr(4*w/12)+1,#stars_ramp)])
-			if hyper_space and v.x then
+			-- avoid nasty artefacts close to cam
+			if hyper_space and v.x and abs(x-v.x)<24 and abs(y-v.y)<24 then
 				line(v.x,v.y,x,y)
 			else
 				pset(x,y)
@@ -1347,8 +1349,7 @@ function draw_stars()
 		else
 			-- reset pos
 			local star=make_rnd_v(32)
-			v[1],v[2],v[3]=star[1],star[2],star[3]
-			v.x,v.y=nil,nil
+			v[1],v[2],v[3],v.x,v.y=star[1],star[2],star[3]
 			v_add(v,cam.pos)
 		end
 	end
@@ -1464,7 +1465,6 @@ function start_screen:update()
 end
 
 local title_m=make_m(0,0,0)
-local all_help=json_parse'[[20,"⬅️⬆️⬇️➡️: flight control"],[30,"⬅️+🅾️/🅾️+➡️: roll"],[12,"❎: laser / 🅾️+lock: torpedo"],[30,"⬇️[p2]: rear view"],[23,"⬆️[p2]: external view"]]'
 function start_screen:draw()
 	cam.pos[3]+=0.1
 	cam:update()
@@ -1473,10 +1473,6 @@ function start_screen:draw()
 	draw_model(all_models["logo"],title_m)
 	print("freds72 presents",32,4,1)
 	print("attack on the death star",20,78,12)
-
-	local i=flr(time_t/128)%#all_help
-	local h=all_help[i+1]
-	print(h[2],h[1],108,3)
 	
 	if (start_screen_starting and time_t%2==0) or time_t%24<12 then
 		print("press start",44,118,11)
