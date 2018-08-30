@@ -936,7 +936,14 @@ function draw_ground(self)
  				trifill(x1,y1,x3,y3,x0,y0,c_hi)
  				trifill(x1,y1,x3,y3,x2,y2,c_lo)		
  			end
- 			print(q_code,0.5*x0+0.5*x3,0.5*y0+0.5*y1-3,7)
+			fillp(0xa5a5)
+			color(0x79)
+ 			line(x0,y0,x1,y1)
+ 			line(x1,y1,x2,y2)
+ 			line(x2,y2,x3,y3)
+ 			line(x0,y0,x3,y3)
+			fillp()
+ 			print(q_code,0.5*x0+0.5*x3,0.5*y0+0.5*y1-3,7)			 
  			
 			end
 					
@@ -1058,7 +1065,7 @@ function _update()
 	 	
 	 	cx+=4*dx
 	 	cz+=4*dz
-	 	cam:track({cx,0,cz},0.75)
+	 	cam:track({cx,0,cz},0.2)
 	end
 	
 	
@@ -1352,11 +1359,11 @@ function next_layer()
 	local layers={
 		{level=9,hi=6,lo=5},
 		{level=7,lo=3},
-		{level=5,lo=9},
+		{level=5,lo=11},
 		{level=3,lo=12},
 		{level=1,lo=1}
 	}
-	clear_layers()
+	qmap={}
 	for l=1,cur_layer+1 do
 	 local layer=layers[l]
  	for j=0,63 do
@@ -1367,25 +1374,41 @@ function next_layer()
    	for k=1,4 do
    		q=code[k]
    		-- hi/lo colors
-   		local prev_q=qmap[idx+idx_offsets[k]]
-   		local hi,lo
+   		local hi,lo=layer.hi,layer.lo
+   		local prev_hi,prev_lo=6,5
+   		-- previous tile
+   		local prev_q=qmap[idx+idx_offsets[k]]   		
    		if prev_q then
-   			hi,lo=get_color(prev_q)
+    		prev_hi,prev_lo=get_color(prev_q)
  	  		-- replace hi color
-	   		lo=layer.lo
-   		else
-   			hi,lo=layer.hi,layer.lo
+   			hi,lo=prev_lo,lo
    		end
-   		if q==0 then
-   			q=bor(q,bor(lo*16,lo*256))
-   		elseif q==5 then
-   			q=bor(q,bor(hi*16,hi*256))
-   		elseif q==1 or q==8 then
- 	  		q=bor(q,bor(hi*16,lo*256))  			
-   		elseif q==4 or q==2 then
- 	  		q=bor(q,bor(lo*16,hi*256))  			
-   		end
-    	qmap[idx+idx_offsets[k]]=q
+   		-- replace only lo tiles
+   		prev_q=band(0xf,prev_q or 0)
+   		if prev_q==0 then
+    		if q==0 then
+    			q=bor(q,bor(lo*16,lo*256))
+    		elseif q==5 then
+    			q=bor(q,bor(hi*16,hi*256))
+    		elseif q==1 or q==8 then
+  	  		q=bor(q,bor(hi*16,lo*256))  			
+    		elseif q==4 or q==2 then
+  	  		q=bor(q,bor(lo*16,hi*256))  			
+    		end
+					else
+						hi,lo=lo,prev_hi
+						q=prev_q
+						if q==0 then
+    			q=bor(q,bor(lo*16,lo*256))
+    		elseif q==5 then
+    			q=bor(q,bor(hi*16,hi*256))
+    		elseif q==1 or q==8 then
+  	  		q=bor(q,bor(hi*16,lo*256))  			
+    		elseif q==4 or q==2 then
+  	  		q=bor(q,bor(lo*16,hi*256))  			
+    		end
+					end
+     qmap[idx+idx_offsets[k]]=q
    	end
    end
   end 
