@@ -616,12 +616,12 @@ function make_cam(f)
 		focal=f,
 		-- camera rotation
 		c=1,s=0,
-		track=function(self,pos)
+		track=function(self,pos,angle)
 			self.pos=v_clone(pos)
 			self.lookat=v_clone(pos)
-			local angle=max(-plyr.pitch/64,0.02)
+			angle=max(angle,0.02)
 			self.c,self.s=cos(angle),-sin(angle)
-			local r=4*ground_scale
+			local r=8*ground_scale
 			v_add(self.pos,{0,r*self.s,r*self.c})
 		end,
 		project=function(self,x,y,z)
@@ -631,7 +631,7 @@ function make_cam(f)
 			z-=self.lookat[3]
 			z,y=self.c*z+self.s*y,-self.s*z+self.c*y
 
-  	local xe,ye,ze=x,y,z-4*ground_scale
+  	local xe,ye,ze=x,y,z-8*ground_scale
 
   	local w=-self.focal/ze
   	return 64+xe*w,64-ye*w,ze,w
@@ -811,7 +811,7 @@ function get_raw_qcode(i,j)
 end
 function get_height(i,j)
 	-- already scaled
-	return shl(hmap[safe_index(i,j)],4)
+	return hmap[safe_index(i,j)]
 end
 function get_color(q)
 	return shr(band(0xf0,q),4),shr(band(0xf00,q),8)
@@ -936,6 +936,7 @@ function draw_ground(self)
  				trifill(x1,y1,x3,y3,x0,y0,c_hi)
  				trifill(x1,y1,x3,y3,x2,y2,c_lo)		
  			end
+ 			print(q_code,0.5*x0+0.5*x3,0.5*y0+0.5*y1-3,7)
  			
 			end
 					
@@ -1028,6 +1029,7 @@ function control_plyr()
 	end	
 end
 
+local cx,cy,cz=0,0,0
 function _update()
 	time_t+=1
 
@@ -1044,9 +1046,21 @@ function _update()
 			v_add(lookat,m_fwd(plyr.m),24)
 			-- keep altitude
 			lookat[2]=plyr.pos[2]
-			cam:track(lookat)
+			cam:track(lookat,-plyr.pitch/64)
 		end
+	else -- debug
+		local dx,dz=0,0
+		if(btn(0)) dx=-1
+	 	if(btn(1)) dx=1
+	 	if(btn(2)) dz=1
+	 	if(btn(3)) dz=-1
+	 	if(btnp(4)) next_layer()
+	 	
+	 	cx+=4*dx
+	 	cz+=4*dz
+	 	cam:track({cx,0,cz},0.75)
 	end
+	
 	
 	update_ground()
 	
@@ -1133,7 +1147,7 @@ function _draw()
 	 end
 	 clip()
 	 spr(37,64,43)
-	end
+	
 
  -- radar	
  draw_gauge(6,0,0)
@@ -1194,18 +1208,17 @@ function _draw()
  angle=0.2-plyr.l_acc*0.8
  line(70,8,70+6*cos(angle),8+6*sin(angle),7)
 	--print("gbu:12",98,2,11)
-	
+
+ end
 	--rectfill(0,0,127,8,1)
-	--print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)		
+	--print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)
 end
 
 -- main
-function _init()
-	local noise={}
-	local idx_offsets={
+local idx_offsets={
 		0,1,128,129
 	}
-	local q_codes={
+local q_codes={
 		{0,0,0,0},
 		{0,0,1,0},
 		{0,0,0,2},
@@ -1223,35 +1236,67 @@ function _init()
 	 {5,5,4,5},
 	 {5,5,5,5}	
 	}
-	local get_noise=function(i,j)
-		return noise[band(i,0x3f)+64*band(j,0x3f)+1]
-	end
- -- returns whether value is above a given level
- local is_solid=function(i,j,level)
-  return get_noise(i,j)>level and 1 or 0
- end
- -- converts four corners into a single sprite lookup index
- -- cf 'marching square' thingy
- local marching_code=function(i,j,level)
-  return
-   8*is_solid(i,j,level)+
-   4*is_solid(i+1,j,level)+
-   2*is_solid(i+1,j+1,level)+
-   is_solid(i,j+1,level)
- end
+local noise={}
+local get_noise=function(i,j)
+	return noise[band(i,0x3f)+64*band(j,0x3f)+1]
+end
+-- returns whether value is above a given level
+local is_solid=function(i,j,level)
+return get_noise(i,j)>level and 1 or 0
+end
+-- converts four corners into a single sprite lookup index
+-- cf 'marching square' thingy
+local marching_code=function(i,j,level)
+return
+ 8*is_solid(i,j,level)+
+ 4*is_solid(i+1,j,level)+
+ 2*is_solid(i+1,j+1,level)+
+ is_solid(i,j+1,level)
+end
  
+function clear_layers()
+	for j=0,63 do
+  for i=0,63 do
+   local idx=2*i+2*128*j
+  	for k=1,4 do
+  	 local h
+  	 if k==1 then
+  	 	h=get_noise(i,j)
+  	 elseif k==2 then
+  	 	h=0.5*get_noise(i,j)+0.5*get_noise(i+1,j)
+				elseif k==3 then 	 	
+  	 	h=0.5*get_noise(i,j)+0.5*get_noise(i,j+1)
+				elseif k==4	then
+  	 	h=(get_noise(i,j)+get_noise(i,j+1)+get_noise(i+1,j)+get_noise(i+1,j+1))/4
+	   end
+		 hmap[idx+idx_offsets[k]]=max(h)
+		 qmap[idx+idx_offsets[k]]=0+16+256
+  	end
+  end
+ end 
+
+end
+
+function _init()
+	
  os2d_noise(48)
 
  for y=0,63 do
   for x=0,63 do
    local c
-   -- base noise is strongest
-   c=os2d_eval(x/4,y/4)
-   -- next is weaker
-   c+=os2d_eval(x/2,y/2)/2
-   -- and so on
-   c+=os2d_eval(x,y)
+   c =os2d_eval(x/32,y/32)
+		-- next is weaker
+		c+=os2d_eval(x/16,y/16)/2
+		-- and so on
+		c+=os2d_eval(x/ 8,y/ 8)/4
+		-- and so on
+		c+=os2d_eval(x/ 4,y/ 4)/8
+		-- and so on
+		c+=os2d_eval(x/ 2,y/ 2)/16
 
+		-- convert -0.2..+1 to 14 cols
+		-- (sea level at -0.2)
+		c=mid(0,(c+0.2)/1.2*15,15)
    -- set in stoooone
    add(noise,c)
   end
@@ -1266,37 +1311,53 @@ function _init()
  end
  ]]
  
- -- convert into marching quadrants
+ clear_layers()
+	
+	-- landing strip
+	--[[
+	for j=0,6 do
+		local idx=safe_index(0,j)
+		qmap[idx]=9
+		for k=1,4 do
+			hmap[idx+idx_offsets[k] ]=0.2
+		end
+	end
+	local a=make_ground_actor("tower",2,4)
+	m_set_pos(a.m,{16,0.2,34})
+	]]
+	
+	--[[
+	local max_tree=100
 	for j=0,63 do
   for i=0,63 do
-   local q=marching_code(i,j,-0.1)
-   local idx=2*i+2*128*j
-  	local code=q_codes[q+1]
-  	for k=1,4 do
-  	 local h
-  	 if k==1 then
-  	 	h=get_noise(i,j)
-  	 elseif k==2 then
-  	 	h=0.5*get_noise(i,j)+0.5*get_noise(i+1,j)
-				elseif k==3 then 	 	
-  	 	h=0.5*get_noise(i,j)+0.5*get_noise(i,j+1)
-				elseif k==4	then
-  	 	h=(get_noise(i,j)+get_noise(i,j+1)+get_noise(i+1,j)+get_noise(i+1,j+1))/4
-	   end
-				
-  	 hmap[idx+idx_offsets[k]]=max(h)
-  	end
-  end
- end 
+			if max_tree>0 and is_solid(i,j,0.7)==1 then
+				make_ground_actor("t72",2*i,2*j)
+				max_tree-=1
+			end
+ 	end
+ end
+  ]]
+  
+	-- read models from gfx/map data
+	unpack_models()
 
+	cam=make_cam(96)
+	
+	--plyr=make_actor("plyr",{0,44,0})
+	--plyr.l_acc,plyr.r_acc=0,0
+end
+
+local cur_layer=0
+function next_layer()
 	local layers={
-		{level=0.75,hi=5,lo=11},
-		{level=0.5,lo=3},
-		{level=0,lo=9},
-		{level=-0.1,lo=12},
-		{level=-0.2,lo=1}
+		{level=9,hi=6,lo=5},
+		{level=7,lo=3},
+		{level=5,lo=9},
+		{level=3,lo=12},
+		{level=1,lo=1}
 	}
-	for l=1,#layers do
+	clear_layers()
+	for l=1,cur_layer+1 do
 	 local layer=layers[l]
  	for j=0,63 do
    for i=0,63 do
@@ -1329,34 +1390,8 @@ function _init()
    end
   end 
  end
-
-	-- landing strip
-	for j=0,6 do
-		local idx=safe_index(0,j)
-		qmap[idx]=9
-		for k=1,4 do
-			hmap[idx+idx_offsets[k]]=0.2
-		end
-	end
-	local a=make_ground_actor("tower",2,4)
-	m_set_pos(a.m,{16,0.2,34})
-	
-	local max_tree=100
-	for j=0,63 do
-  for i=0,63 do
-			if max_tree>0 and is_solid(i,j,0.7)==1 then
-				make_ground_actor("t72",2*i,2*j)
-				max_tree-=1
-			end
- 	end
- end
- 
-	-- read models from gfx/map data
-	unpack_models()
-
-	cam=make_cam(96)
-	plyr=make_actor("plyr",{0,44,0})
-	--plyr.l_acc,plyr.r_acc=0,0
+	cur_layer+=1
+	cur_layer%=#layers
 end
 
 -->8
