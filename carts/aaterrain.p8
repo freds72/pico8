@@ -6,7 +6,8 @@ local time_t=0
 local actors,ground_actors,parts,light,cam,plyr,active_ground_actors={},{},{},{0,1,0}
 
 -- world units
-local ground_scale,hscale=16,4
+local ground_shift,hscale=4,4
+local ground_scale=2^ground_shift
 local v_grav={0,-0.1,0}
 
 local good_side,bad_side,any_side,no_side=0x1,0x2,0x0,0x3
@@ -143,7 +144,7 @@ function zbuf_clear()
 end
 function zbuf_sort()
  zbuf={}
-	local ci,cj=flr(cam.lookat[1]/ground_scale),flr(cam.lookat[3]/ground_scale)
+	local ci,cj=flr(shr(cam.lookat[1],ground_shift)),flr(shr(cam.lookat[3],ground_shift))
 	for _,d in pairs(drawables) do
 		-- find cell location
 		local di,dj=flr(shr(d.pos[1],4)),flr(shr(d.pos[3],4))
@@ -415,8 +416,6 @@ end
 -- models & rendering
 local all_models=json_parse'{"tree":{"c":3,"r":4},"a10":{"gauss_wp":{"pos":[0,0,-3],"part":"gauss_blt","dly":8}},"tower":{},"t72":{"gun":{"pos":[0,4,0],"part":"gun_blt","dly":8}}}'
 local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]'
-local color_lo={1,1,13,6,7}
-local color_hi={0x11,0xd0,0x60,0x70,0x70}
 function draw_model(model,m)
 
 	-- cam pos in object space
@@ -591,9 +590,9 @@ function make_actor(src,p)
 end
 
 function make_ground_actor(src,i,j)
-	local x,z=i*ground_scale,j*ground_scale
+	local x,z=shl(i+rnd(),ground_shift),shl(j-rnd(),ground_shift)
 	local a=clone(all_actors[src],{
-		pos={x,2*get_altitude(x,z),z},
+		pos={x,get_altitude(x,z),z},
 		draw=draw_actor
 	})
 	a.model=all_models[a.model]
@@ -611,9 +610,9 @@ end
 function make_cam(f)
 	local c={
 		pos={0,6*hscale,0},
-		lookat={0,0,-7*ground_scale},
-		offset={0,0,4*ground_scale},
+		lookat={0,0,-7*16},
 		focal=f,
+		dist=shl(4,ground_shift),
 		-- camera rotation
 		c=1,s=0,
 		track=function(self,pos,angle)
@@ -621,20 +620,18 @@ function make_cam(f)
 			self.lookat=v_clone(pos)
 			angle=max(angle,0.02)
 			self.c,self.s=cos(angle),-sin(angle)
-			local r=8*ground_scale
-			v_add(self.pos,{0,r*self.s,r*self.c})
+			v_add(self.pos,{0,self.dist*self.s,self.dist*self.c})
 		end,
 		project=function(self,x,y,z)
-			-- todo: make project_v
 			x-=self.lookat[1]
 			y-=self.lookat[2]
 			z-=self.lookat[3]
 			z,y=self.c*z+self.s*y,-self.s*z+self.c*y
 
-  	local xe,ye,ze=x,y,z-8*ground_scale
+  			local xe,ye,ze=x,y,z-self.dist
 
-  	local w=-self.focal/ze
-  	return 64+xe*w,64-ye*w,ze,w
+		  	local w=-self.focal/ze
+  			return 64+xe*w,64-ye*w,ze,w
 		end
 	}
 	return c
@@ -820,7 +817,7 @@ end
 function get_altitude(x,z)
 	-- cell
 	local dx,dz=shr(band(x,0x7f)%ground_scale,4),shr(band(z,0x7f)%ground_scale,4)
-	local i,j=flr(shr(x,4)),flr(shr(z/4))
+	local i,j=flr(shr(x,ground_shift)),flr(shr(z,ground_shift))
 	local h0,h1=lerp(get_height(i,j),get_height(i,j+1),1-dz),lerp(get_height(i+1,j),get_height(i+1,j+1),1-dz)
 	return lerp(h0,h1,1-dx)
 end
@@ -830,7 +827,7 @@ function update_ground()
 	
 	local pos=plyr and plyr.pos or cam.lookat
 	
-	local i0,j0=flr(pos[1]/ground_scale),flr(pos[3]/ground_scale)
+	local i0,j0=flr(shr(pos[1],ground_shift)),flr(shr(pos[3],ground_shift))
 	for i=i0-4,i0+4 do
 		local cx=band(i,0x7f)
 		for j=j0-4,j0+4 do
@@ -845,7 +842,9 @@ function update_ground()
 	end
 end
 
-function draw_tex_quad(a,b,sx,sy)
+function draw_tex_quad(a,b,s)
+ -- sprite num to coords
+ local sx,sy=band(s*8,127),8*flr(shr(s,4))
 	palt(14,true)
 	palt(0,false)
 	local t,invdx,wa,wb=0,1/(b[2]-a[2]),a[4],b[4]
@@ -864,34 +863,34 @@ function draw_ground(self)
 	local cx,cz=cam.lookat[1],cam.lookat[3]
 	local dx,dz=cx%ground_scale,cz%ground_scale
 	-- cell coordinates
-	local nx,ny=flr(cx/ground_scale),flr(cz/ground_scale)
+	local nx,ny=flr(shr(cx,ground_shift)),flr(shr(cz,ground_shift))
 	
 	-- project anchor points
 	local p={}	
 	-- grid depth extent
 	for j=-9,3 do
 	 -- compute grid points centered on lookat pos
-		local x,y,z,w=cam:project(-dx+cx+imin*ground_scale,0,-dz+cz+j*ground_scale)
+		local x,y,z,w=cam:project(-dx+cx+shl(imin,ground_shift),0,-dz+cz+shl(j,ground_shift))
 		add(p,{x,y,z,w,ny+j})
 	end
 
  local dither={
- 	[imin]=lerparray(dither_pat,1-dx/ground_scale),
- 	[imax]=lerparray(dither_pat,dx/ground_scale),
+ 	[imin]=lerparray(dither_pat,1-shr(dx,ground_shift)),
+ 	[imax]=lerparray(dither_pat,shr(dx,ground_shift)),
  }
  
 	local v0=p[1]
 	local w0,nj=v0[4],v0[5]
-	local dw0=ground_scale*w0	
+	local dw0=shl(w0,ground_shift)
 	for j=2,#p do
 		local v1=p[j]
 		local w1=v1[4]
-		local dw1=ground_scale*w1
+		local dw1=shl(w1,ground_shift)
 		local x0,x1=v0[1],v1[1]
 		local x2,x3=v1[1]+dw1,v0[1]+dw0
 		-- depth dither
 		if j==2 then
-			fillp(lerparray(dither_pat,1-dz/ground_scale)+0.1)
+			fillp(lerparray(dither_pat,1-shr(dz,ground_shift))+0.1)
 		end
 		-- grid width extent
 		local ni=nx+imin
@@ -904,47 +903,20 @@ function draw_ground(self)
 
    local fp=dither[i]
    if(fp) fillp(fp)
-   
-   	--[[
-			if i==imin then
-			 local t=dx/ground_scale
-				x0=lerp(x0,x3,t)
-				x1=lerp(x1,x2,t)
-			elseif i==imax then
-			 local t=dx/ground_scale
-				x3=lerp(x0,x3,t)
-				x2=lerp(x1,x2,t)
-			end
-		]]
+
 		 -- out of screen tile?
 		 if x3>0 then
  			local c_hi,c_lo=get_color(q)
  			local q_code=band(q,0xf)
- 			--[[
- 			color(c_hi)
- 			line(x0,y0,x1,y1)
- 			line(x1,y1,x2,y2)
- 			line(x2,y2,x3,y3)
- 			line(x0,y0,x3,y3)
- 			]]
  			if q_code==1 or q_code==4 then
  				trifill(x0,y0,x2,y2,x1,y1,c_hi)		
  				trifill(x0,y0,x2,y2,x3,y3,c_lo)
  			elseif q_code==9 then
- 				draw_tex_quad({x0,y0,0,w0},{x1,y1,0,w1},16,0)
+ 				draw_tex_quad({x0,y0,0,w0},{x1,y1,0,w1},shr(band(q,0xfff0),4))
  			else
  				trifill(x1,y1,x3,y3,x0,y0,c_hi)
  				trifill(x1,y1,x3,y3,x2,y2,c_lo)		
- 			end
-			fillp(0xa5a5)
-			color(0x79)
- 			line(x0,y0,x1,y1)
- 			line(x1,y1,x2,y2)
- 			line(x2,y2,x3,y3)
- 			line(x0,y0,x3,y3)
-			fillp()
- 			print(q_code,0.5*x0+0.5*x3,0.5*y0+0.5*y1-3,7)			 
- 			
+ 			end		 
 			end
 					
 			if(fp) fillp()
@@ -963,19 +935,7 @@ function draw_ground(self)
 		if bucket then
 			for _,d in pairs(bucket) do
 				d=d.obj
-			 -- draw shadow
-			 --[[
-			 local dx,dz=d.pos[1],d.pos[3]
-			 local dy=get_altitude(dx,dz)
-			 local sx0,sy0,sz0,sw0=cam:project(dx,dy,dz-8)
-			 local sx1,sy1,sz1,sw1=cam:project(dx,dy,dz+8)
-			 
-			 local scale=1--1-(dy-d.pos[2])/dy
-			 --sw0*=scale
-			 --sw1*=scale
-				sprr(32,0,48,0,plyr.angle/256,2,0.5)
-				draw_tex_quad({sx0-8*sw0,sy0,sz0,sw0},{sx1-8*sw1,sy1,sz1,sw1},48,0)
-				]]
+				
 				d:draw()
 			end
 		end
@@ -1040,7 +1000,7 @@ local cx,cy,cz=0,0,0
 function _update()
 	time_t+=1
 
- screen_update()
+ 	screen_update()
 
 	zbuf_clear()
 	
@@ -1055,30 +1015,42 @@ function _update()
 			lookat[2]=plyr.pos[2]
 			cam:track(lookat,-plyr.pitch/64)
 		end
-	else -- debug
-		local dx,dz=0,0
-		if(btn(0)) dx=-1
-	 	if(btn(1)) dx=1
-	 	if(btn(2)) dz=1
-	 	if(btn(3)) dz=-1
-	 	if(btnp(4)) next_layer()
-	 	
-	 	cx+=4*dx
-	 	cz+=4*dz
-	 	cam:track({cx,0,cz},0.2)
 	end
-	
-	
+
+
 	update_ground()
-	
+
 	zbuf_filter(actors)
 	zbuf_filter(parts)
 end
 
+-- string functions
 local padding_mask="0000"
 function padding(n)
- local 	s=tostr(flr(n))
+ 	local s=tostr(flr(n))
 	return sub(padding_mask,1,4-#s)..s
+end
+
+-- from:https://www.lexaloffle.com/bbs/?tid=3217
+function smallcaps(s)
+  local d=""
+  local c
+  for i=1,#s do
+    local a=sub(s,i,i)
+    if a!="^" then
+      if not c then
+        for j=1,26 do
+          if a==sub("abcdefghijklmnopqrstuvwxyz",j,j) then
+            a=sub("\65\66\67\68\69\70\71\72\73\74\75\76\77\78\79\80\81\82\83\84\85\86\87\88\89\90\91\92",j,j)
+          end
+        end
+      end
+      d=d..a
+      c=true
+    end
+    c=not c
+  end
+  return d
 end
 
 function draw_num_box(n,x,y,c)
@@ -1098,43 +1070,43 @@ end
 
 -- x/y:top/left corner
 function draw_gauge(s,x,y)
- pal(14,0)
- spr(s,x,y,2,2)
- spr(s,x+15,y,2,2,true)
- spr(s,x,y+15,2,2,false,true)
- spr(s,x+15,y+15,2,2,true,true)
+	pal(14,0)
+	spr(s,x,y,2,2)
+	spr(s,x+15,y,2,2,true)
+	spr(s,x,y+15,2,2,false,true)
+	spr(s,x+15,y+15,2,2,true,true)
 end
 
 function _draw()
 	cls(0)
-	
+
 	zbuf_sort()
 	draw_ground()
- --
- if plyr then
- 	local x,y,z,w=cam:project(plyr.pos[1],plyr.pos[2],plyr.pos[3])
-	 local h=get_altitude(plyr.pos[1],plyr.pos[3])
-	 h=plyr.pos[2]-h
-	 draw_num_box(h,106,y,11)
-	
-	 
-	 draw_num_box(plyr.acc*300,4,y,11)
 
-	 -- collision warning
-	 local fwd=m_fwd(plyr.m)
-	 if h<4 and time_t%16>8 and v_dot(fwd,v_up)<0 then
-	 	line(64-16,y-16,64+16,y+16,11)
-	 	line(64+16,y-16,64-16,y+16,11)
-	 end
-	 
-	 -- target reticule
-	 local fwd=m_fwd(plyr.m)
-	 if fwd[2]<0 then
- 	 local t=-h/fwd[2]
- 	 x,z=plyr.pos[1]+t*fwd[1],plyr.pos[3]+t*fwd[3]
- 		h=get_altitude(x,z)
- 		x,y,z,w=cam:project(x,h,z)
- 		spr(36,x-4,y-3)
+ 	--
+	if plyr then
+		local x,y,z,w=cam:project(plyr.pos[1],plyr.pos[2],plyr.pos[3])
+		local h=get_altitude(plyr.pos[1],plyr.pos[3])
+		h=plyr.pos[2]-h
+		draw_num_box(h,106,y,11)
+
+		draw_num_box(plyr.acc*300,4,y,11)
+
+		-- collision warning
+		local fwd=m_fwd(plyr.m)
+		if h<4 and time_t%16>8 and v_dot(fwd,v_up)<0 then
+			line(64-16,y-16,64+16,y+16,11)
+			line(64+16,y-16,64-16,y+16,11)
+		end
+
+		-- target reticule
+		local fwd=m_fwd(plyr.m)
+		if fwd[2]<0 then
+			local t=-h/fwd[2]
+			x,z=plyr.pos[1]+t*fwd[1],plyr.pos[3]+t*fwd[3]
+			h=get_altitude(x,z)
+			x,y,z,w=cam:project(x,h,z)
+			spr(36,x-4,y-3)
 		end
 
 		-- compass
@@ -1148,275 +1120,335 @@ function _draw()
 		end
 		for i=-1,2,0.5 do
 			pset(64-dx+i*16,40,11)
-	  if flr(i)==i then
+			if flr(i)==i then
 				pset(64-dx+i*16,41,11)
-	  end
-	 end
-	 clip()
-	 spr(37,64,43)
-	
-
- -- radar	
- draw_gauge(6,0,0)
-	clip(0,0,31,31)
-	
-	-- select closest targets
- for _,a in pairs(ground_actors) do
- 	local v=make_v(a.pos,plyr.pos)
-		v_scale(v,0.1)
-		
-		print("a",15+v[1],15-v[3],11)
- end
- pal()
- palt(0,true)
- pal(14,0)
- spr(38,0,0,2,2)
- spr(38,15,0,2,2,true)
- spr(38,0,15,2,2,false,true)
- spr(38,15,15,2,2,true,true)
- 
-	clip()
-	pal()
-	
- -- fuel
- draw_gauge(8,97,0)
- print("0",111,21,7)
-
-	draw_fuel_level(plyr.r_fuel)
-	draw_fuel_level(plyr.l_fuel,true)
- draw_num_box(plyr.r_fuel+plyr.l_fuel,103,7,7)
-
- -- status panel
- -- mission panel? cdu
-	--[[local cautions={
-	 [0]="fuel","eng",
-	 "nav","gun"}
-	for j=0,1 do
-		rect(64-30,8*j,64+30,8*(j+1),3)
-		local c=3
-		if time_t%16>12 and j==0 then
-			rectfill(64-30,8*j,64+30,8*(j+1),9)
-			c=11
+			end
 		end
-		print(cautions[2*j],64-28,8*j+2,c)
-		print(cautions[2*j+1],64+2,8*j+2,3)
-	end
-	line(64,0,64,16,3)
- ]]
- 	
- -- engine rpm
- pal(14,0)
- spr(40,80,0,2,2)
- spr(40,63,0,2,2)
- pal()
- 
- local angle=0.2-plyr.r_acc*0.8
- line(87,8,87+6*cos(angle),8+6*sin(angle),7)
- angle=0.2-plyr.l_acc*0.8
- line(70,8,70+6*cos(angle),8+6*sin(angle),7)
-	--print("gbu:12",98,2,11)
+		clip()
+		spr(37,64,43)
 
- end
+
+		-- radar	
+		draw_gauge(6,0,0)
+		clip(0,0,31,31)
+
+		-- todo: select closest targets
+		for _,a in pairs(ground_actors) do
+			local v=make_v(a.pos,plyr.pos)
+			v_scale(v,0.1)
+
+			print("a",15+v[1],15-v[3],11)
+		end
+		pal()
+		palt(0,true)
+		pal(14,0)
+		spr(38,0,0,2,2)
+		spr(38,15,0,2,2,true)
+		spr(38,0,15,2,2,false,true)
+		spr(38,15,15,2,2,true,true)
+
+		clip()
+		pal()
+
+		-- fuel
+		draw_gauge(8,97,0)
+		print("0",111,21,7)
+
+		draw_fuel_level(plyr.r_fuel)
+		draw_fuel_level(plyr.l_fuel,true)
+		draw_num_box(plyr.r_fuel+plyr.l_fuel,103,7,7)
+
+		-- status panel
+		-- coordinates
+		local airports={
+			{name=smallcaps("kutaisi"),coords="15/45"},
+			{name=smallcaps("senaki"),coords="56/7"}}
+		print(flr(plyr.pos[x]).."/"..flr(plyr.pos[3]),33,0,3)
+	 y=6
+	 for i=1,#airports do
+	 	local airport=airports[i]
+	  print(airport.name,33,y,3)
+	  y+=6
+	  print("◆"..airport.coords,32,y,3)
+	 	y+=5
+	 end
+		
+		-- engine rpm
+		pal(14,0)
+		spr(40,80,0,2,2)
+		spr(40,63,0,2,2)
+		pal()
+
+		local angle=0.2-plyr.r_acc*0.8
+		line(87,8,87+6*cos(angle),8+6*sin(angle),7)
+		angle=0.2-plyr.l_acc*0.8
+		line(70,8,70+6*cos(angle),8+6*sin(angle),7)
+		--print("gbu:12",98,2,11)
+ 	end
 	--rectfill(0,0,127,8,1)
 	--print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)
 end
 
 -- main
-local idx_offsets={
-		0,1,128,129
-	}
-local q_codes={
-		{0,0,0,0},
-		{0,0,1,0},
-		{0,0,0,2},
-		{0,0,5,5},
-		{0,4,0,0},
-		{2,0,0,8},
-		{0,5,0,5},
-	 {2,5,5,5},
-	 {8,0,0,0},
-	 {5,0,5,0},
-	 {5,1,4,5},
-	 {5,1,5,5},
-	 {5,5,0,0},
-	 {5,5,5,8},
-	 {5,5,4,5},
-	 {5,5,5,5}	
-	}
-local noise={}
-local get_noise=function(i,j)
-	return noise[band(i,0x3f)+64*band(j,0x3f)+1]
-end
--- returns whether value is above a given level
-local is_solid=function(i,j,level)
-return get_noise(i,j)>level and 1 or 0
-end
--- converts four corners into a single sprite lookup index
--- cf 'marching square' thingy
-local marching_code=function(i,j,level)
-return
- 8*is_solid(i,j,level)+
- 4*is_solid(i+1,j,level)+
- 2*is_solid(i+1,j+1,level)+
- is_solid(i,j+1,level)
-end
- 
-function clear_layers()
-	for j=0,63 do
-  for i=0,63 do
-   local idx=2*i+2*128*j
-  	for k=1,4 do
-  	 local h
-  	 if k==1 then
-  	 	h=get_noise(i,j)
-  	 elseif k==2 then
-  	 	h=0.5*get_noise(i,j)+0.5*get_noise(i+1,j)
-				elseif k==3 then 	 	
-  	 	h=0.5*get_noise(i,j)+0.5*get_noise(i,j+1)
-				elseif k==4	then
-  	 	h=(get_noise(i,j)+get_noise(i,j+1)+get_noise(i+1,j)+get_noise(i+1,j+1))/4
-	   end
-		 hmap[idx+idx_offsets[k]]=max(h)
-		 qmap[idx+idx_offsets[k]]=0+16+256
-  	end
-  end
- end 
-
-end
 
 function _init()
+	local idx_offsets=json_parse'[0,1,128,129]'
+	local q_codes=json_parse'[[0,0,0,0],[0,0,1,0],[0,0,0,2],[0,0,5,5],[0,4,0,0],[2,0,0,8],[0,5,0,5],[2,5,5,5],[8,0,0,0],[5,0,5,0],[5,1,4,5],[5,1,5,5],[5,5,0,0],[5,5,5,8],[5,5,4,5],[5,5,5,5]]'
 	
- os2d_noise(48)
+	-- temp array to store the 64x64 noise map
+	local noise={}
+	local get_noise=function(i,j)
+	 if(i<0 or j<0 or i>63 or j>63) return 0
+		return noise[band(i,0x3f)+64*band(j,0x3f)+1]
+	end
+	-- returns whether value is above a given level
+	local is_solid=function(i,j,level)
+		return get_noise(i,j)>level and 1 or 0
+	end
+	-- converts four corners into a single sprite lookup index
+	-- cf: https://en.wikipedia.org/wiki/marching_squares
+	local marching_code=function(i,j,level)
+		return
+		8*is_solid(i,j,level)+
+		4*is_solid(i+1,j,level)+
+		2*is_solid(i+1,j+1,level)+
+		is_solid(i,j+1,level)
+	end
+	
+	os2d_noise(48)
 
- for y=0,63 do
-  for x=0,63 do
-   local c
-   c =os2d_eval(x/32,y/32)
-		-- next is weaker
-		c+=os2d_eval(x/16,y/16)/2
-		-- and so on
-		c+=os2d_eval(x/ 8,y/ 8)/4
-		-- and so on
-		c+=os2d_eval(x/ 4,y/ 4)/8
-		-- and so on
-		c+=os2d_eval(x/ 2,y/ 2)/16
+	for y=0,63 do
+		for x=0,63 do
+			local c
+			c =os2d_eval(x/32,y/32)
+			-- next is weaker
+			c+=os2d_eval(x/16,y/16)/2
+			-- and so on
+			c+=os2d_eval(x/ 8,y/ 8)/4
+			-- and so on
+			c+=os2d_eval(x/ 4,y/ 4)/8
+			-- and so on
+			c+=os2d_eval(x/ 2,y/ 2)/16
 
-		-- convert -0.2..+1 to 14 cols
-		-- (sea level at -0.2)
-		c=mid(0,(c+0.2)/1.2*15,15)
-   -- set in stoooone
-   add(noise,c)
-  end
- end
-	
-	--[[
- for j=0,63 do
-  for i=0,63 do
-  	local x,y=i%8,j%8
-   add(noise,(x==0 or y==0) and 1 or 0)
-  end
- end
- ]]
- 
- clear_layers()
-	
-	-- landing strip
-	--[[
-	for j=0,6 do
-		local idx=safe_index(0,j)
-		qmap[idx]=9
-		for k=1,4 do
-			hmap[idx+idx_offsets[k] ]=0.2
+			-- convert -0.2..+1 to 14 cols
+			-- (sea level at -0.2)
+			c=mid(0,(c+0.2)/1.2*15,15)
+			-- set in stoooone
+			add(noise,c)
 		end
 	end
+
+	-- height map weights
+	local hweights={
+		{1,0,0,0},
+		{0.5,0,0.5,0},
+		{0.5,0.5,0,0},
+		{0.25,0.25,0.25,0.25}}
+		
+	-- explode the 64x64 map into 128x128
+	for j=0,63 do
+		for i=0,63 do
+			local idx=2*i+2*128*j
+			for k=1,4 do
+				local w=hweights[k]
+				local h=w[1]*get_noise(i,j)+w[2]*get_noise(i,j+1)+w[3]*get_noise(i+1,j)+w[4]*get_noise(i+1,j+1)
+				hmap[idx+idx_offsets[k]]=shl(max(h),1)
+			end
+		end
+	end 	
+	
+	-- create multiple layers
+	local layers={
+		{level=1,hi=10,lo=12,h=0},
+		{level=4,hi=9},
+		{level=7,hi=5},
+		{level=12,hi=3}
+	}
+
+	for l=1,#layers do
+		local layer=layers[l]
+		for j=0,63 do
+			for i=0,63 do
+				local q=marching_code(i,j,layer.level)
+				local idx=2*i+2*128*j
+				local code=q_codes[q+1]
+				for k=1,4 do
+					q=code[k]
+					-- hi/lo colors
+					local hi,lo=layer.hi,layer.lo
+					-- previous tile
+					local prev_q=qmap[idx+idx_offsets[k]]   		
+					if prev_q then
+						prev_hi,prev_lo=get_color(prev_q)
+						-- replace lo color
+						lo=prev_lo
+					end
+					-- replace only full hi tiles
+					prev_q=band(0xf,prev_q or 5)
+					if prev_q==5 then
+						if q==0 then
+							q=bor(q,bor(lo*16,lo*256))
+						 -- kill height
+						 if layer.h then
+						 	hmap[idx+idx_offsets[k]]=layer.h
+						 end							
+						elseif q==5 then
+							q=bor(q,bor(hi*16,hi*256))
+						elseif q==1 or q==8 then
+							q=bor(q,bor(hi*16,lo*256))  			
+						elseif q==4 or q==2 then
+							q=bor(q,bor(lo*16,hi*256))  			
+						end			
+						qmap[idx+idx_offsets[k]]=q
+					end
+				end
+			end
+		end
+	end
+
+ -- textured tile example
+	-- landing strip
+	local idx=safe_index(0,0)
+	qmap[idx]=bor(9,16*34)
+ for j=1,7 do
+		local idx=safe_index(0,j)
+		qmap[idx]=bor(9,16*2)
+		for k=1,4 do
+			hmap[idx+idx_offsets[k]]=2
+		end
+	end
+		
+	-- control tower (test)
 	local a=make_ground_actor("tower",2,4)
 	m_set_pos(a.m,{16,0.2,34})
-	]]
-	
-	--[[
+
 	local max_tree=100
 	for j=0,63 do
-  for i=0,63 do
-			if max_tree>0 and is_solid(i,j,0.7)==1 then
-				make_ground_actor("t72",2*i,2*j)
+		for i=0,63 do
+			if max_tree>0 and is_solid(i,j,8)==1 then
+				make_ground_actor("tree",2*i,2*j)
 				max_tree-=1
 			end
- 	end
- end
-  ]]
-  
+		end
+	end
+
 	-- read models from gfx/map data
 	unpack_models()
 
 	cam=make_cam(96)
-	
-	--plyr=make_actor("plyr",{0,44,0})
-	--plyr.l_acc,plyr.r_acc=0,0
+
+	plyr=make_actor("plyr",{0,44,0})
 end
 
-local cur_layer=0
-function next_layer()
-	local layers={
-		{level=9,hi=6,lo=5},
-		{level=7,lo=3},
-		{level=5,lo=11},
-		{level=3,lo=12},
-		{level=1,lo=1}
-	}
-	qmap={}
-	for l=1,cur_layer+1 do
-	 local layer=layers[l]
- 	for j=0,63 do
-   for i=0,63 do
-    local q=marching_code(i,j,layer.level)
-    local idx=2*i+2*128*j
-   	local code=q_codes[q+1]
-   	for k=1,4 do
-   		q=code[k]
-   		-- hi/lo colors
-   		local hi,lo=layer.hi,layer.lo
-   		local prev_hi,prev_lo=6,5
-   		-- previous tile
-   		local prev_q=qmap[idx+idx_offsets[k]]   		
-   		if prev_q then
-    		prev_hi,prev_lo=get_color(prev_q)
- 	  		-- replace hi color
-   			hi,lo=prev_lo,lo
-   		end
-   		-- replace only lo tiles
-   		prev_q=band(0xf,prev_q or 0)
-   		if prev_q==0 then
-    		if q==0 then
-    			q=bor(q,bor(lo*16,lo*256))
-    		elseif q==5 then
-    			q=bor(q,bor(hi*16,hi*256))
-    		elseif q==1 or q==8 then
-  	  		q=bor(q,bor(hi*16,lo*256))  			
-    		elseif q==4 or q==2 then
-  	  		q=bor(q,bor(lo*16,hi*256))  			
-    		end
-					else
-						hi,lo=lo,prev_hi
-						q=prev_q
-						if q==0 then
-    			q=bor(q,bor(lo*16,lo*256))
-    		elseif q==5 then
-    			q=bor(q,bor(hi*16,hi*256))
-    		elseif q==1 or q==8 then
-  	  		q=bor(q,bor(hi*16,lo*256))  			
-    		elseif q==4 or q==2 then
-  	  		q=bor(q,bor(lo*16,hi*256))  			
-    		end
-					end
-     qmap[idx+idx_offsets[k]]=q
-   	end
-   end
-  end 
+-->8
+
+-->8
+-- trifill
+function p01_trapeze_h(l,r,lt,rt,y0,y1)
+ lt,rt=(lt-l)/(y1-y0),(rt-r)/(y1-y0)
+ if(y0<0)l,r,y0=l-y0*lt,r-y0*rt,0 
+	y1=min(y1,128)
+	for y0=y0,y1 do
+  rectfill(l,y0,r,y0)
+  l+=lt
+  r+=rt
  end
-	cur_layer+=1
-	cur_layer%=#layers
+end
+function p01_trapeze_w(t,b,tt,bt,x0,x1)
+ tt,bt=(tt-t)/(x1-x0),(bt-b)/(x1-x0)
+ if(x0<0)t,b,x0=t-x0*tt,b-x0*bt,0 
+ x1=min(x1,128)
+ for x0=x0,x1 do
+  rectfill(x0,t,x0,b)
+  t+=tt
+  b+=bt
+ end
+end
+function trifill(x0,y0,x1,y1,x2,y2,col)
+ color(col)
+ if(y1<y0)x0,x1,y0,y1=x1,x0,y1,y0
+ if(y2<y0)x0,x2,y0,y2=x2,x0,y2,y0
+ if(y2<y1)x1,x2,y1,y2=x2,x1,y2,y1
+ if max(x2,max(x1,x0))-min(x2,min(x1,x0)) > y2-y0 then
+  col=x0+(x2-x0)/(y2-y0)*(y1-y0)
+  p01_trapeze_h(x0,x0,x1,col,y0,y1)
+  p01_trapeze_h(x1,col,x2,x2,y1,y2)
+ else
+  if(x1<x0)x0,x1,y0,y1=x1,x0,y1,y0
+  if(x2<x0)x0,x2,y0,y2=x2,x0,y2,y0
+  if(x2<x1)x1,x2,y1,y2=x2,x1,y2,y1
+  col=y0+(y2-y0)/(x2-x0)*(x1-x0)
+  p01_trapeze_w(y0,y0,y1,col,x0,x1)
+  p01_trapeze_w(y1,col,y2,y2,x1,x2)
+ end
 end
 
+-->8
+-- unpack models
+local mem=0x1000
+function unpack_int()
+	local i=peek(mem)
+	mem+=1
+	return i
+end
+function unpack_float(scale)
+	local f=(unpack_int()-128)/32	
+	return f*(scale or 1)
+end
+-- valid chars for model names
+local itoa='_0123456789abcdefghijklmnopqrstuvwxyz'
+function unpack_string()
+	local s=""
+	for i=1,unpack_int() do
+		local c=unpack_int()
+		s=s..sub(itoa,c,c)
+	end
+	return s
+end
+function unpack_models()
+	-- for all models
+	for m=1,unpack_int() do
+		local model,name,scale={},unpack_string(),unpack_int()
+		-- vertices
+		model.v={}
+		for i=1,unpack_int() do
+			add(model.v,{unpack_float(scale),unpack_float(scale),unpack_float(scale)})
+		end
+		
+		-- faces
+		model.f={}
+		for i=1,unpack_int() do
+			local f={p0=unpack_int(),ni=i,vi={}}
+			for i=1,unpack_int() do
+				add(f.vi,unpack_int())
+			end
+			-- center point
+			f.center={unpack_float(scale),unpack_float(scale),unpack_float(scale)}
+			-- color
+			f.c=unpack_int()
+			-- double_sided?
+			f.double_sided=unpack_int()==1
+			add(model.f,f)
+		end
+
+		-- normals
+		model.n={}
+		for i=1,unpack_int() do
+			add(model.n,{unpack_float(),unpack_float(),unpack_float()})
+		end
+		
+		-- n.p cache	
+		model.cp={}
+		for i=1,#model.f do
+			local f,n=model.f[i],model.n[i]
+			add(model.cp,v_dot(n,model.v[f.p0]))
+		end
+
+		-- merge with existing model
+		all_models[name]=clone(model,all_models[name])
+	end
+end
+-->8
 -->8
 -- opensimplex noise
 
@@ -1630,145 +1662,39 @@ function os2d_eval(x,y)
 	end
 	return val/_os2d_nrm
 end
--->8
--- trifill
-function p01_trapeze_h(l,r,lt,rt,y0,y1)
- lt,rt=(lt-l)/(y1-y0),(rt-r)/(y1-y0)
- if(y0<0)l,r,y0=l-y0*lt,r-y0*rt,0 
-	y1=min(y1,128)
-	for y0=y0,y1 do
-  rectfill(l,y0,r,y0)
-  l+=lt
-  r+=rt
- end
-end
-function p01_trapeze_w(t,b,tt,bt,x0,x1)
- tt,bt=(tt-t)/(x1-x0),(bt-b)/(x1-x0)
- if(x0<0)t,b,x0=t-x0*tt,b-x0*bt,0 
- x1=min(x1,128)
- for x0=x0,x1 do
-  rectfill(x0,t,x0,b)
-  t+=tt
-  b+=bt
- end
-end
-function trifill(x0,y0,x1,y1,x2,y2,col)
- color(col)
- if(y1<y0)x0,x1,y0,y1=x1,x0,y1,y0
- if(y2<y0)x0,x2,y0,y2=x2,x0,y2,y0
- if(y2<y1)x1,x2,y1,y2=x2,x1,y2,y1
- if max(x2,max(x1,x0))-min(x2,min(x1,x0)) > y2-y0 then
-  col=x0+(x2-x0)/(y2-y0)*(y1-y0)
-  p01_trapeze_h(x0,x0,x1,col,y0,y1)
-  p01_trapeze_h(x1,col,x2,x2,y1,y2)
- else
-  if(x1<x0)x0,x1,y0,y1=x1,x0,y1,y0
-  if(x2<x0)x0,x2,y0,y2=x2,x0,y2,y0
-  if(x2<x1)x1,x2,y1,y2=x2,x1,y2,y1
-  col=y0+(y2-y0)/(x2-x0)*(x1-x0)
-  p01_trapeze_w(y0,y0,y1,col,x0,x1)
-  p01_trapeze_w(y1,col,y2,y2,x1,x2)
- end
-end
-
--->8
--- unpack models
-local mem=0x1000
-function unpack_int()
-	local i=peek(mem)
-	mem+=1
-	return i
-end
-function unpack_float(scale)
-	local f=(unpack_int()-128)/32	
-	return f*(scale or 1)
-end
--- valid chars for model names
-local itoa='_0123456789abcdefghijklmnopqrstuvwxyz'
-function unpack_string()
-	local s=""
-	for i=1,unpack_int() do
-		local c=unpack_int()
-		s=s..sub(itoa,c,c)
-	end
-	return s
-end
-function unpack_models()
-	-- for all models
-	for m=1,unpack_int() do
-		local model,name,scale={},unpack_string(),unpack_int()
-		-- vertices
-		model.v={}
-		for i=1,unpack_int() do
-			add(model.v,{unpack_float(scale),unpack_float(scale),unpack_float(scale)})
-		end
-		
-		-- faces
-		model.f={}
-		for i=1,unpack_int() do
-			local f={p0=unpack_int(),ni=i,vi={}}
-			for i=1,unpack_int() do
-				add(f.vi,unpack_int())
-			end
-			-- center point
-			f.center={unpack_float(scale),unpack_float(scale),unpack_float(scale)}
-			-- color
-			f.c=unpack_int()
-			-- double_sided?
-			f.double_sided=unpack_int()==1
-			add(model.f,f)
-		end
-
-		-- normals
-		model.n={}
-		for i=1,unpack_int() do
-			add(model.n,{unpack_float(),unpack_float(),unpack_float()})
-		end
-		
-		-- n.p cache	
-		model.cp={}
-		for i=1,#model.f do
-			local f,n=model.f[i],model.n[i]
-			add(model.cp,v_dot(n,model.v[f.p0]))
-		end
-
-		-- merge with existing model
-		all_models[name]=clone(model,all_models[name])
-	end
-end
 __gfx__
-1ca9b345000700000600000770000060eeeeeeeeeeeeeeee00000000000333330000000000077777000000000000000000000000000000000000000000000000
-0000000001dc77000600000770000060eeee00000000eeee000000003331eee3000000007775eee7000000000000000000000000000000000000000000000000
-7985100012e777000600000770000060eeee00000000eeee000000331eeeeee3000000775e7eeee7000000000000000000000000000000000000000000000000
-000000003333b7000600000000000060eeeeeee00eeeeeee0000031eeeeeeee30000075eee5eeeee000000000000000000000000000000000000000000000000
-000000002497a7000600000000000060eeeeeee00eeeeeee00003eeeeeeeeee300007eeeeeeeeeee00000000000000000049f000000000000000000000000000
-0000000015d767000600000000000060eeeeee0000eeeeee0003e3eeeeeeeee30007e7eeeeeeeeee000000000000000000000000000000000000000000000000
+1ca9b345000700000600000000000060eeeeeeeeeeeeeeee00000000000333330000000000077777eeeee000000eeeee00000000000000000000000000000000
+0000000001dc77000600000000000060eeee00000000eeee000000003331eee3000000007775eee7eee0000000000eee00000000000000000000000000000000
+7985100012e777000600000000000060eeee00000000eeee000000331eeeeee3000000775e7eeee7ee000000000000ee00000000000000000000000000000000
+000000003333b7000600000770000060eeeeeee00eeeeeee0000031eeeeeeee30000075eee5eeeeee00000000000000e00000000000000000000000000000000
+000000002497a7000600000770000060eeeeeee00eeeeeee00003eeeeeeeeee300007eeeeeeeeeeee00000000000000e00000000000000000000000000000000
+0000000015d767000600000770000060eeeeee0000eeeeee0003e3eeeeeeeee30007e7eeeeeeeeee000000000000000000000000000000000000000000000000
 00000000156767000600000000000060eeeeee0000eeeeee0031ee3eeeeeeee30075ee7eeeeeeeee000000000000000000000000000000000000000000000000
 00000000000000000600000000000060ee000000000000ee003eeee3eeeeeee3007eeeeeeeeeeeee000000000000000000000000000000000000000000000000
-5c000000000000000600000770000060e00000000000000e031eeeeeeee13333075eeeeeeeeeeeee000000000000000000000000000000000000000000000000
-00000000999a90000600000770000060e00000000000000e03eeeeeeee331ee307eeeeeeeeeeeeee000000000000000000000000000000000000000000000000
-00000000000000000600000770000060eeeeee0000eeeeee03eeeeeee31eeeeb0775eeeeeeeeeeee000000000000000000000000000000000000000000000000
-00000000000000000600000000000060eeeeee0000eeeeee31eeeeee13eeeeeb75eeeeeeeeeee555000000000000000000000000000000000000000000000000
-000000001dc77c000600000000000060eeeeee0000eeeeee3eeeeeee31eeeebb7eeeeeeeeeee5666000000000000000000000000000000000000000000000000
-00000000000000000600000000000060eeeeee0000eeeeee3eeeeeee3eeeeeee7eeeeeeeeee56666000000000000000000000000000000000000000000000000
-00000000000000000600000000000060eeeeeee00eeeeeee3eeeeeee3eeebeee7eeeeeeeeee56666000000000000000000000000000000000000000000000000
-00000000000000000600000000000060eeeeeeeeeeeeeeee3333333333bbbeeb777eeeeeeee56666000000000000000000000000000000000000000000000000
-00000000000000004070000000000704000bb00000b00000eeeeeeeeeee00000eeeeeeeeeeeeeeee000000000000000000000000000000000000000000000000
-0000000000000000407000000000070400b00b000bbb0000eeeeeeee00000000eeeee88855eeeeee000000000000000000000000000000000000000000000000
-00000000000000004070000000000704bb0000bbbbbbb000eeeeee0000000000eee990070055eeee000000000000000000000000000000000000000000000000
-0000000000000000407000000000070400b00b0000000000eeeee00000000000ee30000000005eee000000000000000000000000000000000000000000000000
-00000000000000004070000000000704000bb00000000000eeee000000000000e3070000000705ee000000000000000000000000000000000000000000000000
-000000000000000040700000000007040000000000000000eee0000000000000e3000000000005ee000000000000000000000000000000000000000000000000
-000000000000000040700000000007040000000000000000ee00000000000000300000000000005e000000000000000000000000000000000000000000000000
-000000000000000040700000000007040000000000000000ee00000000000000300000000000005e000000000000000000000000000000000000000000000000
-00000000000000004070000000000704eeeeeeee00000000e000000000000000370000000000073e000000000000000000000000000000000000000000000000
-00000000000000004070770770770704e76eeeee00000000e000000000000000300000000000003e000000000000000000000000000000000000000000000000
-00000000000000004070770770770704e7776eee00000000e000000000000000300000000000003e000000000000000000000000000000000000000000000000
-00000000000000004070770770770704e777776e000000000000000000000000e3000000000003ee000000000000000000000000000000000000000000000000
-00000000000000004070770770770704e777776e000000000000000000000000e3070000000703ee000000000000000000000000000000000000000000000000
-00000000000000004070770770770704e7776eee000000000000000000000000ee30000000003eee000000000000000000000000000000000000000000000000
-00000000000000004070770770770704e76eeeee000000000000000000000000eee330070033eeee000000000000000000000000000000000000000000000000
-00000000000000004070000000000704eeeeeeee000000000000000000000000eeeee33333eeeeee000000000000000000000000000000000000000000000000
+5c000000000000000600000000000060e00000000000000e031eeeeeeee13333075eeeeeeeeeeeee000000000000000000000000000000000000000000000000
+00000000999a90000600000000000060e00000000000000e03eeeeeeee331ee307eeeeeeeeeeeeee000000000000000000000000000000000000000000000000
+00000000000000000600000000000060eeeeee0000eeeeee03eeeeeee31eeeeb0775eeeeeeeeeeee000000000000000000000000000000000000000000000000
+00000000000000000600000770000060eeeeee0000eeeeee31eeeeee13eeeeeb75eeeeeeeeeee555e00000000000000e00000000000000000000000000000000
+000000001dc77c000600000770000060eeeeee0000eeeeee3eeeeeee31eeeebb7eeeeeeeeeee5666e00000000000000e00000000000000000000000000000000
+00000000000000000600000770000060eeeeee0000eeeeee3eeeeeee3eeeeeee7eeeeeeeeee56666ee000000000000ee00000000000000000000000000000000
+00000000000000000600000000000060eeeeeee00eeeeeee3eeeeeee3eeebeee7eeeeeeeeee56666eee0000000000eee00000000000000000000000000000000
+00000000000000000600000000000060eeeeeeeeeeeeeeee3333333333bbbeeb777eeeeeeee56666eeeee000000eeeee00000000000000000000000000000000
+00000000000000000600000000000060000bb00000b00000eeeeeeeeeee00000eeeeeeeeeeeeeeee000000000000000000000000000000000000000000000000
+0000000000000000060770077007706000b00b000bbb0000eeeeeeee00000000eeeee88855eeeeee000000000000000000000000000000000000000000000000
+00000000000000000607700770077060bb0000bbbbbbb000eeeeee0000000000eee990070055eeee000000000000000000000000000000000000000000000000
+0000000000000000060770077007706000b00b0000000000eeeee00000000000ee30000000005eee000000000000000000000000000000000000000000000000
+00000000000000000607700770077060000bb00000000000eeee000000000000e3070000000705ee000000000000000000000000000000000000000000000000
+000000000000000006077007700770600000000000000000eee0000000000000e3000000000005ee000000000000000000000000000000000000000000000000
+000000000000000006077007700770600000000000000000ee00000000000000300000000000005e000000000000000000000000000000000000000000000000
+000000000000000006000000000000600000000000000000ee00000000000000300000000000005e000000000000000000000000000000000000000000000000
+00000000000000000600000000000060eeeeeeee00000000e000000000000000370000000000073e000000000000000000000000000000000000000000000000
+00000000000000000600000000000060e76eeeee00000000e000000000000000300000000000003e000000000000000000000000000000000000000000000000
+00000000000000000600077007700060e7776eee00000000e000000000000000300000000000003e000000000000000000000000000000000000000000000000
+00000000000000000600077007700060e777776e000000000000000000000000e3000000000003ee000000000000000000000000000000000000000000000000
+00000000000000000600077007700060e777776e000000000000000000000000e3070000000703ee000000000000000000000000000000000000000000000000
+00000000000000000600077007700060e7776eee000000000000000000000000ee30000000003eee000000000000000000000000000000000000000000000000
+00000000000000000600077007700060e76eeeee000000000000000000000000eee330070033eeee000000000000000000000000000000000000000000000000
+00000000000000000600000000000060eeeeeeee000000000000000000000000eeeee33333eeeeee000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
