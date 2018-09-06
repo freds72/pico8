@@ -810,16 +810,16 @@ function get_height(i,j)
 	-- already scaled
 	return hmap[safe_index(i,j)]
 end
-function get_color(q)
+function get_q_colors(q)
 	return shr(band(0xf0,q),4),shr(band(0xf00,q),8)
 end
 
 function get_altitude(x,z)
 	-- cell
-	local dx,dz=shr(band(x,0x7f)%ground_scale,4),shr(band(z,0x7f)%ground_scale,4)
+	local dx,dz=shr(band(x,0x7f)%ground_scale,ground_shift),shr(band(z,0x7f)%ground_scale,ground_shift)
 	local i,j=flr(shr(x,ground_shift)),flr(shr(z,ground_shift))
-	local h0,h1=lerp(get_height(i,j),get_height(i,j+1),1-dz),lerp(get_height(i+1,j),get_height(i+1,j+1),1-dz)
-	return lerp(h0,h1,1-dx)
+	local h0,h1=lerp(get_height(i,j),get_height(i,j+1),dz),lerp(get_height(i+1,j),get_height(i+1,j+1),dz)
+	return lerp(h0,h1,dx)
 end
 
 function update_ground()
@@ -858,15 +858,38 @@ function draw_tex_quad(a,b,s)
 	palt()
 end
 
+-- draw actors on strip j
+function draw_actors(j)
+	local bucket=zbuf[band(j,0x7f)]
+	if bucket then
+		for _,d in pairs(bucket) do
+			d=d.obj
+			d:draw()
+			if d==plyr then
+				local x,z=d.pos[1],d.pos[z]
+				local y=get_altitude(x,z)
+				local dx,dz=shr(band(x,0x7f)%ground_scale,ground_shift),shr(band(z,0x7f)%ground_scale,ground_shift)
+				local i,j=flr(shr(x,ground_shift)),flr(shr(z,ground_shift))
+				local x,y,z,w=cam:project(d.pos[1],y,d.pos[3])
+				circfill(x,y,2,8)
+				
+				print(dx.."/"..dz,x,y-12)
+				print(i.."/"..j,x,y-6)
+			end
+		end
+	end
+end
+
 function draw_ground(self)
 	local imin,imax=-5,5
 	local cx,cz=cam.lookat[1],cam.lookat[3]
+	-- cell x/z ratio
 	local dx,dz=cx%ground_scale,cz%ground_scale
 	-- cell coordinates
 	local nx,ny=flr(shr(cx,ground_shift)),flr(shr(cz,ground_shift))
 	
 	-- project anchor points
-	local p={}	
+	local p={}
 	-- grid depth extent
 	for j=-9,3 do
 	 -- compute grid points centered on lookat pos
@@ -904,9 +927,9 @@ function draw_ground(self)
    local fp=dither[i]
    if(fp) fillp(fp)
 
-		 -- out of screen tile?
+		 -- in screen tile?
 		 if x3>0 then
- 			local c_hi,c_lo=get_color(q)
+ 			local c_hi,c_lo=get_q_colors(q)
  			local q_code=band(q,0xf)
  			if q_code==1 or q_code==4 then
  				trifill(x0,y0,x2,y2,x1,y1,c_hi)		
@@ -930,19 +953,14 @@ function draw_ground(self)
 			x3+=dw0
 			ni+=1
 		end
-		-- draw actors
-		local bucket=zbuf[band(nj,0x7f)]
-		if bucket then
-			for _,d in pairs(bucket) do
-				d=d.obj
-				
-				d:draw()
-			end
-		end
+		draw_actors(nj)
+		
 		v0,w0,dw0=v1,w1,dw1
 		nj+=1
 		fillp()
 	end
+	-- last strip
+	draw_actors(nj)
 end
 
 function control_plyr()
@@ -1033,8 +1051,7 @@ end
 
 -- from:https://www.lexaloffle.com/bbs/?tid=3217
 function smallcaps(s)
-  local d=""
-  local c
+  local d,c=""
   for i=1,#s do
     local a=sub(s,i,i)
     if a!="^" then
@@ -1198,14 +1215,13 @@ function _init()
 	-- temp array to store the 64x64 noise map
 	local noise={}
 	local get_noise=function(i,j)
-	 if(i<0 or j<0 or i>63 or j>63) return 0
 		return noise[band(i,0x3f)+64*band(j,0x3f)+1]
 	end
 	-- returns whether value is above a given level
 	local is_solid=function(i,j,level)
 		return get_noise(i,j)>level and 1 or 0
 	end
-	-- converts four corners into a single sprite lookup index
+	-- converts four corners into a single lookup index
 	-- cf: https://en.wikipedia.org/wiki/marching_squares
 	local marching_code=function(i,j,level)
 		return
@@ -1214,43 +1230,26 @@ function _init()
 		2*is_solid(i+1,j+1,level)+
 		is_solid(i,j+1,level)
 	end
+	local set_q_colors=function(q,lo,hi)
+		return bor(q,bor(lo*16,hi*256))
+	end
 	
-	os2d_noise(48)
-
-	for y=0,63 do
-		for x=0,63 do
-			local c
-			c =os2d_eval(x/32,y/32)
-			-- next is weaker
-			c+=os2d_eval(x/16,y/16)/2
-			-- and so on
-			c+=os2d_eval(x/ 8,y/ 8)/4
-			-- and so on
-			c+=os2d_eval(x/ 4,y/ 4)/8
-			-- and so on
-			c+=os2d_eval(x/ 2,y/ 2)/16
-
-			-- convert -0.2..+1 to 14 cols
-			-- (sea level at -0.2)
-			c=mid(0,(c+0.2)/1.2*15,15)
-			-- set in stoooone
-			add(noise,c)
-		end
+	local perlin="210000000000000000000000000000100000000000012344566788887788876453210000000000000000000000000010000000000001234455578887778987646542110000000000000000000000000000000000000012345556788777899763766421100000000000000000000000000000000000001234566778888888875377754320000000000000000000000000000000000000123466677899898876538876653110000000000000000000000000000000000012346667889889987643887776421000000000000000000000000000000000001224566788889998764488877643211000000000000000000000000000000000112345577788999865447887775432110000000000000000000000000000000011123457888888876544788776654332100000000000000000000000000000011101235788777766544478876666554420000000000000000000000112210011211123577777766544337887666766542000000000000000000000012321222222112357777766654322777666777654210000000000000000000011233223322111246777776654432266667776655321000000000000000000000122222333222234677666665444336556776555532100000000000000000000001122233333323567766655334444446666655554221000000000000000000000000123443333456776554433566634666555565433210000000000000000000000002344433445666554444457763456654556544321000000000000000000000000123433333466665444446887334565455543333211111111100000000000000000122233334566544556788823455543333344542221222210000000000000000011122223456655566788882345544333234555443333321000000000000000000111223345555556778998134544333223455555544542100000000000000000001222233455556678999813444333222345666665554210000000000000000000232333455556667888882334332221235666665555421000000000000000000123444456655566668888222322222223566665445542100000000000000001223455556655556655677801221112233455556544454211000000000000000123455556665555555456770000001234444445554444321100000000000000012345545555445554444666000000123444333455444311110000000000000001234444444444444444456600000012334432234444432100000000000000000123333334443333334445660000001223444322344543210111000100000000013444323333332122344555000001222333432234465432111100111000000112344442222222101223344400000223322233223456554222222221000011123334454332222100112223330000012322212222445665544333332100001223444455433322110111122333000001332221112235566554444432100001223444555665543321111101233300000133222112234555554444443220000233344566667776554211122223230000012233211234555554334454443211234444567888999876543333333334000001223211122344443333445555442234555568899baa99876544444444450000012232122222333322344566666544455556789aabba9988765555566556000001233322112222222234678888866666666789aabbbaa9876655555677660000012333221111212223357789aa98777887899aabbbaaa986554455577777000011233321111111112235779aaaa9899a99aaabbbcbaa98754555566777780000122332222221111112457899abbbaabbbbbbcccddcba97644566677677870001233333332221111001357899abbccccdccccdeeedcba876445666776677700013443323222221110024579aaabbccddeddddeffedcba875445666766667700002444322222222111124689aabcccdeeedddeeffedcb9865445666566776600001344322222111111234689abcddddeeddddeeeedcba9865455665567776600112344322222221101234789bcdddcddccccdddeddcb9876544555456776650111233322222232111124579abcdddddccbbbcccdedca9876544454456777650112223321122222222235689bbccddddccbbbbbcdedca9876655444456666540012222211112233333456789bbccccdddcbbbbbcdddca987665544445555543000112210001123444556789aaabbbccddcbbaaabcccba887655554344444432000001110001223456778999aa999abbdccba9aabbbba9877655554443332222000000000001235667899999998889abcccba99aaaa98877665555433222111100000000011234667899aa987778899abcbba99999976665555434422101110000000000122234578999aa9876777899abbba99aa8766544444433321100000000000000122234578899a9987666678899aa99aa98665433444333331000011200000001222334677889aaa9766667778998899a976643223333443310000123000000012334456777899aa9876666668888899a987643221223443221000233000000013445666777899aaa98765555778899aa98765332112344321100023300000002356777777889999999765445778899aaa8766432112333211001123300000002468898778888889998765445677789aaa876654211222222101222330000000247899998998777898877644567789aaaa987653222122333222222210000001357899aa9998766788765544578889aaa998765433322233333322210000000247889abba988765677655444678889aaa988765444433334444321100"
+	
+	for i=1,#perlin do
+		local c=tonum("0x"..sub(perlin,i,i))
+		add(noise,c)
 	end
 
 	-- height map weights
-	local hweights={
-		{1,0,0,0},
-		{0.5,0,0.5,0},
-		{0.5,0.5,0,0},
-		{0.25,0.25,0.25,0.25}}
-		
+	local hweights=json_parse'[[1,0,0,0],[0.5,0,0.5,0],[0.5,0.5,0,0],[0.25,0.25,0.25,0.25]]'
 	-- explode the 64x64 map into 128x128
 	for j=0,63 do
 		for i=0,63 do
 			local idx=2*i+2*128*j
 			for k=1,4 do
 				local w=hweights[k]
+				
 				local h=w[1]*get_noise(i,j)+w[2]*get_noise(i,j+1)+w[3]*get_noise(i+1,j)+w[4]*get_noise(i+1,j+1)
 				hmap[idx+idx_offsets[k]]=shl(max(h),1)
 			end
@@ -1258,12 +1257,7 @@ function _init()
 	end 	
 	
 	-- create multiple layers
-	local layers={
-		{level=1,hi=10,lo=12,h=0},
-		{level=4,hi=9},
-		{level=7,hi=5},
-		{level=12,hi=3}
-	}
+	local layers=json_parse'[{"level":1,"hi":10,"lo":12,"h":0},{"level":4,"hi":9},{"level":7,"hi":5},{"level":12,"hi":3}]'
 
 	for l=1,#layers do
 		local layer=layers[l]
@@ -1273,13 +1267,13 @@ function _init()
 				local idx=2*i+2*128*j
 				local code=q_codes[q+1]
 				for k=1,4 do
-					q=code[k]
+					local q,k=code[k],idx+idx_offsets[k]
 					-- hi/lo colors
 					local hi,lo=layer.hi,layer.lo
 					-- previous tile
-					local prev_q=qmap[idx+idx_offsets[k]]   		
+					local prev_q=qmap[k]
 					if prev_q then
-						prev_hi,prev_lo=get_color(prev_q)
+						prev_hi,prev_lo=get_q_colors(prev_q)
 						-- replace lo color
 						lo=prev_lo
 					end
@@ -1287,19 +1281,19 @@ function _init()
 					prev_q=band(0xf,prev_q or 5)
 					if prev_q==5 then
 						if q==0 then
-							q=bor(q,bor(lo*16,lo*256))
+							q=set_q_colors(q,lo,lo)
 						 -- kill height
 						 if layer.h then
-						 	hmap[idx+idx_offsets[k]]=layer.h
-						 end							
+						 	hmap[k]=layer.h
+						 end
 						elseif q==5 then
-							q=bor(q,bor(hi*16,hi*256))
+							q=set_q_colors(q,hi,hi)
 						elseif q==1 or q==8 then
-							q=bor(q,bor(hi*16,lo*256))  			
+							q=set_q_colors(q,hi,lo)
 						elseif q==4 or q==2 then
-							q=bor(q,bor(lo*16,hi*256))  			
-						end			
-						qmap[idx+idx_offsets[k]]=q
+							q=set_q_colors(q,lo,hi)
+						end
+						qmap[k]=q
 					end
 				end
 			end
@@ -1339,8 +1333,6 @@ function _init()
 
 	plyr=make_actor("plyr",{0,44,0})
 end
-
--->8
 
 -->8
 -- trifill
@@ -1448,220 +1440,7 @@ function unpack_models()
 		all_models[name]=clone(model,all_models[name])
 	end
 end
--->8
--->8
--- opensimplex noise
 
--- adapted from public-domain
--- code found here:
--- https://gist.github.com/kdotjpg/b1270127455a94ac5d19
-
---------------------------------
-
--- opensimplex noise in java.
--- by kurt spencer
--- 
--- v1.1 (october 5, 2014)
--- - added 2d and 4d implementations.
--- - proper gradient sets for all dimensions, from a
---   dimensionally-generalizable scheme with an actual
---   rhyme and reason behind it.
--- - removed default permutation array in favor of
---   default seed.
--- - changed seed-based constructor to be independent
---   of any particular randomization library, so results
---   will be the same when ported to other languages.
-
--- (1/sqrt(2+1)-1)/2
-local _os2d_str=-0.211324865405187
--- (  sqrt(2+1)-1)/2
-local _os2d_squ= 0.366025403784439
-
--- cache some constant invariant
--- expressions that were 
--- probably getting folded by 
--- kurt's compiler, but not in 
--- the pico-8 lua interpreter.
-local _os2d_squ_pl1=_os2d_squ+1
-local _os2d_squ_tm2=_os2d_squ*2
-local _os2d_squ_tm2_pl1=_os2d_squ_tm2+1
-local _os2d_squ_tm2_pl2=_os2d_squ_tm2+2
-
-local _os2d_nrm=47
-
-local _os2d_prm={}
-
--- gradients for 2d. they 
--- approximate the directions to
--- the vertices of an octagon 
--- from the center
-local _os2d_grd = 
-{[0]=
-	 5, 2,  2, 5,
-	-5, 2, -2, 5,
-	 5,-2,  2,-5,
-	-5,-2, -2,-5,
-}
-
--- initializes generator using a 
--- permutation array generated 
--- from a random seed.
--- note: generates a proper 
--- permutation, rather than 
--- performing n pair swaps on a 
--- base array.
-function os2d_noise(seed)
-	local src={}
-	for i=0,255 do
-		src[i]=i
-		_os2d_prm[i]=0
-	end
-	srand(seed)
-	for i=255,0,-1 do
-		local r=flr(rnd(i+1))
-		_os2d_prm[i]=src[r]
-		src[r]=src[i]
-	end
-end
-
--- 2d opensimplex noise.
-function os2d_eval(x,y)
-	-- put input coords on grid
-	local sto=(x+y)*_os2d_str
-	local xs=x+sto
-	local ys=y+sto
-	
-	-- flr to get grid 
-	-- coordinates of rhombus
-	-- (stretched square) super-
-	-- cell origin.
-	local xsb=flr(xs)
-	local ysb=flr(ys)
-	
-	-- skew out to get actual 
-	-- coords of rhombus origin.
-	-- we'll need these later.
-	local sqo=(xsb+ysb)*_os2d_squ
-	local xb=xsb+sqo
-	local yb=ysb+sqo
-
-	-- compute grid coords rel.
-	-- to rhombus origin.
-	local xins=xs-xsb
-	local yins=ys-ysb
-
-	-- sum those together to get
-	-- a value that determines 
-	-- which region we're in.
-	local insum=xins+yins
-
-	-- positions relative to 
-	-- origin point.
-	local dx0=x-xb
-	local dy0=y-yb
-	
-	-- we'll be defining these 
-	-- inside the next block and
-	-- using them afterwards.
-	local dx_ext,dy_ext,xsv_ext,ysv_ext
-
-	local val=0
-
-	-- contribution (1,0)
-	local dx1=dx0-_os2d_squ_pl1
-	local dy1=dy0-_os2d_squ
-	local at1=2-dx1*dx1-dy1*dy1
-	if at1>0 then
-		at1*=at1
-		local i=band(_os2d_prm[(_os2d_prm[(xsb+1)%256]+ysb)%256],0x0e)
-		val+=at1*at1*(_os2d_grd[i]*dx1+_os2d_grd[i+1]*dy1)
-	end
-
-	-- contribution (0,1)
-	local dx2=dx0-_os2d_squ
-	local dy2=dy0-_os2d_squ_pl1
-	local at2=2-dx2*dx2-dy2*dy2
-	if at2>0 then
-		at2*=at2
-		local i=band(_os2d_prm[(_os2d_prm[xsb%256]+ysb+1)%256],0x0e)
-		val+=at2*at2*(_os2d_grd[i]*dx2+_os2d_grd[i+1]*dy2)
-	end
-	
-	if insum<=1 then
-		-- we're inside the triangle
-		-- (2-simplex) at (0,0)
-		local zins=1-insum
-		if zins>xins or zins>yins then
-			-- (0,0) is one of the 
-			-- closest two triangular
-			-- vertices
-			if xins>yins then
-				xsv_ext=xsb+1
-				ysv_ext=ysb-1
-				dx_ext=dx0-1
-				dy_ext=dy0+1
-			else
-				xsv_ext=xsb-1
-				ysv_ext=ysb+1
-				dx_ext=dx0+1
-				dy_ext=dy0-1
-			end
-		else
-			-- (1,0) and (0,1) are the
-			-- closest two vertices.
-			xsv_ext=xsb+1
-			ysv_ext=ysb+1
-			dx_ext=dx0-_os2d_squ_tm2_pl1
-			dy_ext=dy0-_os2d_squ_tm2_pl1
-		end
-	else  --we're inside the triangle (2-simplex) at (1,1)
-		local zins = 2-insum
-		if zins<xins or zins<yins then
-			-- (0,0) is one of the 
-			-- closest two triangular
-			-- vertices
-			if xins>yins then
-				xsv_ext=xsb+2
-				ysv_ext=ysb
-				dx_ext=dx0-_os2d_squ_tm2_pl2
-				dy_ext=dy0-_os2d_squ_tm2
-			else
-				xsv_ext=xsb
-				ysv_ext=ysb+2
-				dx_ext=dx0-_os2d_squ_tm2
-				dy_ext=dy0-_os2d_squ_tm2_pl2
-			end
-		else
-			-- (1,0) and (0,1) are the
-			-- closest two vertices.
-			dx_ext=dx0
-			dy_ext=dy0
-			xsv_ext=xsb
-			ysv_ext=ysb
-		end
-		xsb+=1
-		ysb+=1
-		dx0=dx0-_os2d_squ_tm2_pl1
-		dy0=dy0-_os2d_squ_tm2_pl1
-	end
-	
-	-- contribution (0,0) or (1,1)
-	local at0=2-dx0*dx0-dy0*dy0
-	if at0>0 then
-		at0*=at0
-		local i=band(_os2d_prm[(_os2d_prm[xsb%256]+ysb)%256],0x0e)
-		val+=at0*at0*(_os2d_grd[i]*dx0+_os2d_grd[i+1]*dy0)
-	end
-	
-	-- extra vertex
-	local atx=2-dx_ext*dx_ext-dy_ext*dy_ext
-	if atx>0 then
-		atx*=atx
-		local i=band(_os2d_prm[(_os2d_prm[xsv_ext%256]+ysv_ext)%256],0x0e)
-		val+=atx*atx*(_os2d_grd[i]*dx_ext+_os2d_grd[i+1]*dy_ext)
-	end
-	return val/_os2d_nrm
-end
 __gfx__
 1ca9b345000700000600000000000060eeeeeeeeeeeeeeee00000000000333330000000000077777eeeee000000eeeee00000000000000000000000000000000
 0000000001dc77000600000000000060eeee00000000eeee000000003331eee3000000007775eee7eee0000000000eee00000000000000000000000000000000
