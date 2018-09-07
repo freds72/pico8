@@ -110,33 +110,6 @@ function screen_update()
 	camera(shkx,shky)
 end
 
-function sprr(sx,sy,x,y,a,w,scale)
-	scale=scale or 1
-	local ca,sa=cos(a),sin(a)
- local srcx,srcy,addr,pixel_pair
- local ddx0,ddy0=ca/scale,sa/scale
- local mask=shl(0xfff8,(w-1))
- w*=4	
- ca*=w-0.5
- sa*=w-0.5 
- local dx0,dy0=sa-ca+w,-ca-sa+w
- w=scale*(2*w-1)
- for ix=x,x+w do
-  srcx,srcy=dx0,dy0
-  for iy=y,y+w do
-   local c
-   if band(bor(srcx,srcy),mask)==0 then
-   	c=sget(sx+srcx,sy+srcy)
-   	sset(ix,iy,c)
-  	end
-   srcx-=ddy0
-  	srcy+=ddx0
-  end
-  dx0+=ddx0
-  dy0+=ddy0
- end
-end
-
 -- zbuffer (kind of)
 local drawables,zbuf
 function zbuf_clear()
@@ -224,6 +197,14 @@ function sort(data)
   end
   data[i]=new_val
  end
+end
+
+-- vector math
+function sqr_dist(a,b)
+	local dx,dy,dz=b[1]-a[1],b[2]-a[2],b[3]-a[3]
+
+	dx=dx*dx+dy*dy+dz*dz
+	return dx<0 and 32000 or dx
 end
 
 function make_v_cross(a,b)
@@ -414,7 +395,7 @@ function m_up(m)
 end
 
 -- models & rendering
-local all_models=json_parse'{"tree":{"c":3,"r":4},"a10":{"gauss_wp":{"pos":[0,0,-3],"part":"gauss_blt","dly":8}},"tower":{},"t72":{"gun":{"pos":[0,4,0],"part":"gun_blt","dly":8}}}'
+local all_models=json_parse'{"tree":{"r":4},"a10":{"gauss_wp":{"pos":[0,0,-3],"part":"gauss_blt","dly":8}},"tower":{},"t72":{"r":4,"gun":{"pos":[0,4,0],"part":"gun_blt","dly":8},"hangar":{}}'
 local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]'
 function draw_model(model,m)
 
@@ -502,74 +483,13 @@ _g.update_ground_npc=function(self)
 	
 end
 
-local all_actors=json_parse'{"plyr":{"model":"a10","l_acc":0.8,"r_acc":0.8,"l_fuel":3000,"r_fuel":3000,"fire_t":0,"pitch":0,"roll":0,"turn":0,"turn_spring":0,"update":"update_plyr","angle":0.25,"smoke_dly":12,"smoke_t":0},"tower":{"model":"tower","update":"nop"},"tree":{"model":"tree","hp":4,"update":"nop","hit":"hit_npc","die":"die_actor","rnd":{"angle":[0,1]}},"t72":{"model":"t72","hp":4,"update":"nop","hit":"hit_npc","die":"die_actor","rnd":{"angle":[0,1]}}}'
-
--- maths
-function sqr_dist(a,b)
-	local dx,dy,dz=b[1]-a[1],b[2]-a[2],b[3]-a[3]
-
-	dx=dx*dx+dy*dy+dz*dz
-	return dx<0 and 32000 or dx
+_g.draw_building=function(self)
+	local x,y,z,w=cam:project(self.pos[1],self.pos[2],self.pos[3])
+	local x1,y1,z1,w1=cam:project(self.pos[1],self.pos[2]+24,self.pos[3])
+	draw_tex_quad({x1,y1,0,w1},{x,y,0,w},2)
 end
 
-function make_v(a,b)
-	return {
-		b[1]-a[1],
-		b[2]-a[2],
-		b[3]-a[3]}
-end
-function lerp(a,b,t)
-	return a*(1-t)+b*t
-end
-function v_clone(v)
-	return {v[1],v[2],v[3]}
-end
-function v_lerp(a,b,t)
-	return {
-		lerp(a[1],b[1],t),
-		lerp(a[2],b[2],t),
-		lerp(a[3],b[3],t)}
-end
-function v_dot(a,b)
-	return a[1]*b[1]+a[2]*b[2]+a[3]*b[3]
-end
-function v_normz(v)
-	local d=v_dot(v,v)
-	if d>0.001 then
-		d=sqrt(d)
-		v[1]/=d
-		v[2]/=d
-		v[3]/=d
-	end
-	return d
-end
-function v_clamp(v,l)
-	local d=v_dot(v,v)
-	if d>l*l then
-		v_scale(v,l/sqrt(d))
-	end
-end
-function v_scale(v,scale)
-	v[1]*=scale
-	v[2]*=scale
-	v[3]*=scale
-end
-function v_add(v,dv,scale)
-	scale=scale or 1
-	v[1]+=scale*dv[1]
-	v[2]+=scale*dv[2]
-	v[3]+=scale*dv[3]
-end
-function in_cone(p,t,fwd,angle,rng)
-	local v=make_v(p,t)
-	-- close enough?
-	if sqr_dist(v,v)<rng*rng then
-		v_normz(v)
-		-- in cone?
-		return v_dot(fwd,v)>angle
-	end
-	return false
-end
+local all_actors=json_parse'{"plyr":{"model":"a10","l_acc":0.8,"r_acc":0.8,"l_fuel":3000,"r_fuel":3000,"fire_t":0,"pitch":0,"roll":0,"turn":0,"turn_spring":0,"update":"update_plyr","angle":0.25,"smoke_dly":12,"smoke_t":0},"tower":{"model":"tower","update":"nop"},"tree":{"model":"tree","hp":4,"update":"nop","hit":"hit_npc","die":"die_actor","rnd":{"angle":[0,1]}},"t72":{"model":"t72","hp":4,"update":"nop","hit":"hit_npc","die":"die_actor","rnd":{"angle":[0,1]}},"building":{"update":"nop","draw":"draw_building"}}'
 
 function draw_actor(self,x,y,z,w)
 	draw_model(self.model,self.m)
@@ -592,10 +512,10 @@ end
 function make_ground_actor(src,i,j)
 	local x,z=shl(i+rnd(),ground_shift),shl(j+rnd(),ground_shift)
 	local a=clone(all_actors[src],{
-		pos={x,get_altitude(x,z),z},
-		draw=draw_actor
+		pos={x,get_altitude(x,z),z}
 	})
 	a.model=all_models[a.model]
+	a.draw=a.draw or draw_actor
 	-- any angle defined in instance?
 	local q=make_q(v_up,a.angle or 0)
 	local m=m_from_q(q)
@@ -854,6 +774,22 @@ function draw_tex_quad(a,b,s)
 		local u=t*wb/w
 		sspr(sx,sy+16*u,16,1,x,y,shl(w,4),1)
 		t+=invdx
+	end
+	palt()
+end
+
+function draw_htex_quad(a,b,s)
+ -- sprite num to coords
+ local sx,sy=band(s*8,127),8*flr(shr(s,4))
+	palt(14,true)
+	palt(0,false)
+	local t,invdy,wa,wb=0,1/(b[1]-a[1]),a[4],b[4]
+	for x=a[1],b[1] do
+		local y,w=lerp(a[2],b[2],t),lerp(wa,wb,t)
+		-- persp correction
+		local v=t*wb/w
+		sspr(sx+16*u,sy,1,16,x,y,1,shl(w,4))
+		t+=invdy
 	end
 	palt()
 end
@@ -1282,16 +1218,16 @@ function _init()
 					if prev_q==5 then
 						if q==0 then
 							q=set_q_colors(q,lo,lo)
-						 -- kill height
-						 if layer.h then
-						 	hmap[k]=layer.h
-						 end
 						elseif q==5 then
 							q=set_q_colors(q,hi,hi)
 						elseif q==1 or q==8 then
 							q=set_q_colors(q,hi,lo)
 						elseif q==4 or q==2 then
 							q=set_q_colors(q,lo,hi)
+						end
+						-- kill height
+						if layer.h then
+							hmap[k]=layer.h
 						end
 						qmap[k]=q
 					end
@@ -1325,8 +1261,10 @@ function _init()
  ]]
  
 	-- control tower (test)
-	make_ground_actor("tower",2,2)
- 
+	--make_ground_actor("tower",2,2)
+	
+	make_ground_actor("building",2,2)
+	
 	-- read models from gfx/map data
 	unpack_models()
 
