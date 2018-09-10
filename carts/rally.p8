@@ -233,6 +233,10 @@ end
 function v_dot(a,b)
 	return a[1]*b[1]+a[2]*b[2]+a[3]*b[3]
 end
+function v_sqr(v)
+	return {a[1]*a[1],a[2]*a[2],a[3]*a[3]}
+end
+
 function v_normz(v)
 	local d=v_dot(v,v)
 	if d>0.001 then
@@ -260,15 +264,24 @@ function v_add(v,dv,scale)
 	v[2]+=scale*dv[2]
 	v[3]+=scale*dv[3]
 end
-function in_cone(p,t,fwd,angle,rng)
-	local v=make_v(p,t)
-	-- close enough?
-	if sqr_dist(v,v)<rng*rng then
-		v_normz(v)
-		-- in cone?
-		return v_dot(fwd,v)>angle
+function v_min(a,b)
+	return {min(a[1],b[1]),min(a[2],b[2]),min(a[3],b[3])}
+end
+function v_max(a,b)
+	return {max(a[1],b[1]),max(a[2],b[2]),max(a[3],b[3])}
+end
+
+function serialize(v,state)
+	for i=1,#v do
+		add(state,v[i])
 	end
-	return false
+end
+function deserialize(state,k,v)
+	for i=1,#v do
+		v[i]=state[k]
+		k+=1
+	end
+	return k
 end
 
 -- matrix functions
@@ -296,31 +309,21 @@ function make_m(x,y,z)
 	m[13],m[14],m[15]=x or 0,y or 0,z or 0
 	return m
 end
+function m_inv(me)
+	local te={}
+	te[0] =   me[10] * me[5] - me[6] * me[9];
+		te[1] = - me[10] * me[1] + me[2] * me[9];
+		te[2] =   me[6] * me[1] - me[2] * me[5];
+		te[3] = - me[10] * me[4] + me[6] * me[8];
+		te[4] =   me[10] * me[0] - me[2] * me[8];
+		te[5] = - me[6] * me[0] + me[2] * me[4];
+		te[6] =   me[9] * me[4] - me[5] * me[8];
+		te[7] = - me[9] * me[0] + me[1] * me[8];
+		te[8] =   me[5] * me[0] - me[1] * me[4];
 
-function make_m_toward(z,up)
- 	local x=make_v_cross(up,z)
-	-- aligned?
-	if v_dot(x,x)<0.001 then
-		-- up and z //
-		if abs(up[3])==1 then
-			z[1]+=0.01
-		else
-			z[3]+=0.01
-		end
-		v_normz(z)
-		x=make_v_cross(up,z)
-	end
-		
-	v_normz(x)
-	local y=make_v_cross(z,x)
-	v_normz(y)
- 
-	return { 
-		x[1],x[2],x[3],0,
-		y[1],y[2],y[3],0,
-  		z[1],z[2],z[3],0,
-		0,0,0,1}
+		var det = me[0] * te[0] + me[1] * te[3] + me[2] * te[6];
 end
+
 -- quaternion
 function make_q(v,angle)
 	angle/=2
@@ -369,6 +372,12 @@ function m_from_q(q)
 	}
 end
 
+-- matrix
+function m_scale(m,scale)
+	for i=1,#m do
+		m[i]*=scale
+	end
+end
 -- only invert 3x3 part
 function m_inv(m)
 	m[2],m[5]=m[5],m[2]
@@ -500,12 +509,48 @@ function solve(self,dt)
 	q_normz(self.q)
 end
 
+function make_bbox(model)
+	local vmin,vmax={32000,32000,32000},{-32000,-32000,-32000}
+	for _,v in pairs(model.v) do
+		vmin,vmax=v_min(vmin,v),v_max(vmax,v)
+	end
+	return {min=vmin,max=vmax}
+end
+
 function make_rigidbody(a)
-	a.inv_mass=1/a.mass
 	a.force={0,0,0}
 	a.torque={0,0,0}
-	a.linearvelocity={0,0,0}
-	a.angularvelocity={0,0,0}
+	a.p={0,0,0}
+	a.l={0,0,0}
+	-- compute inertia tensor
+	local bbox=make_bbox(a.model)
+	local size=make_v(bbox.min,bbox.max)
+	size=v_sqr(size)
+	a.ibody=make_m(size[2]+size[3],,size[1]+size[3],size[1]+size[2])
+	m_scale(a.ibody,1/12)
+	-- invert 
+	a.ibodyinv=m_inv(a.ibody)
+	a.iinv=make_m()
+	a.r=make_m()
+	a.v={0,0,0}
+	a.omega={0,0,0}
+	
+	a.serialize=function(self,state)
+		serialize(self.pos,state)
+		serialize(self.q,state)
+		serialize(self.p,state)
+		serialize(self.l,state)
+	end
+	a.deserialize=function(self,state)
+		local k=deserialize(state,1,self.pos)
+		k=deserialize(state,k,self.q)
+		q_normz(self.q)
+		self.r=m_from_q(self.q)
+		k=deserialize(state,k,self.p)
+		k=deserialize(state,k,self.l)
+		-- 
+		
+	end
 	a.apply=apply_force
 	local _update=a.update
 	a.update=function(self)
