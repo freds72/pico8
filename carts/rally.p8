@@ -4,6 +4,7 @@ __lua__
 -- globals
 local time_t,time_dt=0,1/30
 local actors,ground_actors,parts,light,cam,plyr,active_ground_actors={},{},{},{0,1,0}
+local physic_actors={}
 
 -- world units
 local ground_shift,hscale=2,4
@@ -284,44 +285,59 @@ function deserialize(state,k,v)
 	return k
 end
 
--- matrix functions
+-- 3x3 matrix operations
+function make_m(x,y,z)
+	return {
+		x,0,0,
+		0,y,0,
+		0,0,z}
+end
 function m_x_v(m,v)
 	local x,y,z=v[1],v[2],v[3]
-	v[1],v[2],v[3]=m[1]*x+m[5]*y+m[9]*z+m[13],m[2]*x+m[6]*y+m[10]*z+m[14],m[3]*x+m[7]*y+m[11]*z+m[15]
+	v[1],v[2],v[3]=m[1]*x+m[4]*y+m[7]*z,m[2]*x+m[5]*y+m[8]*z,m[3]*x+m[6]*y+m[9]*z
 end
--- 3x3 matrix mul (orientation only)
-function o_x_v(m,v)
+-- inplace matrix multiply invert
+function m_inv_x_v(m,v,p)
 	local x,y,z=v[1],v[2],v[3]
-	v[1],v[2],v[3]=m[1]*x+m[5]*y+m[9]*z,m[2]*x+m[6]*y+m[10]*z,m[3]*x+m[7]*y+m[11]*z
+	v[1],v[2],v[3]=m[1]*x+m[2]*y+m[3]*z,m[4]*x+m[5]*y+m[6]*z,m[7]*x+m[8]*y+m[9]*z
 end
-function m_x_xyz(m,x,y,z)
-	return {
-		m[1]*x+m[5]*y+m[9]*z+m[13],
-		m[2]*x+m[6]*y+m[10]*z+m[14],
-		m[3]*x+m[7]*y+m[11]*z+m[15]}
-end
-function make_m(x,y,z)
-	local m={}
-	for i=1,16 do
-		m[i]=0
-	end
-	m[1],m[6],m[11],m[16]=1,1,1,1
-	m[13],m[14],m[15]=x or 0,y or 0,z or 0
-	return m
-end
-function m_inv(me)
-	local te={}
-	te[0] =   me[10] * me[5] - me[6] * me[9];
-		te[1] = - me[10] * me[1] + me[2] * me[9];
-		te[2] =   me[6] * me[1] - me[2] * me[5];
-		te[3] = - me[10] * me[4] + me[6] * me[8];
-		te[4] =   me[10] * me[0] - me[2] * me[8];
-		te[5] = - me[6] * me[0] + me[2] * me[4];
-		te[6] =   me[9] * me[4] - me[5] * me[8];
-		te[7] = - me[9] * me[0] + me[1] * me[8];
-		te[8] =   me[5] * me[0] - me[1] * me[4];
 
-		var det = me[0] * te[0] + me[1] * te[3] + me[2] * te[6];
+-- generic matrix inverse
+function m_inv(me)
+	local te={
+		me[10]*me[5]-me[6]*me[9],-me[10]*me[1]+me[2]*me[9],me[6]*me[1]-me[2]*me[5],
+		-me[10]*me[4]+me[6]*me[8],me[10]*me[0]-me[2]*me[8],-me[6]*me[0]+me[2]*me[4],
+		me[9]*me[4]-me[5]*me[8],-me[9]*me[0]+me[1]*me[8],me[5]*me[0]-me[1]*me[4]}
+
+	local det = me[1]*te[1]+me[2]*te[4]+me[3]*te[7]
+	-- not inversible
+	assert(det>0)
+	m_scale(te,1/det)
+	return te
+end
+
+function m_scale(m,scale)
+	for i=1,#m do
+		m[i]*=scale
+	end
+end
+-- matrix transpose
+function m_transpose(m)
+	m[2],m[5]=m[5],m[2]
+	m[3],m[9]=m[9],m[3]
+	m[7],m[10]=m[10],m[7]
+end
+-- returns right vector from matrix
+function m_right(m)
+	return {m[1],m[2],m[3]}
+end
+-- returns up vector from matrix
+function m_up(m)
+	return {m[4],m[5],m[6]}
+end
+-- returns foward vector from matrix
+function m_fwd(m)
+	return {m[7],m[8],m[9]}
 end
 
 -- quaternion
@@ -347,7 +363,9 @@ function q_normz(q)
 		q[4]/=d
 	end
 end
-
+function q_scale(q,scale)
+	return {scale*q[1],scale*q[2],scale*q[3],scale*q[4]}
+end
 function q_x_q(a,b)
 	local qax,qay,qaz,qaw=a[1],a[2],a[3],a[4]
 	local qbx,qby,qbz,qbw=b[1],b[2],b[3],b[4]
@@ -365,59 +383,33 @@ function m_from_q(q)
 	local wx,wy,wz=w*x2,w*y2,w*z2
 
 	return {
-		1-(yy+zz),xy+wz,xz-wy,0,
-		xy-wz,1-(xx+zz),yz+wx,0,
-		xz+wy,yz-wx,1-(xx+yy),0,
-		0,0,0,1
-	}
+		1-(yy+zz),xy+wz,xz-wy,
+		xy-wz,1-(xx+zz),yz+wx,
+		xz+wy,yz-wx,1-(xx+yy)}
 end
 
--- matrix
-function m_scale(m,scale)
-	for i=1,#m do
-		m[i]*=scale
+-- bounding box
+function make_bbox(model)
+	local vmin,vmax={32000,32000,32000},{-32000,-32000,-32000}
+	for _,v in pairs(model.v) do
+		vmin,vmax=v_min(vmin,v),v_max(vmax,v)
 	end
+	return {min=vmin,max=vmax}
 end
--- only invert 3x3 part
-function m_inv(m)
-	m[2],m[5]=m[5],m[2]
-	m[3],m[9]=m[9],m[3]
-	m[7],m[10]=m[10],m[7]
-end
--- inline invert matrix vector multiply 
--- inc. position
-function m_inv_x_v(m,v,p)
-	p=p or 1
-	local x,y,z=v[1]-p*m[13],v[2]-p*m[14],v[3]-p*m[15]
-	v[1],v[2],v[3]=m[1]*x+m[2]*y+m[3]*z,m[5]*x+m[6]*y+m[7]*z,m[9]*x+m[10]*y+m[11]*z
-end
-function m_set_pos(m,v)
-	m[13],m[14],m[15]=v[1],v[2],v[3]
-end
--- returns right vector from matrix
-function m_right(m)
-	return {m[1],m[2],m[3]}
-end
--- returns up vector from matrix
-function m_up(m)
-	return {m[5],m[6],m[7]}
-end
--- returns foward vector from matrix
-function m_fwd(m)
-	return {m[9],m[10],m[11]}
-end
+
 
 -- models & rendering
 local all_models=json_parse'{"audi":{}}'
 local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]'
-function draw_model(model,m)
+function draw_model(model,m,pos)
 
 	-- cam pos in object space
 	local cam_pos=v_clone(cam.pos)
+	v_add(cam_pos,pos,-1)
 	m_inv_x_v(m,cam_pos)
 	-- light dir in object space
 	local l=v_clone(light)
-	m_inv_x_v(m,l,0)
+	m_inv_x_v(m,l)
 	
 	-- faces
 	local faces,p={},{}
@@ -433,7 +425,7 @@ function draw_model(model,m)
 				if not p[vi] then
 					local v=model.v[vi]
 					local x,y,z=v[1],v[2],v[3]
-					x,y,z,w=cam:project(m[1]*x+m[5]*y+m[9]*z+m[13],m[2]*x+m[6]*y+m[10]*z+m[14],m[3]*x+m[7]*y+m[11]*z+m[15])
+					x,y,z,w=cam:project(m[1]*x+m[4]*y+m[7]*z+pos[1],m[2]*x+m[5]*y+m[8]*z+pos[2],m[3]*x+m[6]*y+m[9]*z+pos[3])
 					p[vi]={x,y,z,w}
 				end
 			end
@@ -461,17 +453,14 @@ function draw_model(model,m)
 end
 
 _g.update_plyr=function(self)
-
-	local m=m_from_q(self.q)
-	m_set_pos(m,plyr.pos)
-	plyr.m=m
+	plyr.m=m_from_q(self.q)
 	return true
 end
 
 local all_actors=json_parse'{"plyr":{"model":"audi","mass":1,"update":"update_plyr"}}'
 
 function draw_actor(self,x,y,z,w)
-	draw_model(self.model,self.m)
+	draw_model(self.model,self.m,self.pos)
 end
 
 function make_actor(src,p)
@@ -482,41 +471,39 @@ function make_actor(src,p)
 	})
 	a.model,a.draw=all_models[a.model],a.draw or draw_actor
 	-- init orientation
-	local m=m_from_q(a.q)
-	m_set_pos(m,p)
-	a.m=m
+	a.m=m_from_q(a.q)
 	return add(actors,a)
 end
 
--- add rigid body properties
-function solve(self,dt)
-	v_scale(self.force,time_dt*self.inv_mass)
-	v_add(self.linearvelocity,self.force)
-	self.force={0,0,0}
-	v_scale(self.torque,time_dt*self.inv_mass)
-	v_add(self.angularvelocity,self.torque)
- self.torque={0,0,0}
- v_add(self.pos,self.linearvelocity,time_dt)
-	local angle=sqrt(v_dot(self.angularvelocity,self.angularvelocity))
-	local a=v_clone(self.angularvelocity)
-	v_scale(a,1/angle)
-	q_x_q(self.q,make_q(a,-angle*time_dt))
+-- numeric solver
 
- -- damping
- v_scale(self.angularvelocity,0.9)
- v_scale(self.linearvelocity,0.95)
+function dydt(t, state, dotstate)
 
-	q_normz(self.q)
-end
-
-function make_bbox(model)
-	local vmin,vmax={32000,32000,32000},{-32000,-32000,-32000}
-	for _,v in pairs(model.v) do
-		vmin,vmax=v_min(vmin,v),v_max(vmax,v)
+	local k=1
+	-- restore time snapshot
+	for _,a in pairs(physic_actors) do
+		k=a:deserialize(state,k)
 	end
-	return {min=vmin,max=vmax}
+
+	-- apply forces & torque
+	local dotstate={}
+	for _,a in pairs(physic_actors) do
+		a:apply(t)
+		a:dot_serialize(a,dotstate)
+	end
 end
 
+function ode(state,t0,t1)
+	local dt=t1-t0
+
+	local dotstate={}
+	dydt(t0,state,dotstate)
+	for i=1,#state do
+		state[i]+=dt*dotstate[i]
+	end
+end
+
+-- rigid body extension for a given actor
 function make_rigidbody(a)
 	a.force={0,0,0}
 	a.torque={0,0,0}
@@ -526,11 +513,12 @@ function make_rigidbody(a)
 	local bbox=make_bbox(a.model)
 	local size=make_v(bbox.min,bbox.max)
 	size=v_sqr(size)
-	a.ibody=make_m(size[2]+size[3],,size[1]+size[3],size[1]+size[2])
-	m_scale(a.ibody,1/12)
+	a.ibody=make_m(size[2]+size[3],size[1]+size[3],size[1]+size[2])
+	m_scale(a.ibody,a.mass/12)
+	a.mass_inv=1/a.mass
 	-- invert 
-	a.ibodyinv=m_inv(a.ibody)
-	a.iinv=make_m()
+	a.ibody_inv=m_inv(a.ibody)
+	a.i_inv=make_m()
 	a.r=make_m()
 	a.v={0,0,0}
 	a.omega={0,0,0}
@@ -541,23 +529,57 @@ function make_rigidbody(a)
 		serialize(self.p,state)
 		serialize(self.l,state)
 	end
-	a.deserialize=function(self,state)
-		local k=deserialize(state,1,self.pos)
+	a.deserialize=function(self,state,k)
+		k=deserialize(state,k,self.pos)
 		k=deserialize(state,k,self.q)
 		q_normz(self.q)
 		self.r=m_from_q(self.q)
 		k=deserialize(state,k,self.p)
 		k=deserialize(state,k,self.l)
-		-- 
 		
+		-- velocity
+		self.v=v_clone(self.p)
+		v_scale(self.v,self.mass_inv)
+
+		-- inverse inertia tensor
+		self.i_inv=m_x_m(m_x_m(self.r,a.ibody_inv),m_transpose(self.r))
+
+		-- angular velocity
+		self.omega=m_x_v(self.i_inv,self.l)
+
+		return k
 	end
-	a.apply=apply_force
-	local _update=a.update
-	a.update=function(self)
-		solve(self,1/30)
-		return _update(a)
+	-- ddt_State_to_Array
+	a.dot_serialize=function(self,state)
+		serialize(self.v,state)
+		local qdot=q_scale(q_x_q(make_q(self.omega,0),self.q),0.5)
+		serialize(qdot,state)
 	end
-	return a
+
+	-- apply forces & torque at time t
+		
+	a.apply=function(t)
+		--[[
+		v_add(self.force,f)
+		local d=make_v(self.pos,p)
+		local xd=make_v_cross(f,d)
+		v_add(self.torque,xd)
+		]]
+		a.force={0,-1,0}
+		a.torque={0,0,0}
+	end
+
+	-- override die (if any)
+	local _die=a.die
+	if _die then
+		a.die=function(self)
+			del(physic_actors,self)
+			_die(self)
+		end
+	end
+
+	-- register rigid bodies
+	return add(physic_actors,a)
 end
 
 -- camera
@@ -822,44 +844,36 @@ function draw_ground(self)
 	draw_actors(nj)
 end
 
-function apply_force(self,p,f)
-	v_add(self.force,f)
-	local d=make_v(self.pos,p)
-	local xd=make_v_cross(f,d)
-	v_add(self.torque,xd)
-end
-
 function control_plyr()
 
- if plyr then
-  
- 	local turn=0
- 	if(btn(0)) turn=-1
- 	if(btn(1)) turn=1
- 
- 	if turn!=0 then
- 		local right=m_right(plyr.m)
- 		local fwd=m_fwd(plyr.m)
- 		v_scale(right,turn,0.2)
- 		-- application point
- 		v_add(fwd,v_fwd,3)
- 		v_add(fwd,plyr.pos)
- 		plyr:apply(fwd,right)
- 	end
+	if plyr then
+		local turn=0
+		if(btn(0)) turn=-1
+		if(btn(1)) turn=1
 
-	 -- accelerate
+		if turn!=0 then
+			local right=m_right(plyr.m)
+			local fwd=m_fwd(plyr.m)
+			v_scale(right,turn,0.2)
+			-- application point
+			v_add(fwd,v_fwd,3)
+			v_add(fwd,plyr.pos)
+		end
+		-- accelerate
 		if btn(2) then
 			local fwd=m_fwd(plyr.m)
 			v_scale(fwd,15)
-	 	plyr:apply(plyr.pos,fwd)
- 	end		
- end
+			plyr:apply(plyr.pos,fwd)
+		end		
+	end
 end
+
+local physic_state
 
 function _update()
 	time_t+=1
 
- screen_update()
+ 	screen_update()
 
 	zbuf_clear()
 	
@@ -875,7 +889,22 @@ function _update()
 			cam:track(lookat,0.1)
 		end
 	end
+	-- physic update	
+	if not physic_state then
+		physic_state={}
+		for _,a in pairs(physic_actors) do
+			a:serialize(physic_state)
+		end
+	end
 
+	ode(physic_state,0,1/30)
+	-- update states
+	local k=1
+	for _,a in pairs(physic_actors) do
+		k=a:deserialize(physic_state,k)
+	end
+
+	-- game logic update
 	zbuf_filter(actors)
 	zbuf_filter(parts)
 end
@@ -999,7 +1028,7 @@ function _init()
 
 	cam=make_cam(96)
 
-	plyr=make_rigidbody(make_actor("plyr",{64,0,0}))
+	plyr=make_actor("plyr",{64,0,0})
 end
 
 -->8
