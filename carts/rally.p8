@@ -518,7 +518,7 @@ end
 
 -- numeric solver
 
-function dydt(t, state)
+function dydt(t,state,dotstate)
 
 	local k=1
 	-- restore time snapshot
@@ -526,22 +526,18 @@ function dydt(t, state)
 		k=a:deserialize(state,k)
 	end
 
-	-- apply forces & torque
-	local dotstate={}
+	-- apply forces & torque	
 	for _,a in pairs(physic_actors) do
 		a:apply(t)
 		a:dot_serialize(dotstate)
 	end
-	return dotstate
 end
 
 function ode(state,t0,t1)
 	local dt=t1-t0
 
-	local dotstate=dydt(t0,state)
-	print(#state)
-	print(#dotstate)
-	assert(#state==#dotstate)
+ local dotstate={}
+ dydt(t0,state,dotstate)
 	for i=1,#state do
 		state[i]+=dt*dotstate[i]
 	end
@@ -592,10 +588,13 @@ function make_rigidbody(a)
 
 		return k
 	end
-	-- ddt_State_to_Array
+	-- ddt_state_to_array
 	a.dot_serialize=function(self,state)
 		serialize(self.v,state)
-		local qdot=make_q(self.omega,0)
+		-- angular velocity "converted" to quaternion
+		-- not: q[v,0]!!
+		local qdot=v_clone(self.omega)
+		qdot[4]=0
 		q_x_q(qdot,self.q)
 		q_scale(qdot,0.5)
 		serialize(qdot,state)
@@ -612,13 +611,17 @@ function make_rigidbody(a)
 		local xd=make_v_cross(f,d)
 		v_add(self.torque,xd)
 		]]
+		local contact=false
 		self.force={0,-1,0}
 		local h=get_altitude(self.pos[1],self.pos[3])
 		h-=self.pos[2]
 		if h>=0 then
-			v_add(self.force,{0,1+h,0})
+			v_add(self.force,{0,1,0})
+			contact=true
 		end
 		self.torque={0,0,0}
+		
+		return contact
 	end
 
 	-- override die (if any)
