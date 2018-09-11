@@ -234,7 +234,7 @@ end
 function v_dot(a,b)
 	return a[1]*b[1]+a[2]*b[2]+a[3]*b[3]
 end
-function v_sqr(v)
+function v_sqr(a)
 	return {a[1]*a[1],a[2]*a[2],a[3]*a[3]}
 end
 
@@ -288,13 +288,13 @@ end
 -- 3x3 matrix operations
 function make_m(x,y,z)
 	return {
-		x,0,0,
-		0,y,0,
-		0,0,z}
+		x or 1,0,0,
+		0,y or 1,0,
+		0,0,z or 1}
 end
 function m_x_v(m,v)
 	local x,y,z=v[1],v[2],v[3]
-	v[1],v[2],v[3]=m[1]*x+m[4]*y+m[7]*z,m[2]*x+m[5]*y+m[8]*z,m[3]*x+m[6]*y+m[9]*z
+	return {m[1]*x+m[4]*y+m[7]*z,m[2]*x+m[5]*y+m[8]*z,m[3]*x+m[6]*y+m[9]*z}
 end
 -- inplace matrix multiply invert
 function m_inv_x_v(m,v,p)
@@ -304,13 +304,30 @@ end
 
 -- generic matrix inverse
 function m_inv(me)
-	local te={
-		me[10]*me[5]-me[6]*me[9],-me[10]*me[1]+me[2]*me[9],me[6]*me[1]-me[2]*me[5],
-		-me[10]*me[4]+me[6]*me[8],me[10]*me[0]-me[2]*me[8],-me[6]*me[0]+me[2]*me[4],
-		me[9]*me[4]-me[5]*me[8],-me[9]*me[0]+me[1]*me[8],me[5]*me[0]-me[1]*me[4]}
+--[[
+0,1,2,3
+4,5,6,7,
+8,9,10,11,
+12,13,14,15
+
+1,2,3,
+4,5,6,
+7,8,9
+]]
+
+local te={
+	me[9]*me[5]-me[6]*me[8],
+	me[9]*me[2]+me[3]*me[8],
+	me[6]*me[2]-me[3]*me[5],
+	-me[9]*me[4]+me[6]*me[7],
+	me[9]*me[1]-me[3]*me[7],
+	-me[6]*me[1]+me[3]*me[4],
+	me[9]*me[4]-me[5]*me[8],
+	-me[8]*me[1]+me[2]*me[7],
+	me[5]*me[1]-me[2]*me[4]}
 
 	local det = me[1]*te[1]+me[2]*te[4]+me[3]*te[7]
-	-- not inversible
+	-- not inversible?
 	assert(det>0)
 	m_scale(te,1/det)
 	return te
@@ -323,10 +340,33 @@ function m_scale(m,scale)
 end
 -- matrix transpose
 function m_transpose(m)
-	m[2],m[5]=m[5],m[2]
-	m[3],m[9]=m[9],m[3]
-	m[7],m[10]=m[10],m[7]
+	return {
+		m[1],m[4],m[7],
+		m[2],m[5],m[8],
+		m[3],m[6],m[9]}
 end
+function m_x_m(a,b)
+	local a11,a12,a13=a[1],a[4],a[7]
+	local a21,a22,a23=a[2],a[5],a[8]
+	local a31,a32,a33=a[3],a[6],a[9]
+	local b11,b12,b13=b[1],b[4],b[7]
+	local b21,b22,b23=b[2],b[5],b[8]
+	local b31,b32,b33=b[3],b[6],b[9]
+	
+
+ return {
+		a11*b11+a12*b21+a13*b31,
+		a21*b11+a22*b21+a23*b31,
+		a31*b11+a32*b21+a33*b31,
+		a11*b12+a12*b22+a13*b32,
+		a21*b12+a22*b22+a23*b32,
+		a31*b12+a32*b22+a33*b32,
+		a11*b13+a12*b23+a13*b33,
+		a21*b13+a22*b23+a23*b33,
+		a31*b13+a32*b23+a33*b33
+    }
+end
+
 -- returns right vector from matrix
 function m_right(m)
 	return {m[1],m[2],m[3]}
@@ -453,7 +493,8 @@ function draw_model(model,m,pos)
 end
 
 _g.update_plyr=function(self)
-	plyr.m=m_from_q(self.q)
+	
+	
 	return true
 end
 
@@ -477,7 +518,7 @@ end
 
 -- numeric solver
 
-function dydt(t, state, dotstate)
+function dydt(t, state)
 
 	local k=1
 	-- restore time snapshot
@@ -489,15 +530,18 @@ function dydt(t, state, dotstate)
 	local dotstate={}
 	for _,a in pairs(physic_actors) do
 		a:apply(t)
-		a:dot_serialize(a,dotstate)
+		a:dot_serialize(dotstate)
 	end
+	return dotstate
 end
 
 function ode(state,t0,t1)
 	local dt=t1-t0
 
-	local dotstate={}
-	dydt(t0,state,dotstate)
+	local dotstate=dydt(t0,state)
+	print(#state)
+	print(#dotstate)
+	assert(#state==#dotstate)
 	for i=1,#state do
 		state[i]+=dt*dotstate[i]
 	end
@@ -519,7 +563,6 @@ function make_rigidbody(a)
 	-- invert 
 	a.ibody_inv=m_inv(a.ibody)
 	a.i_inv=make_m()
-	a.r=make_m()
 	a.v={0,0,0}
 	a.omega={0,0,0}
 	
@@ -533,7 +576,7 @@ function make_rigidbody(a)
 		k=deserialize(state,k,self.pos)
 		k=deserialize(state,k,self.q)
 		q_normz(self.q)
-		self.r=m_from_q(self.q)
+		self.m=m_from_q(self.q)
 		k=deserialize(state,k,self.p)
 		k=deserialize(state,k,self.l)
 		
@@ -542,7 +585,7 @@ function make_rigidbody(a)
 		v_scale(self.v,self.mass_inv)
 
 		-- inverse inertia tensor
-		self.i_inv=m_x_m(m_x_m(self.r,a.ibody_inv),m_transpose(self.r))
+		self.i_inv=m_x_m(m_x_m(self.m,self.ibody_inv),m_transpose(self.m))
 
 		-- angular velocity
 		self.omega=m_x_v(self.i_inv,self.l)
@@ -552,21 +595,30 @@ function make_rigidbody(a)
 	-- ddt_State_to_Array
 	a.dot_serialize=function(self,state)
 		serialize(self.v,state)
-		local qdot=q_scale(q_x_q(make_q(self.omega,0),self.q),0.5)
+		local qdot=make_q(self.omega,0)
+		q_x_q(qdot,self.q)
+		q_scale(qdot,0.5)
 		serialize(qdot,state)
+		serialize(self.force,state)
+		serialize(self.torque,state)
 	end
 
 	-- apply forces & torque at time t
 		
-	a.apply=function(t)
+	a.apply=function(self,t)
 		--[[
 		v_add(self.force,f)
 		local d=make_v(self.pos,p)
 		local xd=make_v_cross(f,d)
 		v_add(self.torque,xd)
 		]]
-		a.force={0,-1,0}
-		a.torque={0,0,0}
+		self.force={0,-1,0}
+		local h=get_altitude(self.pos[1],self.pos[3])
+		h-=self.pos[2]
+		if h>=0 then
+			v_add(self.force,{0,1+h,0})
+		end
+		self.torque={0,0,0}
 	end
 
 	-- override die (if any)
@@ -741,8 +793,8 @@ function draw_actors(j)
 			-- debug/shadows
 			for _,v in pairs(d.model.v) do
 				local contact=v.contact
-				v=v_clone(v)
-				m_x_v(d.m,v)
+				v=m_x_v(d.m,v)
+				v_add(v,d.pos)
 				local h=get_altitude(v[1],v[3])
 				local x,y,z,w=cam:project(v[1],h,v[3])
 				pset(x,y,0)
@@ -1028,7 +1080,7 @@ function _init()
 
 	cam=make_cam(96)
 
-	plyr=make_actor("plyr",{64,0,0})
+	plyr=make_rigidbody(make_actor("plyr",{64,8,0}))
 end
 
 -->8
