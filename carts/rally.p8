@@ -5,11 +5,13 @@ __lua__
 local time_t,time_dt=0,1/30
 local actors,ground_actors,parts,light,cam,plyr,active_ground_actors={},{},{},{0,1,0}
 local physic_actors={}
-
+local k_small=0.01
+local k_coll_none,k_coll_pen,k_coll_coll,k_coll_rest=0,1,2,4
 -- world units
 local ground_shift,hscale=2,4
 local ground_scale=2^ground_shift
 local v_grav={0,-1,0}
+local world
 
 local good_side,bad_side,any_side,no_side=0x1,0x2,0x0,0x3
 
@@ -430,13 +432,43 @@ end
 
 -- bounding box
 function make_bbox(model)
+	local one_if=function(cond)
+		return cond>0 and 1 or 0
+	end
 	local vmin,vmax={32000,32000,32000},{-32000,-32000,-32000}
 	for _,v in pairs(model.v) do
 		vmin,vmax=v_min(vmin,v),v_max(vmax,v)
 	end
-	return {min=vmin,max=vmax}
+	local size=make_v(vmin,vmax)
+	-- generate vertices
+	local v={}
+	for i=0,7 do
+		local v1={
+			one_if(band(0x1,i))*size[1],
+			one_if(band(0x2,i))*size[2],
+			one_if(band(0x4,i))*size[3]}
+		v_add(v1,vmin)
+		add(v,v1)
+	end
+	return {
+		size=size,
+		min=vmin,
+		max=vmax,
+		v=v,
+		-- debug only
+		draw=function(self,m,pos)
+			local x1,y1
+			for _,p in pairs(self.v) do
+				p=m_x_v(m,p)
+				v_add(p,pos)
+				local x,y,z,w=cam:project(p[1],p[2],p[3])
+				if x1 then
+					line(x,y,x1,y1,6)
+				end
+				x1,y1=x,y
+			end
+		end}
 end
-
 
 -- models & rendering
 local all_models=json_parse'{"audi":{}}'
@@ -494,7 +526,7 @@ end
 
 _g.update_plyr=function(self)
 	
-	
+		
 	return true
 end
 
@@ -516,31 +548,62 @@ function make_actor(src,p)
 	return add(actors,a)
 end
 
--- numeric solver
-
-function dydt(t,state,dotstate)
-
-	local k=1
-	-- restore time snapshot
-	for _,a in pairs(physic_actors) do
-		k=a:deserialize(state,k)
+-- registers a ground collision
+function make_ground_contact(a,p,n,h)
+	local c={
+		-- body
+		a=a,
+		-- normal
+		n=n,
+		-- world position
+		p={p[1],h,p[3]},
+		-- default type
+		type=k_coll_pen,
+		pre_solve=function(self)
+			local a=self.a
+			local padot=a:pt_velocity(self.p)
+			local vrel=v_dot(self.n,padot)
+			if vrel<-k_small then
+				self.type=k_coll_coll
+			elseif vrel<k_small then
+				self.type=k_coll_rest
+			end
+			self.vrel=vrel
+		end,
+		solve=function(self,filter)
+			local a,n=self.a,v_clone(self.n)
+			-- collide?
+			if band(self.type,band(filter,k_coll_coll))!=0 then
+				local ra=make_v(a.pos,self.p)
+				local term3=v_dot(n,make_v_cross(m_x_v(a.i_inv,make_v_cross(ra,n)),ra))
+				
+				local j=-self.vrel*(1+k_small)/(a.mass_inv+term3)
+				v_scale(n,j)
+				printh("response:"..j)
+				v_add(a.p,n)
+				v_add(a.l,make_v_cross(ra,n))
+				return true
+			end
+			-- rest?
+			if band(self.type,band(filter,k_coll_rest))!=0 then
+				v_add(a.p,n,-v_dot(self.p,n))
+				
+				local ra=make_v(a.pos,self.p)
+				local omega=m_x_v(a.i_inv,self.a.l)
+				local vrel=v_dot(n,make_v_cross(omega,ra))
+				-- correct rotation
+				if vrel<-k_small then
+					v_add(a.l,n,v_dot(a.l,n))
+				end
+				return true
+			end
+		end
+	}
+	-- rest or colliding?
+	if h-p[2]>=-k_small then
+		c:pre_solve()
 	end
-
-	-- apply forces & torque	
-	for _,a in pairs(physic_actors) do
-		a:apply(t)
-		a:dot_serialize(dotstate)
-	end
-end
-
-function ode(state,t0,t1)
-	local dt=t1-t0
-
- local dotstate={}
- dydt(t0,state,dotstate)
-	for i=1,#state do
-		state[i]+=dt*dotstate[i]
-	end
+	return c
 end
 
 -- rigid body extension for a given actor
@@ -550,9 +613,8 @@ function make_rigidbody(a)
 	a.p={0,0,0}
 	a.l={0,0,0}
 	-- compute inertia tensor
-	local bbox=make_bbox(a.model)
-	local size=make_v(bbox.min,bbox.max)
-	size=v_sqr(size)
+	a.bbox=make_bbox(a.model)
+	size=v_sqr(a.bbox.size)
 	a.ibody=make_m(size[2]+size[3],size[1]+size[3],size[1]+size[2])
 	m_scale(a.ibody,a.mass/12)
 	a.mass_inv=1/a.mass
@@ -561,7 +623,15 @@ function make_rigidbody(a)
 	a.i_inv=make_m()
 	a.v={0,0,0}
 	a.omega={0,0,0}
-	
+	-- 
+	a.contacts={}
+	-- world velocity
+	a.pt_velocity=function(self,p)
+		p=make_v_cross(self.omega,make_v(self.pos,p))
+		v_add(p,self.v)
+		return p
+	end
+
 	a.serialize=function(self,state)
 		serialize(self.pos,state)
 		serialize(self.q,state)
@@ -604,26 +674,50 @@ function make_rigidbody(a)
 
 	-- apply forces & torque at time t
 		
-	a.apply=function(self,t)
+	a.apply=function(self,dt)
 		--[[
 		v_add(self.force,f)
 		local d=make_v(self.pos,p)
 		local xd=make_v_cross(f,d)
 		v_add(self.torque,xd)
 		]]
-		local contact=false
 		self.force={0,-1,0}
-		local h=get_altitude(self.pos[1],self.pos[3])
-		h-=self.pos[2]
-		if h>=0 then
-			v_add(self.force,{0,1,0})
-			contact=true
-		end
 		self.torque={0,0,0}
-		
-		return contact
 	end
-
+	a.apply_contacts=function(self,filter)
+		local recalc=false
+		for _,ct in pairs(self.contacts) do
+			recalc=bor(recalc,ct:solve(filter))
+		end
+		-- update motion
+		if recalc then
+			self.v=v_clone(self.p)
+			v_scale(self.v,self.mass_inv)
+			self.omega=m_x_v(self.i_inv,self.l)
+		end
+	end
+	a.update_contacts=function(self)
+		local contact_type=0
+		-- clear contacts
+		self.contacts={}
+		for _,v in pairs(self.bbox.v) do
+			-- to world space
+			v=m_x_v(self.m,v)
+			v_add(v,self.pos)
+			local h=get_altitude(v[1],v[3])
+			local depth=h-v[2]
+			if depth>=0 then
+				-- deep enough?
+				if(depth>k_small) return k_coll_pen
+				-- get contact normal
+				local n=get_normal(v[1],v[3])
+				local ct=make_ground_contact(self,v,n,h)
+				add(self.contacts,ct)
+				contact_type=bor(contact_type,ct.type)
+			end
+		end
+		return contact_type
+	end
 	-- override die (if any)
 	local _die=a.die
 	if _die then
@@ -632,9 +726,97 @@ function make_rigidbody(a)
 			_die(self)
 		end
 	end
-
 	-- register rigid bodies
 	return add(physic_actors,a)
+end
+
+-- physic world
+function make_world()
+	local w={
+		y0={},
+		coll_type=0,
+		serialize=function(self,state)
+			for _,a in pairs(physic_actors) do
+				a:serialize(state)
+			end
+		end,
+		deserialize=function(self,state)
+			local k=1
+			for _,a in pairs(physic_actors) do
+				k=a:deserialize(state,k)
+			end
+		end,
+		check_coll=function(self)
+			self.coll_type=0
+			for _,a in pairs(physic_actors) do
+				-- todo: optimize to clear all contacts without creating new contacts during penetration
+				self.coll_type=bor(self.coll_type,a:update_contacts())
+			end
+		end,
+		step=function(self,y0,yfinal,dt)
+			-- todo: clear collisions
+			self.coll_state=0
+			self:ode(y0,yfinal,dt)
+			-- update bodies
+			self:deserialize(yfinal)
+			-- check world state
+			self:check_coll()
+		end,
+		dydt=function(self,y,dy)
+			self:deserialize(y)
+			
+			local no_pen=band(self.coll_state,k_coll_pen)==0
+			for _,a in pairs(physic_actors) do
+				-- apply forces & torque
+				a:apply()
+				-- apply rest forces 
+				if(no_pen) a:apply_contacts(k_coll_rest)
+				a:dot_serialize(dy)
+			end
+		end,
+		-- numeric solver
+		ode=function(self,y0,y1,dt)
+			local dy={}
+			self:dydt(y0,dy)
+			for i=1,#y0 do
+				y1[i]=y0[i]+dt*dy[i]
+			end
+		end,
+		-- collision response
+		impulse=function(self)
+			for _,a in pairs(physic_actors) do
+				a:apply_contacts(bor(k_coll_coll,k_coll_rest))
+			end
+		end,
+		update=function(self)
+			local dt,t=1/30,0
+			repeat
+				printh("dt:"..dt.." coll:"..self.coll_type)
+				local yfinal={}
+				self:step(self.y0,yfinal,dt)
+				if band(self.coll_type,k_coll_pen)!=0 then
+					-- back track
+					dt/=2
+				else
+					if band(self.coll_type,k_coll_coll)!=0 then
+						self:impulse()
+						self:serialize(yfinal)
+					else
+						-- commit changes
+						for i=1,#yfinal do
+							self.y0[i]=yfinal[i]
+						end
+					end
+					t+=dt
+					-- let's try to catch up
+					dt=1/30-t
+				end
+			until t>=1/30
+		end
+	}
+	-- init
+	w:serialize(w.y0)
+	return w
 end
 
 -- camera
@@ -793,18 +975,7 @@ function draw_actors(j)
 	if bucket then
 		for _,d in pairs(bucket) do
 			d=d.obj
-			-- debug/shadows
-			for _,v in pairs(d.model.v) do
-				local contact=v.contact
-				v=m_x_v(d.m,v)
-				v_add(v,d.pos)
-				local h=get_altitude(v[1],v[3])
-				local x,y,z,w=cam:project(v[1],h,v[3])
-				pset(x,y,0)
-				if contact then
-					circ(x,y,8)
-				end								
-			end
+			
 			d:draw()
 			
 		end
@@ -923,12 +1094,10 @@ function control_plyr()
 	end
 end
 
-local physic_state
-
 function _update()
 	time_t+=1
 
- 	screen_update()
+ screen_update()
 
 	zbuf_clear()
 	
@@ -944,24 +1113,14 @@ function _update()
 			cam:track(lookat,0.1)
 		end
 	end
-	-- physic update	
-	if not physic_state then
-		physic_state={}
-		for _,a in pairs(physic_actors) do
-			a:serialize(physic_state)
-		end
-	end
 
-	ode(physic_state,0,1/30)
-	-- update states
-	local k=1
-	for _,a in pairs(physic_actors) do
-		k=a:deserialize(physic_state,k)
-	end
-
+	-- physic update
+	world:update()
+	
 	-- game logic update
 	zbuf_filter(actors)
 	zbuf_filter(parts)
+	 
 end
 
 function _draw()
@@ -969,6 +1128,20 @@ function _draw()
 
 	zbuf_sort()
 	draw_ground()
+	
+	--[[
+	for _,a in pairs(physic_actors) do
+		a.bbox:draw(a.m,a.pos)
+	end
+	]]
+	
+	for _,a in pairs(physic_actors) do
+		for _,c in pairs(a.contacts) do
+			local x,y,z,w=cam:project(c.p[1],c.p[2],c.p[3])
+			circ(x,y,3,8)
+			print(c.type,x+2,y,7)
+		end
+	end
 	
 	rectfill(0,0,127,8,8)
 	print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)
@@ -1084,6 +1257,8 @@ function _init()
 	cam=make_cam(96)
 
 	plyr=make_rigidbody(make_actor("plyr",{64,8,0}))
+	
+	world=make_world()
 end
 
 -->8
@@ -1258,14 +1433,14 @@ __gfx__
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-1040c002f04110c209d88607d88607d80909d80909698607698607690909690927d86ae8d86a27396ae8396a09d8d507d8d50939d50739d5c8f91747f91747f9
-b8c8f9b8e86886276886276809e868094788bac888bae868f52768f577d86a77396a98d86a98396a57d8d55739d5c839d5c8d8d50769b747f9b70969b7c8f9b7
-09c94607c94609d99507d99532e040e02061c117a836700080408070314108a9e8c000a040a04081a1e8a8d97000205020605270300729c7900070607080c002
-e1b00859b97000505050104080720929c79000904090b0e1d157096aa00080408040a0c0f819b99000d060d04212e0c1b108a8e5700030403070b0901719b990
-00d040d0f03242e809d5800050605060012232f0085936700060406020e001071936900010401050f0d00919369000116011824131622108f9e7700050405072
-8211f8a937700070407052623127a948c00060406050112108a9c6c0005140516171810868c7500061406151b1c108684650008140817191a10878d950002040
-2030716117a8c77000404040105181f8a8c77000906090d1f1a0a19108b88a700030403090917127a8d97000104010d0b151f8a8367000d140d1e102f108096a
-5000f140f102c0a0b8096aa0001240122201e02709d580004240423222120809d5500062406252602117a9377000824082728041e8a948c000f040f05092b209
-8906901060406001c2a20789069010924092a2c2b208c9f59010322667080819b9e96738060808080a580a080808080a0a083808572606083808080608f98706
+1040c002f04110c209388607388607380909380909d88607d88607d80909d80927386ae8386a27a86ae8a86a0938d50738d509a8d507a8d5c869174769174769
+b8c869b8e8d78627d78627d709e8d70947e7bac8e7bae8d7f527d7f577386a77a86a98386a98a86a5738d557a8d5c8a8d5c838d507d8b74769b709d8b7c869b7
+09294607294609399507399532e040e02061c117083670008040807031410819e8c000a040a04081a1e808d97000205020605270300788c7900070607080c002
+e1b008b8b97000505050104080720988c79000904090b0e1d157686aa00080408040a0c0f878b99000d060d04212e0c1b10808e5700030403070b0901778b990
+00d040d0f03242e868d5800050605060012232f008b836700060406020e001077836900010401050f0d0097836900011601182413162210869e7700050405072
+8211f809377000704070526231271948c0006040605011210819c6c00051405161718108d7c7500061406151b1c108d74650008140817191a108d7d950002040
+203071611708c77000404040105181f808c77000906090d1f1a0a19108188a70003040309091712708d97000104010d0b151f808367000d140d1e102f108686a
+5000f140f102c0a0b8686aa0001240122201e02768d580004240423222120868d550006240625260211709377000824082728041e81948c000f040f05092b209
+f806901060406001c2a207f8069010924092a2c2b20839f59010322667080819b9e96738060808080a580a080808080a0a083808572606083808080608f98706
 08080a0808080a08e9c80826c808087996080608080608080628266708e96708085999266738e9670808080a08080a08080608080626c808e9c8080a08080608
 08080a28000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
