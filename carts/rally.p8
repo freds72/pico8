@@ -6,7 +6,9 @@ local time_t,time_dt=0,1/30
 local actors,ground_actors,parts,light,cam,plyr,active_ground_actors={},{},{},{0,1,0}
 local physic_actors={}
 local k_small=0.01
+local k_depth=0.05
 local k_coll_none,k_coll_pen,k_coll_coll,k_coll_rest=0,1,2,4
+
 -- world units
 local ground_shift,hscale=2,4
 local ground_scale=2^ground_shift
@@ -530,7 +532,7 @@ _g.update_plyr=function(self)
 	return true
 end
 
-local all_actors=json_parse'{"plyr":{"model":"audi","mass":1,"update":"update_plyr"}}'
+local all_actors=json_parse'{"plyr":{"model":"audi","hardness":0.2,"mass":20,"update":"update_plyr"}}'
 
 function draw_actor(self,x,y,z,w)
 	draw_model(self.model,self.m,self.pos)
@@ -540,7 +542,7 @@ function make_actor(src,p)
 	-- instance
 	local a=clone(all_actors[src],{
 		pos=v_clone(p),
-		q=q or make_q(v_up,0)
+		q=q or make_q(v_fwd,0.8)
 	})
 	a.model,a.draw=all_models[a.model],a.draw or draw_actor
 	-- init orientation
@@ -549,6 +551,7 @@ function make_actor(src,p)
 end
 
 -- registers a ground collision
+-- rest or colliding
 function make_ground_contact(a,p,n,h)
 	local c={
 		-- body
@@ -557,8 +560,6 @@ function make_ground_contact(a,p,n,h)
 		n=n,
 		-- world position
 		p={p[1],h,p[3]},
-		-- default type
-		type=k_coll_pen,
 		pre_solve=function(self)
 			local a=self.a
 			local padot=a:pt_velocity(self.p)
@@ -577,9 +578,8 @@ function make_ground_contact(a,p,n,h)
 				local ra=make_v(a.pos,self.p)
 				local term3=v_dot(n,make_v_cross(m_x_v(a.i_inv,make_v_cross(ra,n)),ra))
 				
-				local j=-self.vrel*(1+k_small)/(a.mass_inv+term3)
+				local j=-self.vrel*(1+a.hardness)/(a.mass_inv+term3)
 				v_scale(n,j)
-				printh("response:"..j)
 				v_add(a.p,n)
 				v_add(a.l,make_v_cross(ra,n))
 				return true
@@ -681,7 +681,7 @@ function make_rigidbody(a)
 		local xd=make_v_cross(f,d)
 		v_add(self.torque,xd)
 		]]
-		self.force={0,-1,0}
+		self.force={0,-0.5*self.mass,0}
 		self.torque={0,0,0}
 	end
 	a.apply_contacts=function(self,filter)
@@ -708,7 +708,7 @@ function make_rigidbody(a)
 			local depth=h-v[2]
 			if depth>=0 then
 				-- deep enough?
-				if(depth>k_small) return k_coll_pen
+				if(depth>k_depth) return k_coll_pen
 				-- get contact normal
 				local n=get_normal(v[1],v[3])
 				local ct=make_ground_contact(self,v,n,h)
@@ -798,17 +798,19 @@ function make_world()
 					-- back track
 					dt/=2
 				else
+					-- collision
 					if band(self.coll_type,k_coll_coll)!=0 then
 						self:impulse()
+						yfinal={}
 						self:serialize(yfinal)
-					else
-						-- commit changes
-						for i=1,#yfinal do
-							self.y0[i]=yfinal[i]
-						end
 					end
+					-- commit changes
+					for i=1,#yfinal do
+						self.y0[i]=yfinal[i]
+					end
+					-- commit step
 					t+=dt
-					-- let's try to catch up
+					-- try to catch up
 					dt=1/30-t
 				end
 			until t>=1/30
@@ -825,7 +827,7 @@ function make_cam(f)
 		pos={0,6*hscale,0},
 		lookat={0,0,-7*16},
 		focal=f,
-		dist=shl(3,ground_shift),
+		dist=shl(2.5,ground_shift),
 		-- camera rotation
 		c=1,s=0,
 		track=function(self,pos,angle)
@@ -976,6 +978,33 @@ function draw_actors(j)
 		for _,d in pairs(bucket) do
 			d=d.obj
 			
+			-- draw shadow
+			if d.bbox then
+ 			-- todo: quickhull
+ 			local p,imin,imax,xmin,xmax={},0,0,32000,-32000
+ 			for i=1,#d.bbox.v do
+ 				local v=d.bbox.v[i]
+ 				-- to world
+ 				v=m_x_v(d.m,v)
+ 				v_add(v,d.pos)
+ 				local x,y,z,w=cam:project(v[1],0,v[3])
+ 				if x>xmax then
+ 					imax,xmax=i,x
+ 				elseif x<xmin then
+ 					imin,xmin=i,x
+ 				end
+ 				add(p,{x,y})
+ 			end
+ 			-- extreme points are on the convel hull
+ 			-- trifill all other points
+ 			local ymin,ymax=p[imin][2],p[imax][2]
+ 			for i=1,#p do
+ 				if i!=imin and i!=imax then
+ 					trifill(xmin,ymin,xmax,ymax,p[i][1],p[i][2],0)		
+ 				end
+ 			end
+ 		end
+ 					
 			d:draw()
 			
 		end
@@ -1043,10 +1072,13 @@ function draw_ground(self)
 					trifill(x1,y1,x3,y3,x2,y2,c_lo)		
 				end
 				-- draw normal
+				pset(x0,y0,1)
+				--[[
 				local n=v_clone(get_normal(ni,nj))
 				v_add(n,{ni*ground_scale,0,nj*ground_scale})
 				local x,y,z,w=cam:project(n[1],n[2],n[3])
 				line(x0,y0,x,y,7)
+			 ]]
 			end
 					
 			if(fp) fillp()
@@ -1107,7 +1139,7 @@ function _update()
 		if not plyr.disabled then
 			-- update cam
 			local lookat=v_clone(plyr.pos)
-			v_add(lookat,m_fwd(plyr.m),4)
+			-- v_add(lookat,m_fwd(plyr.m),4)
 			-- keep altitude
 			lookat[2]=plyr.pos[2]
 			cam:track(lookat,0.1)
