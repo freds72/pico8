@@ -16,7 +16,7 @@ local k_coll_none,k_coll_pen,k_coll_coll,k_coll_rest=0,1,2,4
 local ground_shift,hscale=2,4
 local ground_scale=2^ground_shift
 local v_grav={0,-1,0}
-local world
+local world={}
 
 local good_side,bad_side,any_side,no_side=0x1,0x2,0x0,0x3
 
@@ -410,6 +410,17 @@ function q_normz(q)
 		q[4]/=d
 	end
 end
+function q_dydt(q,v,dt)
+	local dq={v[1]*dt,v[2]*dt,v[3]*dt,0}
+	q_x_q(dq,q)
+
+	q[1]+=0.5*dq[1]
+	q[2]+=0.5*dq[2]
+	q[3]+=0.5*dq[3]
+	q[4]+=0.5*dq[4]
+	q_normz(q)
+end
+
 function q_scale(q,scale)
 	return {scale*q[1],scale*q[2],scale*q[3],scale*q[4]}
 end
@@ -572,7 +583,7 @@ function make_actor(src,p)
 	-- instance
 	local a=clone(all_actors[src],{
 		pos=v_clone(p),
-		q=q or make_q(v_right,0.3)
+		q=q or make_q(v_up,0)
 	})
 	a.model,a.draw=all_models[a.model],a.draw or draw_actor
 	-- init orientation
@@ -590,7 +601,7 @@ function make_ground_contact(a,p,n,h)
 		n=n,
 		-- world position
 		p={p[1],h,p[3]},
-		pre_solve=function(self)
+		init=function(self)
 			local a=self.a
 			local padot=a:pt_velocity(self.p)
 			local vrel=v_dot(self.n,padot)
@@ -605,46 +616,28 @@ function make_ground_contact(a,p,n,h)
 			local depth=make_v(p,self.p)
 			self.d=max(v_dot(self.n,depth))
 		end,
-		solve=function(self,filter,dt)
+		pre_solve=function(self,dt)
 			local a,n=self.a,v_clone(self.n)
-			-- collide?
-			if band(self.type,band(filter,k_coll_coll))!=0 then
-				local ra=make_v(a.pos,self.p)
-				local term3=v_dot(n,make_v_cross(m_x_v(a.i_inv,make_v_cross(ra,n)),ra))
-				
-				local j=-self.vrel*(1+a.hardness)/(a.mass_inv+term3)
-				
-				-- baumgarte
-				local bias=-k_bias*(self.d-0.1)/dt
-				local va=v_clone(a.v)
-				v_add(va,make_v_cross(a.omega,ra))
-				local dv=v_dot(va,n)
-				if dv<-1 then
-					bias-=a.hardness*dv
-				end
-			 j+=bias
-    
-				v_scale(n,j)
-				v_add(a.p,n)
-				v_add(a.l,make_v_cross(ra,n))
-				return true
-			elseif band(self.type,band(filter,k_coll_rest))!=0 then
-				-- rest?
-				v_add(a.p,n,-v_dot(self.p,n))
-				
-				local ra=make_v(a.pos,self.p)
-				local omega=m_x_v(a.i_inv,self.a.l)
-				local vrel=v_dot(n,make_v_cross(omega,ra))
-				-- correct rotation
-				if vrel<-k_small_v then
-					v_add(a.l,n,v_dot(a.l,n))
-				end
-				return true
-			else
-				-- fix penetration contact
-				v_add(a.pos,n,(self.d+k_depth/2))
-				return false
+			
+			local ra=make_v(a.pos,self.p)
+			local term3=v_dot(n,make_v_cross(m_x_v(a.i_inv,make_v_cross(ra,n)),ra))
+			
+			local j=-self.vrel*(1+a.hardness)/(a.mass_inv+term3)
+			
+			-- baumgarte
+			local bias=-k_bias*(self.d-0.1)/dt
+			local va=v_clone(a.v)
+			v_add(va,make_v_cross(a.omega,ra))
+			local dv=v_dot(va,n)
+			if dv<-1 then
+				bias-=a.hardness*dv
 			end
+		 j+=bias
+  
+			v_scale(n,j)
+			v_add(a.p,n)
+			v_add(a.l,make_v_cross(ra,n))
+
 		end
 	}
 	-- rest or colliding?
@@ -682,46 +675,6 @@ function make_rigidbody(a)
 		return p
 	end
 
-	a.serialize=function(self,state)
-		serialize(self.pos,state)
-		serialize(self.q,state)
-		serialize(self.p,state)
-		serialize(self.l,state)
-	end
-	a.deserialize=function(self,state,k)
-		k=deserialize(state,k,self.pos)
-		k=deserialize(state,k,self.q)
-		q_normz(self.q)
-		self.m=m_from_q(self.q)
-		k=deserialize(state,k,self.p)
-		k=deserialize(state,k,self.l)
-		
-		-- velocity
-		self.v=v_clone(self.p)
-		v_scale(self.v,self.mass_inv)
-
-		-- inverse inertia tensor
-		self.i_inv=m_x_m(m_x_m(self.m,self.ibody_inv),m_transpose(self.m))
-
-		-- angular velocity
-		self.omega=m_x_v(self.i_inv,self.l)
-
-		return k
-	end
-	-- ddt_state_to_array
-	a.dot_serialize=function(self,state)
-		serialize(self.v,state)
-		-- angular velocity "converted" to quaternion
-		-- not: q[v,0]!!
-		local qdot=v_clone(self.omega)
-		qdot[4]=0
-		q_x_q(qdot,self.q)
-		q_scale(qdot,0.5)
-		serialize(qdot,state)
-		serialize(self.force,state)
-		serialize(self.torque,state)
-	end
-
  a.reset_impulse=function(self)
  	self.impulse_force={0,0,0}
  	self.impulse_torque={0,0,0}
@@ -730,15 +683,29 @@ function make_rigidbody(a)
  a.add_impulse=function(self,f,p)
 		v_add(self.impulse_force,f)
 		local d=make_v(self.pos,p)
-		local xd=make_v_cross(f,d)
+		local xd=make_v_cross(d,f)
 		v_add(self.impulse_torque,xd)
  end
-	-- apply forces & torque at time t		
-	a.apply=function(self,dt)
-		self.force={0,-9.8*self.mass,0}
-		v_add(self.force,self.impulse_force)
-		self.torque={0,0,0}
-		v_add(self.torque,self.impulse_torque)	
+	-- apply forces & torque for iteration
+	a.prepare=function(self,dt)
+		-- collect forces
+		local force={0,0,0}--{0,-9.8*self.mass,0}
+		v_add(force,self.impulse_force)
+		local torque={0,0,0}
+		v_add(torque,self.impulse_torque)
+		
+		-- velocity
+		v_add(self.v,force,self.mass_inv*dt)
+		-- inverse inertia tensor
+		self.i_inv=m_x_m(m_x_m(self.m,self.ibody_inv),m_transpose(self.m))
+
+		-- angular velocity
+		v_add(self.omega,m_x_v(self.i_inv,torque),dt)
+	end
+	a.integrate=function(self,dt)
+		v_add(self.pos,self.v,dt)
+		q_dydt(self.q,self.omega,dt)
+		self.m=m_from_q(self.q)
 	end
 	
 	a.apply_contacts=function(self,filter,dt)
@@ -804,119 +771,26 @@ function make_rigidbody(a)
 end
 
 -- physic world
-function make_world()
-	local w={
-		y0={},
-		coll_type=0,
-		serialize=function(self,state)
-			for _,a in pairs(physic_actors) do
-				a:serialize(state)
-			end
-		end,
-		deserialize=function(self,state)
-			local k=1
-			for _,a in pairs(physic_actors) do
-				k=a:deserialize(state,k)
-			end
-		end,
-		check_coll=function(self)
-			self.coll_type=0
-			for _,a in pairs(physic_actors) do
-				-- todo: optimize to clear all contacts without creating new contacts during penetration
-				self.coll_type=bor(self.coll_type,a:update_contacts())
-			end
-		end,
-		step=function(self,y0,yfinal,dt)
-			-- todo: clear collisions
-			self.coll_state=0
-			self:ode(y0,yfinal,dt)
-			-- update bodies
-			self:deserialize(yfinal)
-			-- check world state
-			self:check_coll()
-		end,
-		dydt=function(self,y,dy,dt)
-			self:deserialize(y)
-			
-			local no_pen=band(self.coll_state,k_coll_pen)==0
-			for _,a in pairs(physic_actors) do
-				-- apply forces & torque
-				a:apply()
-				-- apply rest forces 
-				if(no_pen) a:apply_contacts(k_coll_rest,dt)
-				a:dot_serialize(dy)
-			end
-		end,
-		-- numeric solver
-		ode=function(self,y0,y1,dt)
-			local dy={}
-			self:dydt(y0,dy,dt)
-			for i=1,#y0 do
-				y1[i]=y0[i]+dt*dy[i]
-			end
-		end,
-		-- collision response
-		solve_coll=function(self,filter,dt)
-			for _,a in pairs(physic_actors) do
-				a:apply_contacts(filter,dt)
-			end
-		end,
-		update=function(self)
-			local dt,t=1/30,0
-			repeat
-				printh("dt:"..dt.." coll:"..self.coll_type)
-				assert(dt>0)
-				local yfinal={}
-				self:step(self.y0,yfinal,dt)
-				if band(self.coll_type,k_coll_pen)!=0 then
-					-- backtrack
-					dt/=2
-				else
-					-- collision
-					if band(self.coll_type,k_coll_coll)!=0 then
-						self:solve_coll(bor(k_coll_coll,k_coll_rest),dt)
-						yfinal={}
-						self:serialize(yfinal)
-					end
-					-- commit changes
-					for i=1,#yfinal do
-						self.y0[i]=yfinal[i]
-					end
-					-- commit step
-					t+=dt
-					-- try to catch up
-					--dt=1/30-t
-				 dt*=2
-				end
-			until t>=1/30
-			-- reset forces
-			for _,a in pairs(physic_actors) do
-				a:reset_impulse()
-			end
-		end,
-		update=function(self)
-			local dt=1/120
-			for i=1,4 do
-				printh("dt:"..dt.." coll:"..self.coll_type)
-			 local yfinal={}
-				self:step(self.y0,yfinal,dt)
-				self:solve_coll(0xff,dt)
-				yfinal={}
-				self:serialize(yfinal)
-				-- commit changes
-				for i=1,#yfinal do
-					self.y0[i]=yfinal[i]
-				end
-			end
-			-- reset forces
-			for _,a in pairs(physic_actors) do
-				a:reset_impulse()
-			end
-		end		
-	}
-	-- init
-	w:serialize(w.y0)
-	return w
+function world:check_coll()
+	self.coll_type=0
+	for _,a in pairs(physic_actors) do
+		-- todo: optimize to clear all contacts without creating new contacts during penetration
+		self.coll_type=bor(self.coll_type,a:update_contacts())
+	end
+end
+function world:update()
+	local dt=1/30
+	
+	-- reset forces
+	for _,a in pairs(physic_actors) do
+		-- todo: collisions
+		
+		a:prepare(dt)
+
+		a:integrate(dt)
+		
+		a:reset_impulse()
+	end
 end
 
 -- camera
@@ -1345,7 +1219,6 @@ function _init()
 
 	plyr=make_rigidbody(make_actor("plyr",{10,8,1}))
 	
-	world=make_world()
 end
 
 -->8
