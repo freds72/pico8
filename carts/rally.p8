@@ -552,19 +552,19 @@ _g.control_plyr=function(self)
  ]]
  
 	if turn!=0 then
- 	local force=m_right(self.m)
- 	local pos=m_fwd(plyr.m)
- 	v_scale(force,turn,25)
- 	-- application point
- 	v_add(pos,v_fwd,3)
- 	v_add(pos,self.pos)
- 	self:add_impulse(force,pos)
+		local force=m_right(self.m)
+		local pos=m_fwd(plyr.m)
+		v_scale(force,turn,25)
+		-- application point (world space)
+		v_add(pos,v_fwd,3)
+		v_add(pos,self.pos)
+		self:add_force(force,pos)
 	end
 	-- accelerate
 	if btn(2) then
 		local force=m_fwd(self.m)
 		v_scale(force,25)
-		self:add_impulse(force,self.pos)
+		self:add_force(force,self.pos)
 	end		
 end
 
@@ -651,10 +651,6 @@ end
 function make_rigidbody(a)
 	a.force={0,0,0}
 	a.torque={0,0,0}
-	a.impulse_force={0,0,0}
-	a.impulse_torque={0,0,0}
-	a.p={0,0,0}
-	a.l={0,0,0}
 	-- compute inertia tensor
 	a.bbox=make_bbox(a.model)
 	size=v_sqr(a.bbox.size)
@@ -675,37 +671,32 @@ function make_rigidbody(a)
 		return p
 	end
 
- a.reset_impulse=function(self)
- 	self.impulse_force={0,0,0}
- 	self.impulse_torque={0,0,0}
- end
- -- register a force
- a.add_impulse=function(self,f,p)
-		v_add(self.impulse_force,f)
-		local d=make_v(self.pos,p)
-		local xd=make_v_cross(d,f)
-		v_add(self.impulse_torque,xd)
- end
+ 	-- register a force
+ 	a.add_force=function(self,f,p)
+		v_add(self.force,f,self.mass)
+		v_add(self.torque,make_v_cross(make_v(self.pos,p),f))
+ 	end
+	
 	-- apply forces & torque for iteration
 	a.prepare=function(self,dt)
-		-- collect forces
-		local force={0,0,0}--{0,-9.8*self.mass,0}
-		v_add(force,self.impulse_force)
-		local torque={0,0,0}
-		v_add(torque,self.impulse_torque)
-		
+		-- add gravity
+		v_add(self.force,{0,-9.8*self.mass,0})
+	
 		-- velocity
-		v_add(self.v,force,self.mass_inv*dt)
+		v_add(self.v,self.force,self.mass_inv*dt)
 		-- inverse inertia tensor
 		self.i_inv=m_x_m(m_x_m(self.m,self.ibody_inv),m_transpose(self.m))
 
 		-- angular velocity
-		v_add(self.omega,m_x_v(self.i_inv,torque),dt)
+		v_add(self.omega,m_x_v(self.i_inv,self.torque),dt)
 	end
 	a.integrate=function(self,dt)
 		v_add(self.pos,self.v,dt)
 		q_dydt(self.q,self.omega,dt)
 		self.m=m_from_q(self.q)
+		-- clear forces
+		self.force={0,0,0}
+		self.torque={0,0,0}
 	end
 	
 	a.apply_contacts=function(self,filter,dt)
@@ -787,9 +778,7 @@ function world:update()
 		
 		a:prepare(dt)
 
-		a:integrate(dt)
-		
-		a:reset_impulse()
+		a:integrate(dt)		
 	end
 end
 
