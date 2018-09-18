@@ -9,7 +9,10 @@ local physic_actors={}
 local k_small=0.001
 local k_small_v=0.1
 local k_depth=0.05
-local k_bias=0.1
+-- baumgarte
+local k_bias=0.5
+local k_slop=0.1
+
 local k_coll_none,k_coll_pen,k_coll_coll,k_coll_rest=0,1,2,4
 
 -- world units
@@ -411,6 +414,7 @@ function q_normz(q)
 	end
 end
 function q_dydt(q,v,dt)
+	--[[
 	local dq={v[1]*dt,v[2]*dt,v[3]*dt,0}
 	q_x_q(dq,q)
 
@@ -418,6 +422,18 @@ function q_dydt(q,v,dt)
 	q[2]+=0.5*dq[2]
 	q[3]+=0.5*dq[3]
 	q[4]+=0.5*dq[4]
+	q_normz(q)
+	]]
+		-- angular velocity "converted" to quaternion
+		-- not: q[v,0]!!
+	local qdot=v_clone(v)
+	qdot[4]=0
+	q_x_q(qdot,q)
+	q_scale(qdot,0.5)
+	q[1]+=dt*qdot[1]
+	q[2]+=dt*qdot[2]
+	q[3]+=dt*qdot[3]
+	q[4]+=dt*qdot[4]
 	q_normz(q)
 end
 
@@ -542,8 +558,8 @@ end
 
 _g.control_plyr=function(self)
 	local turn,z=0,0
-	if(btn(0)) turn=-1
-	if(btn(1)) turn=1
+	if(btn(0)) turn=1
+	if(btn(1)) turn=-1
 	--[[
 	if(btn(2)) z=-1
 	if(btn(3)) z=1
@@ -554,7 +570,7 @@ _g.control_plyr=function(self)
 	if turn!=0 then
 		local force=m_right(self.m)
 		local pos=m_fwd(plyr.m)
-		v_scale(force,turn,25)
+		v_scale(force,turn*5)
 		-- application point (world space)
 		v_add(pos,v_fwd,3)
 		v_add(pos,self.pos)
@@ -593,57 +609,83 @@ end
 
 -- registers a ground collision
 -- rest or colliding
-function make_ground_contact(a,p,n,h)
+function make_ground_contact(a,p,n,h)	
+	local padot=a:pt_velocity(p)
+	local vrel=v_dot(n,padot)
+	-- separating?
+	if(vrel>-k_small_v) return
+	-- penetration depth
+	local depth=make_v(p,{p[1],h,p[3]})
+	depth=max(v_dot(n,depth))
+			
 	local c={
 		-- body
 		a=a,
 		-- normal
 		n=n,
+		-- body contact point
 		-- world position
-		p={p[1],h,p[3]},
-		init=function(self)
-			local a=self.a
-			local padot=a:pt_velocity(self.p)
-			local vrel=v_dot(self.n,padot)
-			if vrel<-k_small_v then
-				self.type=k_coll_coll
-			elseif vrel<k_small_v then
-				self.type=k_coll_rest
-			end
-			self.vrel=vrel
-
-			-- penetration depth
-			local depth=make_v(p,self.p)
-			self.d=max(v_dot(self.n,depth))
-		end,
-		pre_solve=function(self,dt)
+		p=p,
+		-- penetration
+		d=depth,
+		-- 
+		nimpulse=0,
+		pre_solve=function(self,dt)			
 			local a,n=self.a,v_clone(self.n)
 			
 			local ra=make_v(a.pos,self.p)
-			local term3=v_dot(n,make_v_cross(m_x_v(a.i_inv,make_v_cross(ra,n)),ra))
-			
-			local j=-self.vrel*(1+a.hardness)/(a.mass_inv+term3)
+			local racn=make_v_cross(ra,n)
+
+			local nm=a.mass_inv
+			nm+=v_dot(racn,m_x_v(a.i_inv,racn))
+			self.nm=1/nm
 			
 			-- baumgarte
-			local bias=-k_bias*(self.d-0.1)/dt
+			local bias=-k_bias*min(self.d-k_slop)/dt
+
+			-- restitution bias
 			local va=v_clone(a.v)
 			v_add(va,make_v_cross(a.omega,ra))
-			local dv=v_dot(va,n)
+			local dv=-v_dot(va,n)
 			if dv<-1 then
 				bias-=a.hardness*dv
 			end
-		 j+=bias
-  
-			v_scale(n,j)
-			v_add(a.p,n)
-			v_add(a.l,make_v_cross(ra,n))
+			self.bias=bias
+			self.ra=ra
+		end,
+		solve=function(self)			
+			local a,dv,n=self.a,v_clone(self.a.v),v_clone(self.n)
+			v_add(dv,make_v_cross(a.omega,self.ra))
 
+			local vn=-v_dot(dv,n)
+			--local lambda=self.nm*(-vn+self.bias)
+			local lambda=self.nm*(-vn)
+			--self.lambda=self.nm*self.bias
+			
+			--[[
+			local tempn=self.nimpulse
+			self.nimpulse=max(tempn+lambda)
+			lambda=self.nimpulse-tempn
+			]]
+			  
+  	-- impulse
+			v_scale(n,lambda)
+			v_add(a.v,n,-a.mass_inv)			
+			v_add(
+				a.omega,
+				m_x_v(
+					a.i_inv,
+					make_v_cross(self.ra,n)
+				),
+			-1)
+
+		end,
+		fix_pos=function(self)
+			local a=self.a
+			v_add(a.pos,self.n,self.d/30)
+			--v_add(a.pos,self.n,self.lambda*a.mass_inv)
 		end
 	}
-	-- rest or colliding?
-	--if h-p[2]>=-k_depth then
-		c:pre_solve()
-	--end
 	return c
 end
 
@@ -662,8 +704,7 @@ function make_rigidbody(a)
 	a.i_inv=make_m()
 	a.v={0,0,0}
 	a.omega={0,0,0}
-	-- 
-	a.contacts={}
+	
 	-- world velocity
 	a.pt_velocity=function(self,p)
 		p=make_v_cross(self.omega,make_v(self.pos,p))
@@ -672,23 +713,28 @@ function make_rigidbody(a)
 	end
 
  	-- register a force
- 	a.add_force=function(self,f,p)
+ a.add_force=function(self,f,p)
 		v_add(self.force,f,self.mass)
 		v_add(self.torque,make_v_cross(make_v(self.pos,p),f))
- 	end
+ end
 	
 	-- apply forces & torque for iteration
 	a.prepare=function(self,dt)
 		-- add gravity
 		v_add(self.force,{0,-9.8*self.mass,0})
 	
-		-- velocity
-		v_add(self.v,self.force,self.mass_inv*dt)
 		-- inverse inertia tensor
 		self.i_inv=m_x_m(m_x_m(self.m,self.ibody_inv),m_transpose(self.m))
 
+		-- velocity
+		v_add(self.v,self.force,self.mass_inv*dt)
+
 		-- angular velocity
 		v_add(self.omega,m_x_v(self.i_inv,self.torque),dt)
+		
+		-- damping
+		v_scale(self.v,1/(1+dt*0.8))
+		v_scale(self.omega,1/(1+dt*0.5))
 	end
 	a.integrate=function(self,dt)
 		v_add(self.pos,self.v,dt)
@@ -699,55 +745,22 @@ function make_rigidbody(a)
 		self.torque={0,0,0}
 	end
 	
-	a.apply_contacts=function(self,filter,dt)
-		local recalc=false
-		for _,ct in pairs(self.contacts) do
-			recalc=bor(recalc,ct:solve(filter,dt))
-		end
-		-- update motion
-		if recalc then
-			self.v=v_clone(self.p)
-			v_scale(self.v,self.mass_inv)
-			self.omega=m_x_v(self.i_inv,self.l)
-		end
-	end
-	a.update_contacts=function(self)
-		local contact_type=0
-		-- clear contacts
-		self.contacts={}
-		local max_depth,max_ct=-32000
+	a.update_contacts=function(self,contacts)
 		for _,v in pairs(self.bbox.v) do
 			-- to world space
 			v=m_x_v(self.m,v)
 			v_add(v,self.pos)
 			local h=get_altitude(v[1],v[3])
 			local depth=h-v[2]
-			if depth>=0 then
+			if depth>k_depth then
+				printh("depth:"..depth)
 				-- deep enough?
 				-- get contact normal
 				local n=get_normal(v[1],v[3])
 				local ct=make_ground_contact(self,v,n,h)
-				if ct.vrel<=-k_small_v then
-					-- if(depth>k_depth) return k_coll_pen
-					if depth>k_depth then
- 				 ct.type=k_coll_pen
- 					if depth>max_depth then
- 						max_depth=depth
- 						max_ct=ct
- 					end
- 				end
- 				
- 				add(self.contacts,ct)
- 				contact_type=bor(contact_type,ct.type)
-				end
+				if(ct) add(contacts,ct)
 			end
 		end
-		-- find max depth
-		if max_ct then
-			self.contacts={max_ct}
-			contact_type=max_ct.type
-		end
-		return contact_type
 	end
 	-- override die (if any)
 	local _die=a.die
@@ -763,21 +776,33 @@ end
 
 -- physic world
 function world:check_coll()
-	self.coll_type=0
+	self.contacts={}
 	for _,a in pairs(physic_actors) do
-		-- todo: optimize to clear all contacts without creating new contacts during penetration
-		self.coll_type=bor(self.coll_type,a:update_contacts())
+		a:update_contacts(self.contacts)
 	end
 end
+
 function world:update()
 	local dt=1/30
 	
-	-- reset forces
-	for _,a in pairs(physic_actors) do
-		-- todo: collisions
-		
-		a:prepare(dt)
+	-- collect contacts
+	self:check_coll()
 
+	-- 
+	for _,a in pairs(physic_actors) do
+		a:prepare(dt)
+	end
+	-- solve contacts
+	for _,c in pairs(self.contacts) do
+		c:pre_solve(dt)
+		--for i=1,10 do
+			c:solve()
+		--end
+		c:fix_pos()
+	end
+	
+	-- move bodies
+	for _,a in pairs(physic_actors) do
 		a:integrate(dt)		
 	end
 end
@@ -1085,12 +1110,10 @@ function _draw()
 	end
 	]]
 	
-	for _,a in pairs(physic_actors) do
-		for _,c in pairs(a.contacts) do
-			local x,y,z,w=cam:project(c.p[1],c.p[2],c.p[3])
-			circ(x,y,3,8)
-			print(c.type,x+2,y,7)
-		end
+	for _,c in pairs(world.contacts) do
+		local x,y,z,w=cam:project(c.p[1],c.p[2],c.p[3])
+		circ(x,y,3,8)
+		print(c.d,x+2,y,7)
 	end
 	
 	rectfill(0,0,127,8,8)
