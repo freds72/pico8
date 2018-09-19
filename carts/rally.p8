@@ -572,7 +572,7 @@ _g.control_plyr=function(self)
 		local pos=m_fwd(plyr.m)
 		v_scale(force,turn*5)
 		-- application point (world space)
-		v_add(pos,v_fwd,3)
+		v_add(pos,v_fwd,16)
 		v_add(pos,self.pos)
 		self:add_force(force,pos)
 	end
@@ -630,7 +630,7 @@ function make_ground_contact(a,p,n,h)
 		d=depth,
 		-- 
 		nimpulse=0,
-		pre_solve=function(self,dt)			
+		pre_solve=function(self,dt)
 			local a,n=self.a,v_clone(self.n)
 			
 			local ra=make_v(a.pos,self.p)
@@ -641,7 +641,7 @@ function make_ground_contact(a,p,n,h)
 			self.nm=1/nm
 			
 			-- baumgarte
-			local bias=-k_bias*min(self.d-k_slop)/dt
+			local bias=-k_bias*min(self.d+k_slop)/dt
 
 			-- restitution bias
 			local va=v_clone(a.v)
@@ -653,37 +653,37 @@ function make_ground_contact(a,p,n,h)
 			self.bias=bias
 			self.ra=ra
 		end,
-		solve=function(self)			
+		solve=function(self)
 			local a,dv,n=self.a,v_clone(self.a.v),v_clone(self.n)
 			v_add(dv,make_v_cross(a.omega,self.ra))
 
-			local vn=-v_dot(dv,n)
-			--local lambda=self.nm*(-vn+self.bias)
+			local vn=v_dot(dv,n)
+			--local lambda=self.nm*(-vn-self.bias)
 			local lambda=self.nm*(-vn)
 			--self.lambda=self.nm*self.bias
 			
-			--[[
 			local tempn=self.nimpulse
 			self.nimpulse=max(tempn+lambda)
 			lambda=self.nimpulse-tempn
-			]]
-			  
+			self.lambda=lambda
+			
+			if(lambda<k_small) return
   	-- impulse
 			v_scale(n,lambda)
-			v_add(a.v,n,-a.mass_inv)			
+			v_add(a.v,n,a.mass_inv)
 			v_add(
 				a.omega,
 				m_x_v(
 					a.i_inv,
 					make_v_cross(self.ra,n)
-				),
-			-1)
+				))
 
 		end,
 		fix_pos=function(self)
 			local a=self.a
-			v_add(a.pos,self.n,self.d/30)
-			--v_add(a.pos,self.n,self.lambda*a.mass_inv)
+			local c=k_bias*max(self.d-k_slop)/#world.contacts
+			v_add(a.pos,self.n,c)
+			--v_add(a.pos,self.n,self.lambda)
 		end
 	}
 	return c
@@ -795,9 +795,9 @@ function world:update()
 	-- solve contacts
 	for _,c in pairs(self.contacts) do
 		c:pre_solve(dt)
-		--for i=1,10 do
+		for i=1,5 do
 			c:solve()
-		--end
+		end
 		c:fix_pos()
 	end
 	
@@ -991,14 +991,13 @@ function draw_actors(j)
   			local ymin,ymax=p[imin][2],p[imax][2]
   			for i=1,#p do
   				if i!=imin and i!=imax then
-  					trifill(xmin,ymin,xmax,ymax,p[i][1],p[i][2],0)		
+  					trifill(xmin,ymin,xmax,ymax,p[i][1],p[i][2],0)
   				end
   			end
  			end
  		end
- 					
-			d:draw()
-			
+ 		
+		d:draw()
 		end
 	end
 end
@@ -1038,7 +1037,7 @@ function draw_ground(self)
 			local v3,v2,q3,n3=r0[i],r1[i],r0[i].q,r0[i].n
 			local c_hi,c_lo=get_q_colors(q0)
 			local q_code=band(q0,0xf)
-			--[[
+
 			if q_code==1 or q_code==4 then
 				trifill(v0[1],v0[2],v2[1],v2[2],v1[1],v1[2],c_hi)		
 				trifill(v0[1],v0[2],v2[1],v2[2],v3[1],v3[2],c_lo)
@@ -1048,7 +1047,7 @@ function draw_ground(self)
 				trifill(v1[1],v1[2],v3[1],v3[2],v0[1],v0[2],c_hi)
 				trifill(v1[1],v1[2],v3[1],v3[2],v2[1],v2[2],c_lo)		
 			end
-			]]
+			
 			line(v0[1],v0[2],v3[1],v3[2],1)		
 			line(v0[1],v0[2],v1[1],v1[2],12)		
 			
@@ -1060,7 +1059,7 @@ function draw_ground(self)
 						
 			v0,v1,q0,n0=v3,v2,q3,n3
 		end
-		draw_actors(nj)		
+		draw_actors(nj)
 		r0=r1
 		nj+=1
 	end
@@ -1113,7 +1112,7 @@ function _draw()
 	for _,c in pairs(world.contacts) do
 		local x,y,z,w=cam:project(c.p[1],c.p[2],c.p[3])
 		circ(x,y,3,8)
-		print(c.d,x+2,y,7)
+		print(c.lambda,x+2,y,7)
 	end
 	
 	rectfill(0,0,127,8,8)
