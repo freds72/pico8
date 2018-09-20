@@ -211,6 +211,9 @@ function sort(data)
 end
 
 -- vector math
+function v_print(v,x,y,c)
+	print(v[1].."|"..v[2].."|"..v[3],x,y,c)
+end
 function sqr_dist(a,b)
 	local dx,dy,dz=b[1]-a[1],b[2]-a[2],b[3]-a[3]
 
@@ -478,7 +481,9 @@ function make_bbox(model)
 		local v1={
 			one_if(band(0x1,i))*size[1],
 			one_if(band(0x2,i))*size[2],
-			one_if(band(0x4,i))*size[3]}
+			one_if(band(0x4,i))*size[3],
+			-- contact time
+			contact_t=-99}
 		v_add(v1,vmin)
 		add(v,v1)
 	end
@@ -585,11 +590,20 @@ _g.control_plyr=function(self)
 end
 
 _g.update_plyr=function(self)
-	
+	local up=m_up(self.m)
+	self.traction*=0.8
+	for i=1,4 do
+		local v=self.bbox.v[i]
+		if time_t-v.contact_t<5 then
+			-- contact quality
+			local r=max(v_dot(up,v.n))
+			self.traction+=r
+		end
+	end
 	return true
 end
 
-local all_actors=json_parse'{"plyr":{"model":"audi","hardness":0.02,"mass":20,"control":"control_plyr","update":"update_plyr"}}'
+local all_actors=json_parse'{"plyr":{"model":"audi","hardness":0.02,"mass":20,"traction":0,"control":"control_plyr","update":"update_plyr"}}'
 
 function draw_actor(self,x,y,z,w)
 	draw_model(self.model,self.m,self.pos)
@@ -609,14 +623,11 @@ end
 
 -- registers a ground collision
 -- rest or colliding
-function make_ground_contact(a,p,n,h)	
+function make_ground_contact(a,p,n,d)	
 	local padot=a:pt_velocity(p)
 	local vrel=v_dot(n,padot)
 	-- separating?
 	if(vrel>-k_small_v) return
-	-- penetration depth
-	local depth=make_v(p,{p[1],h,p[3]})
-	depth=max(v_dot(n,depth))
 			
 	local c={
 		-- body
@@ -627,7 +638,7 @@ function make_ground_contact(a,p,n,h)
 		-- world position
 		p=p,
 		-- penetration
-		d=depth,
+		d=d,
 		-- 
 		nimpulse=0,
 		pre_solve=function(self,dt)
@@ -692,8 +703,9 @@ end
 function make_rigidbody(a)
 	a.force={0,0,0}
 	a.torque={0,0,0}
-	-- compute inertia tensor
+	-- bounding box
 	a.bbox=make_bbox(a.model)
+	-- compute inertia tensor
 	size=v_sqr(a.bbox.size)
 	a.ibody=make_m(size[2]+size[3],size[1]+size[3],size[1]+size[2])
 	m_scale(a.ibody,a.mass/12)
@@ -747,16 +759,25 @@ function make_rigidbody(a)
 	a.update_contacts=function(self,contacts)
 		for _,v in pairs(self.bbox.v) do
 			-- to world space
-			v=m_x_v(self.m,v)
-			v_add(v,self.pos)
-			local h=get_altitude(v[1],v[3])
-			local depth=h-v[2]
-			-- deep enough?
-			if depth>-k_small then
-				-- get contact normal
-				local n=get_normal(v[1],v[3])
-				local ct=make_ground_contact(self,v,n,h)
-				if(ct) add(contacts,ct)
+			local p=m_x_v(self.m,v)
+			v_add(p,self.pos)
+			local h=get_altitude(p[1],p[3])
+			local depth=h-p[2]
+			if depth>=k_small then
+				local n=get_normal(p[1],p[3])
+				depth=v_dot(n,{0,depth,0})
+				-- deep enough?
+				if depth>=k_small then
+					-- get contact normal
+					
+					local ct=make_ground_contact(self,p,n,depth)
+					if ct then
+						add(contacts,ct)
+						-- record contact time
+						v.contact_t=time_t
+						v.n=n
+					end
+				end
 			end
 		end
 	end
@@ -1091,7 +1112,7 @@ function _update()
 			-- v_add(lookat,m_fwd(plyr.m),4)
 			-- keep altitude
 			lookat[2]=plyr.pos[2]
-			cam:track(lookat,0.1)
+			cam:track(lookat,0.12)
 		end
 	end
 
@@ -1125,9 +1146,12 @@ function _draw()
 		
 	rectfill(0,0,127,8,8)
 	print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)
+	-- debug
 	if plyr then
-		local q=plyr.pos
-		print(q[1].."/"..q[2].."/"..q[3],2,12,7)
+		v_print(plyr.v,2,12,7)
+		v_print(plyr.omega,2,19,7)
+		
+		print("pow:"..plyr.traction.."%",2,26,7)
 	end
 
 end
@@ -1170,7 +1194,7 @@ function _init()
 	
 	for i=0,63 do
 		for j=0,63 do
-			noise[band(i,0x3f)+64*band(j,0x3f)+1]=0
+			noise[band(i,0x3f)+64*band(j,0x3f)+1]=(i+j)<8 and 2 or 0
 		end
 	end
 	
