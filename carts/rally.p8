@@ -1033,36 +1033,23 @@ function get_altitude(x,z)
 	-- cell
 	local dx,dz=shr(band(x,0x7f)%ground_scale,ground_shift),shr(band(z,0x7f)%ground_scale,ground_shift)
 	local i,j=flr(shr(x,ground_shift)),flr(shr(z,ground_shift))
-	local h0,h1=lerp(get_height(i,j),get_height(i,j+1),dz),lerp(get_height(i+1,j),get_height(i+1,j+1),dz)
-	return lerp(h0,h1,dx)
+	local h0,h1
+	if dx<dz then
+		local h=get_height(i,j)
+		h0,h1=lerp(h,get_height(i+1,j),dz),lerp(h,get_height(i+1,j+1),dx)
+	else
+		local h=get_height(i+1,j+1)
+		h0,h1=lerp(get_height(i,j),h,dz),lerp(get_height(i,j+1),h,dx)
+	end
+	return lerp(h0,h1,dz)
 end
 
 -- get map normal
 function get_normal(x,z)
 	local i,j=flr(shr(x,ground_shift+1)),flr(shr(z,ground_shift+1))	
 	local dx,dz=shr(band(x,0x7f)%ground_scale,ground_shift),shr(band(z,0x7f)%ground_scale,ground_shift)
-	if dx>0.5 and dy>0.5 then
-	 return nmap[band(i+1,0x3f)+64*band(j+1,0x3f)+1]
-	end
-	 
- return nmap[band(i,0x3f)+64*band(j,0x3f)+1]
-
-	--[[ 
- local n0,n1=
- 	v_lerp(
- 		nmap[band(i,0x3f)+64*band(j,0x3f)+1],
- 		nmap[band(i+1,0x3f)+64*band(j,0x3f)+1],dx),
-		v_lerp(
- 		nmap[band(i,0x3f)+64*band(j+1,0x3f)+1],
- 		nmap[band(i+1,0x3f)+64*band(j+1,0x3f)+1],dx)	
- local n=v_lerp(n0,n1,dz)
-	v_normz(n)
-	return n	
-	]]
-end
-function get_raw_normal(i,j)
-	i,j=shr(i,1),shr(j,1)
-	return nmap[band(i,0x3f)+64*band(j,0x3f)+1]
+	local n=nmap[band(i,0x3f)+64*band(j,0x3f)+1]
+	return dx<dz and n.n0 or n.n1
 end
 
 function draw_tex_quad(a,b,sx,sy)
@@ -1157,11 +1144,11 @@ function draw_ground(self)
 		local nj=ny+j
 		for i=imin,imax do
 			local ni=nx+i
-			local h,q,n=get_height(ni,nj),get_raw_qcode(ni,nj),get_raw_normal(ni,nj)
+			local h,q=get_height(ni,nj),get_raw_qcode(ni,nj)
 		 -- compute grid points centered on lookat pos
 			local xx,zz=-dx+cx+shl(i,ground_shift),-dz+cz+shl(j,ground_shift)
 			local x,y,z,w=cam:project(xx,h,zz)
-			add(row,{flr(x),flr(y),z,w,x=xx,y=h,z=zz,q=q,n=n,nj=nj})
+			add(row,{flr(x),flr(y),z,w,x=xx,y=h,z=zz,q=q,nj=nj})
 		end
 		add(p,row)
 	end
@@ -1173,11 +1160,11 @@ function draw_ground(self)
 	local nj=ny-9
 	for j=2,#p do
 		local r1=p[j]
-		local v0,v1,q0,n0=r0[1],r1[1],r0[1].q,r0[1].n
+		local v0,v1,q0=r0[1],r1[1],r0[1].q
 		-- strip off screen?
 		if v0[1]<127 then
  		for i=2,#r1 do
- 			local v3,v2,q3,n3=r0[i],r1[i],r0[i].q,r0[i].n
+ 			local v3,v2,q3=r0[i],r1[i],r0[i].q
  			local c_hi,c_lo,c_dither=get_q_colors(q0)
  			local q_code=band(q0,0xff)
  			
@@ -1208,44 +1195,30 @@ function draw_ground(self)
  			if q_code==1 or q_code==4 then
  				trifill(x0,y0,x2,y2,x1,y1,c_hi)		
  				trifill(x0,y0,x2,y2,x3,y3,c_lo)
- 				if c_hi==0 then
-	 				line(x0,y0,x2,y2,0x77)
-	 			end
+ 				
  			elseif q_code==9 then
  				draw_tex_quad({x0,y0,0,v0[4]},{x1,y1,0,v1[4]},c_hi,c_lo)
  			else
  				trifill(x1,y1,x3,y3,x0,y0,c_hi)
  				trifill(x1,y1,x3,y3,x2,y2,c_lo)
-					if c_hi==0 and q_code==8 or q_code==2 then
-					 line(x1,y1,x3,y3,0x77)
-					end
  			end
- 			if c_hi==0 then
- 				if q_code==0x15 then
- 					line(x0,y0,x1,y1,0x77)
- 				elseif q_code==0x25 then
- 					line(x1,y1,x2,y2,0x77)
- 				elseif q_code==0x35 then
- 					line(x2,y2,x3,y3,0x77)
- 				elseif q_code==0x45 then
- 					line(x0,y0,x3,y3,0x77)
- 				end
- 			end
- 			fillp()
  			
- 			--[[
  			--pset(v0[1],v0[2],1)
- 			line(v0[1],v0[2],v3[1],v3[2],1)		
- 			line(v0[1],v0[2],v1[1],v1[2],12)		
+ 			
+ 			line(v0[1],v0[2],v3[1],v3[2],1)
+ 			line(v0[1],v0[2],v1[1],v1[2],12)
+ 			line(v0[1],v0[2],v2[1],v2[2],12)
 			 
+			 --[[
  			local n=v_clone(n0)
  			v_add(n,{v0.x,v0.y,v0.z})
  			local x,y,z,w=cam:project(n[1],n[2],n[3])
  			line(v0[1],v0[2],x,y,8)
  			]]
- 			v0,v1,q0,n0=v3,v2,q3,n3
+ 			v0,v1,q0=v3,v2,q3
  		end
  	end
+ 		fillp()
 		draw_actors(nj)
 		r0=r1
 		nj+=1
@@ -1281,7 +1254,7 @@ function _update()
 		if not plyr.disabled then
 			-- update cam
 			local lookat=v_clone(plyr.pos)
-			v_add(lookat,m_fwd(plyr.m),3)
+			--v_add(lookat,m_fwd(plyr.m),3)
 			-- keep altitude
 			lookat[2]=plyr.pos[2]+2
 			cam:track(lookat,0.10)
@@ -1343,7 +1316,6 @@ end
 -- main
 
 function _init()
-	v_normz(v_light)
 	
 	local idx_offsets=json_parse'[0,1,128,129]'
 	local q_codes=json_parse'[[0,0,0,0],[0,0,1,0],[0,0,0,2],[0,0,0x45,0x45],[0,4,0,0],[2,0,0,8],[0,0x15,0,0x15],[2,5,5,5],[8,0,0,0],[0x35,0,0x35,0],[5,1,4,5],[5,1,5,5],[0x25,0x25,0,0],[5,5,5,8],[5,5,4,5],[5,5,5,5]]'
@@ -1389,12 +1361,12 @@ function _init()
 
 	for i=0,63 do
 		for j=0,63 do
-			--noise[band(i,0x3f)+64*band(j,0x3f)+1]=0
+			noise[band(i,0x3f)+64*band(j,0x3f)+1]=(j%8<4) and 2 or 0
 		end
 	end
 	
 	-- height map weights
-	local hweights=json_parse'[[1,0,0,0],[0.5,0,0.5,0],[0.5,0.5,0,0],[0.25,0.25,0.25,0.25]]'
+	local hweights=json_parse'[[1,0,0,0],[0.5,0,0.5,0],[0.5,0.5,0,0],[0,0.5,0.5,0]]'
 	-- explode the 64x64 map into 128x128
 	for j=0,63 do
 		for i=0,63 do
@@ -1410,9 +1382,12 @@ function _init()
 	for j=0,63 do
 		for i=0,63 do
 			local h=get_noise(i,j)
-			local n=make_v_cross({0,get_noise(i,j+1)-h,ground_scale},{ground_scale,get_noise(i+1,j)-h,0})
-			v_normz(n)
-			nmap[i+64*j+1]=n
+			local n0=make_v_cross({0,get_noise(i,j+1)-h,ground_scale},{ground_scale,get_noise(i+1,j)-h,0})
+			v_normz(n0)
+			h=get_noise(i+1,j+1)
+			local n1=make_v_cross({0,get_noise(i+1,j)-h,-ground_scale},{-ground_scale,get_noise(i,j+1)-h,0})
+			v_normz(n1)
+			nmap[i+64*j]={n0=n0,n1=n1}
 		end
 	end 	
 	
@@ -1450,12 +1425,6 @@ function _init()
 							hi,lo=lo,hi
 						end
 						q=set_q_colors(q,hi,lo,1)
-						-- kill height
-						--[[
-						if layer.h then
-							hmap[k]=layer.h
-						end
-						]]
 						qmap[k]=q
 					end
 				end
@@ -1472,25 +1441,19 @@ function _init()
 				-- tile
 				local q=qmap[k]
 				local hi,lo=get_q_colors(q)
-				-- v_light
-				local c=max(2*v_dot(v_light,get_raw_normal(i,j)))
 				-- get floating part
 				local darken=(j%2==0) and 0 or 1
 				darken+=((i%2==0) and 0 or 1)
-				local dither=flr((#dither_pat2-1)*((c-flr(c))))+1
-				--dither=max(1,dither-darken)
-				dither=1+darken
+				local dither=1+darken
 				c=1
-				--c=max(c-darken)
 				lo=bor(shl(sget(max(c-1)+16,lo),4),sget(c+16,lo))
 				hi=bor(shl(sget(max(c-1)+16,hi),4),sget(c+16,hi))
-				--lo=bor(shl(sget(17,lo),4),band(0xf,lo))
-				--hi=bor(shl(sget(17,hi),4),band(0xf,hi))
 				qmap[k]=set_q_colors(band(0xff,q),hi,lo,dither)
 			end
 		end
 	end
-						
+
+	-- textured strip demo
  local idx=safe_index(0,0)
 	qmap[idx]=set_q_colors(9,24,0)
 	for j=1,7 do
@@ -1511,8 +1474,8 @@ function _init()
 			local d=abs(sqrt(di*di+dj*dj)-11)
 			if flr(d)==2 then
 				if rnd()>0.5 and max_tree>0 then --and is_solid(i,j,4)==1 then
-					make_ground_actor("tree",2*i,2*j) 				
-					max_tree-=1					
+					make_ground_actor("tree",2*i,2*j)
+					max_tree-=1
 				end
 			end
 		end
