@@ -484,24 +484,24 @@ function make_bbox(model)
 			one_if(band(0x2,i))*size[2],
 			one_if(band(0x4,i))*size[3],
 			-- contact time
-			contact_t=-99}
+			contact_t=-99,
+			-- faces (reverse lookup)
+			f={}}
 		v_add(v1,vmin)
 		add(v,v1)
 	end
 	-- faces & normals
-	local faces={
-			{1,5,6,2},
-			{1,5,7,3},
-			{3,4,8,7},
-			{2,6,8,4},
-			{1,3,4,2},
-			{5,6,8,7}}
+	local faces=json_parse'[[1,5,6,2],[1,5,7,3],[3,4,8,7],[2,6,8,4],[1,3,4,2],[5,6,8,7]]'
 	local normals={}
 	for i=1,#faces do
 		local f=faces[i]
 		local n=make_v_cross(make_v(v[f[1]],v[f[2]]),make_v(v[f[1]],v[f[3]]))
 		v_normz(n)
 		add(normals,n)
+		-- assign face indices to vertices
+		for _,vi in pairs(f) do
+			add(v[vi].f,i)
+		end
 	end 
 	return {
 		size=size,
@@ -590,48 +590,51 @@ _g.control_plyr=function(self)
 	plyr.pos[3]+=z/4
  ]]
  
-	self.turn+=turn/4
-
-	if v_dot(self.v,self.v)>k_small then				
+	self.turn+=turn/2
+	local fwd=m_fwd(self.m)
+	
+	if v_dot(self.v,self.v)>k_small then
 	 local angle=0.25+0.1*self.turn/2.33
 		local force=m_x_v(self.m,{-sin(angle),0,cos(angle)})
-		self.desired_force=m_x_v(self.m,{-sin(angle),0,cos(angle)})
 		
 		--local ratio=mid(5*v_dot(force,self.v),-5,5)
 		local ratio=v_dot(force,self.v)
 		v_scale(force,-ratio*self.mass_inv*30)
-		
-		self.turn_force=force
-		
+
 		-- application point (world space)
-		local pos=v_clone(plyr.pos)
-		v_add(pos,m_fwd(plyr.m),3)
-		self:add_force(force,pos)		
+		local pos=v_clone(self.pos)
+		v_add(pos,fwd,3)
+		self:add_force(force,pos)
 		
 		-- rear wheels
-		local force=m_right(self.m)
-		self.turn_ratio=v_dot(force,self.v)
-
+		force=m_right(self.m)
 		local ratio=v_dot(force,self.v)
 		v_scale(force,-ratio*self.mass_inv*30)
 		
 		-- application point (world space)
-		local pos=v_clone(plyr.pos)
-		v_add(pos,m_fwd(plyr.m),-3)
+		v_add(pos,m_fwd(plyr.m),-6)
 		self:add_force(force,pos)
-		
-		--make_part("smoke",pos,v_up)
  end
 
+	-- dampers
+	local h=get_altitude(self.pos[1],self.pos[3])
+	h-=self.pos[2]
+	if h<0 then
+		local ratio=lerp(1,0,smoothstep(-h/3))
+		local force=v_clone(v_up)
+		v_scale(force,-ratio*9.8*self.mass_inv*30)
+		self:add_force(force,self.pos)
+	end
+	
 	-- accelerate
 	if btn(2) then
-		local force=m_fwd(self.m)
+		local force=v_clone(fwd)
 		v_scale(force,12)
 		self:add_force(force,self.pos)
 	end
 	-- brake		
 	if btn(3) then
-		local force=m_fwd(self.m)
+		local force=v_clone(fwd)
 		-- braking = friction
 		local ratio=v_dot(force,self.v)
 		v_scale(force,-ratio*self.mass_inv*30)
@@ -640,19 +643,11 @@ _g.control_plyr=function(self)
 	
 	if btn(4) or btn(5) then
 		local pos=v_clone(self.pos)
-		v_add(pos,m_up(self.m),3)				
+		v_add(pos,m_up(self.m),3)
 		local force=v_clone(v_up)
 		v_scale(force,12)
 		self:add_force(force,pos)
 	end
-	
-	-- gravity
-	local pos=v_clone(self.pos)
-	v_add(pos,m_up(self.m),-2)				
-	local force=v_clone(v_up)
-	v_scale(force,-9.8)
-	self:add_force(force,pos)
-	
 end
 
 _g.update_plyr=function(self)
@@ -668,6 +663,8 @@ _g.update_plyr=function(self)
 			self.traction+=r
 		end
 	end
+	
+	--make_part("smoke",pos,v_up)
 	return true
 end
 
@@ -706,7 +703,6 @@ function make_ground_actor(src,i,j)
 end
 
 -- registers a ground collision
--- rest or colliding
 function make_ground_contact(a,p,n,d)	
 	local padot=a:pt_velocity(p)
 	local vrel=v_dot(n,padot)
@@ -744,9 +740,10 @@ function make_ground_contact(a,p,n,d)
 			local va=v_clone(a.v)
 			v_add(va,make_v_cross(a.omega,ra))
 			local dv=-v_dot(va,n)
-			--if dv<-1 then
+			-- find out unit??
+			if dv<-1 then
 				bias-=a.hardness*dv
-			--end
+			end
 			self.bias=bias
 			self.ra=ra
 		end,
@@ -774,13 +771,7 @@ function make_ground_contact(a,p,n,d)
 					a.i_inv,
 					make_v_cross(self.ra,n)
 				))
-		end,
-		fix_pos=function(self)
-			local a=self.a
-			local c=k_bias*max(self.d+k_slop)
-			v_add(a.pos,self.n,c)
-			--v_add(a.pos,self.n,self.lambda)
-		end		
+		end
 	}
 	return c
 end
@@ -814,18 +805,11 @@ function make_rigidbody(a)
 		v_add(self.force,f,self.mass)
 		v_add(self.torque,make_v_cross(make_v(self.pos,p),f))
  end
- 
- a.add_linearforce=function(self,f)
- 	v_add(self.force,f,self.mass)
- end
-	a.add_angularforce=function(self,t)
-		v_add(self.torque,t)
-	end	
 	
 	-- apply forces & torque for iteration
 	a.prepare=function(self,dt)
 		-- add gravity
-		-- v_add(self.force,{0,-9.8*self.mass,0})
+		v_add(self.force,{0,-9.8*self.mass,0})
 	
 		-- inverse inertia tensor
 		self.i_inv=m_x_m(m_x_m(self.m,self.ibody_inv),m_transpose(self.m))
@@ -911,13 +895,13 @@ function world:update()
 		-- multiple iterations
 		-- required to fix deep contacts
 		for i=1,5 do
-			c:solve()			
+			c:solve()
 		end
 	end
 	
 	-- move bodies
 	for _,a in pairs(physic_actors) do
-		a:integrate(dt)		
+		a:integrate(dt)
 	end
 end
 
@@ -933,15 +917,13 @@ function make_cam(f)
 		track=function(self,pos,angle)
 			self.pos=v_clone(pos)
 			self.lookat=v_clone(pos)
-			angle=max(angle,0.02)
 			self.c,self.s=cos(angle),-sin(angle)
 			v_add(self.pos,{0,self.dist*self.s,self.dist*self.c})
 		end,
 		project=function(self,x,y,z)
 			x-=self.lookat[1]
 			local tmpy=y
-			y=0
-			y-=self.lookat[2]
+			y=-self.lookat[2]
 			z-=self.lookat[3]
 			z,y=self.c*z+self.s*y,-self.s*z+self.c*y
 
@@ -966,7 +948,7 @@ _g.update_part=function(self)
 	if p[2]<h then
 		p[2]=h
 		-- todo: proper reflection vector
-		v_scale(self.v,0.9)
+		v_scale(self.v,0.8)
 	end
 	
 	-- force damping
@@ -995,14 +977,6 @@ _g.draw_part=function(self)
 	end
 end
 
-_g.die_blt=function(self)
-	make_part(self.die_part or "flash",self.pos,v_zero)
-	--make_blast(self.pos)
-	
-	-- to be removed from set
-	return false
-end
-
 all_parts=json_parse'{"smoke":{"rnd":{"r":[0.4,0.6],"c":[5,6,7],"dly":[24,32]},"frame":0,"dv":0.9,"dr":-0.05,"kind":0}}'
 
 function make_part(part,p,v)
@@ -1013,8 +987,8 @@ function make_part(part,p,v)
 	return pt
 end
 
--- map helpers (marching codes, height map, normal map)
-local qmap,hmap,nmap={},{},{}
+-- map helpers (marching codes, height map, normal map cache)
+local qmap,hmap,ncache={},{},{}
 function safe_index(i,j)
 	return bor(band(i,0x7f),shl(band(j,0x7f),7))
 end
@@ -1044,34 +1018,11 @@ function get_altitude(x,z)
 	return lerp(h0,h1,dz)
 end
 
-function draw_debug_plane(x,z)
-	-- cell
-	local dx,dz=shr(x%ground_scale,ground_shift),shr(z%ground_scale,ground_shift)
-	local i,j=flr(shr(band(x,0x7f),ground_shift)),flr(shr(band(z,0x7f),ground_shift))
-	local v={}
-	if dx>dz then
-		add(v,{i*ground_scale,get_height(i,j),j*ground_scale})
-		add(v,{(i+1)*ground_scale,get_height(i+1,j),j*ground_scale})
-		add(v,{(i+1)*ground_scale,get_height(i+1,j+1),(j+1)*ground_scale})
-	else
-		add(v,{(i+1)*ground_scale,get_height(i+1,j+1),(j+1)*ground_scale})
-		add(v,{i*ground_scale,get_height(i,j),j*ground_scale})
-		add(v,{i*ground_scale,get_height(i,j+1),(j+1)*ground_scale})
-	end
-	local v0=v[#v]
-	local x0,y0,z0,w0=cam:project(v0[1],v0[2],v0[3])
-	for i=1,#v do
-		local v0=v[i]
-		local x1,y1,z1,w1=cam:project(v0[1],v0[2],v0[3])
-		line(x0,y0,x1,y1,8)
-		x0,y0=x1,y1
-	end
-	print(i.."/"..j,2,2,7)
-end
+
 -- get map normal
 function get_normal(x,z)
 	local dx,dz=shr(x%ground_scale,ground_shift),shr(z%ground_scale,ground_shift)
-	local i,j=flr(shr(band(x,0x7f),ground_shift)),flr(shr(band(z,0x7f),ground_shift))	
+	local i,j=flr(shr(band(x,0x7f),ground_shift)),flr(shr(band(z,0x7f),ground_shift))
 	local h=hmap[safe_index(i,j)]
 	if dx>dz then
 		local n0=make_v_cross(
@@ -1084,7 +1035,7 @@ function get_normal(x,z)
 		{0,hmap[safe_index(i,j+1)]-h,ground_scale},
 		{ground_scale,hmap[safe_index(i+1,j+1)]-h,ground_scale})
 	v_normz(n1)
-	return n1				
+	return n1
 end
 
 function draw_tex_quad(a,b,sx,sy)
@@ -1153,7 +1104,7 @@ function update_ground()
 		for j=j0-9,j0+3 do
 			local cy=band(j,0x7f)
 			local t=ground_actors[cx+cy*128]
-			if t and not t.disabled then
+			if t then
 				t:update(i,j)
 				add(active_ground_actors,t)
 			 add(drawables,t)
@@ -1162,104 +1113,94 @@ function update_ground()
 	end
 end
 
+
 function draw_ground(self)
-	-- grid width extend
 	local imin,imax=-6,6
 	local cx,cz=cam.lookat[1],cam.lookat[3]
 	-- cell x/z ratio
 	local dx,dz=cx%ground_scale,cz%ground_scale
 	-- cell coordinates
-	local nx,ny=flr(shr(cx,ground_shift)),flr(shr(cz,ground_shift))
+	local nx,ny=flr(shr(band(cx,0x7f),ground_shift)),flr(shr(band(cz,0x7f),ground_shift))
 	
-	-- project grid
+	-- project anchor points
 	local p={}
 	-- grid depth extent
 	for j=-7,5 do
-		local row={}
-		local nj=ny+j
-		for i=imin,imax do
-			local ni=nx+i
-			local h,q=get_height(ni,nj),get_raw_qcode(ni,nj)
-		 -- compute grid points centered on lookat pos
-			local xx,zz=-dx+cx+shl(i,ground_shift),-dz+cz+shl(j,ground_shift)
-			local x,y,z,w=cam:project(xx,h,zz)
-			add(row,{flr(x),flr(y),z,w,x=xx,y=h,z=zz,q=q,nj=nj})
-		end
-		add(p,row)
+	 -- project leftmost grid points
+		local x,y,z,w=cam:project(-dx+cx+shl(imin,ground_shift),0,-dz+cz+shl(j,ground_shift))
+		add(p,{x,y,z,w,ny+j})
 	end
+	
 	-- move to 0-1 range
 	dx/=ground_scale
 	dz/=ground_scale
 	
-	local r0=p[1]
-	local nj=ny-9
+	local v0=p[1]
+	local w0,nj=v0[4],v0[5]
+	local dw0=shl(w0,ground_shift)
 	for j=2,#p do
-		local r1=p[j]
-		local v0,v1,q0=r0[1],r1[1],r0[1].q
-		-- strip off screen?
-		if v0[1]<127 then
- 		for i=2,#r1 do
- 			local v3,v2,q3=r0[i],r1[i],r0[i].q
- 			local c_hi,c_lo,c_dither=get_q_colors(q0)
- 			local q_code=band(q0,0xff)
- 			
- 			fillp(dither_pat2[c_dither])
- 			-- left/right clipping
-				local x0,y0=v0[1],v0[2]
-				local x1,y1=v1[1],v1[2]
-				local x3,y3=v3[1],v3[2]
-				local x2,y2=v2[1],v2[2]
+		local v1=p[j]
+		local w1=v1[4]
+		local dw1=shl(w1,ground_shift)
+		local x0,x1=v0[1],v1[1]
+		local x2,x3=v1[1]+dw1,v0[1]+dw0
+		
+		-- offset to grid space
+		local ni=nx+imin
+		local h0,h1=get_height(ni,nj),get_height(ni,nj+1)
+		local y0,y1=flr(v0[2]-w0*h0),flr(v1[2]-w1*h1)
+		for i=imin,imax do
+			local q=get_raw_qcode(ni,nj)
+			local h2,h3=get_height(ni+1,nj+1),get_height(ni+1,nj)
+			local y2,y3=flr(v1[2]-w1*h2),flr(v0[2]-w0*h3)
 
-				if i==2 then
-			  x0,y0=lerp(v0[1],v3[1],dx),lerp(v0[2],v3[2],dx)
-				 x1,y1=lerp(v1[1],v2[1],dx),lerp(v1[2],v2[2],dx)
-				elseif i==#r1 then
-				 x3,y3=lerp(v0[1],v3[1],dx),lerp(v0[2],v3[2],dx)
-				 x2,y2=lerp(v1[1],v2[1],dx),lerp(v1[2],v2[2],dx)
-				end
-				
-				-- depth cliping
-				if j==2 then
-					x0,y0=lerp(x0,x1,dz),lerp(y0,y1,dz)
-					x3,y3=lerp(x3,x2,dz),lerp(y3,y2,dz)
-				elseif j==#p then
-					x1,y1=lerp(x0,x1,dz),lerp(y0,y1,dz)
-					x2,y2=lerp(x3,x2,dz),lerp(y3,y2,dz)
-				end
-						
+		 -- in screen tile?
+		 if x3>0 then
+		 -- left/right cliping
+		 if i==imin then
+			  x0,y0=lerp(x0,x3,dx),lerp(y0,y3,dx)
+				 x1,y1=lerp(x1,x2,dx),lerp(y1,y2,dx)
+			elseif i==imax then
+				 x3,y3=lerp(x0,x3,dx),lerp(y0,y3,dx)
+				 x2,y2=lerp(x1,x2,dx),lerp(y1,y2,dx)
+			end
+			-- depth cliping
+			if j==2 then
+				x0,y0=lerp(x0,x1,dz),lerp(y0,y1,dz)
+				x3,y3=lerp(x3,x2,dz),lerp(y3,y2,dz)
+			elseif j==#p then
+				x1,y1=lerp(x0,x1,dz),lerp(y0,y1,dz)
+				x2,y2=lerp(x3,x2,dz),lerp(y3,y2,dz)
+			end
+ 			local c_hi,c_lo,c_dither=get_q_colors(q)
+ 			fillp(dither_pat2[c_dither])
+ 			
+ 			local q_code=band(q,0xf)
  			if q_code==1 or q_code==4 then
- 				trifill(x0,y0,x2,y2,x1,y1,c_hi)		
+ 				trifill(x0,y0,x2,y2,x1,y1,c_hi)
  				trifill(x0,y0,x2,y2,x3,y3,c_lo)
- 				
  			elseif q_code==9 then
- 				draw_tex_quad({x0,y0,0,v0[4]},{x1,y1,0,v1[4]},c_hi,c_lo)
+ 				draw_tex_quad({x0,y0,0,w0},{x1,y1,0,w1},shr(band(q,0xfff0),4))
  			else
  				trifill(x1,y1,x3,y3,x0,y0,c_hi)
  				trifill(x1,y1,x3,y3,x2,y2,c_lo)
  			end
- 			
- 			--pset(v0[1],v0[2],1)
- 			--[[
- 			line(v0[1],v0[2],v3[1],v3[2],1)
- 			line(v0[1],v0[2],v1[1],v1[2],12)
- 			line(v0[1],v0[2],v2[1],v2[2],12)
-			 ]]
-			 
-			 --[[
- 			local n=v_clone(n0)
- 			v_add(n,{v0.x,v0.y,v0.z})
- 			local x,y,z,w=cam:project(n[1],n[2],n[3])
- 			line(v0[1],v0[2],x,y,8)
- 			]]
- 			v0,v1,q0=v3,v2,q3
- 		end
- 	end
- 		fillp()
+			end
+				
+			-- no need to go further, tile is not visible
+			if(x0>127) break
+			
+			x0,x1,y0,y1=x3,x2,y3,y2
+			x2+=dw1
+			x3+=dw0
+			ni+=1
+		end
+		fillp()
 		draw_actors(nj)
-		r0=r1
+		
+		v0,w0,dw0=v1,w1,dw1
 		nj+=1
 	end
-	
 	-- last strip
 	draw_actors(nj)
 end
@@ -1349,8 +1290,6 @@ function _draw()
  ]]
 	draw_vector(plyr.m,plyr.pos,get_normal(plyr.pos[1],plyr.pos[3]),12)
 	draw_vector(plyr.m,plyr.pos,{0,get_altitude(plyr.pos[1],plyr.pos[3])-plyr.pos[2],0},13)
-	
-	--draw_debug_plane(plyr.pos[1],plyr.pos[3])
 end
 
 -- main
@@ -1383,8 +1322,8 @@ function _init()
 		is_solid(i,j+1,level,margin)
 	end
 	-- q binary layout
-	-- 0xf0: dither pattern
-	-- 0x0f: q code
+	-- 0x0f00: dither pattern
+	-- 0x00ff: q code
 	-- 0x0.00ff: lo color
 	-- 0x0.ff00: hi color
 	local set_q_colors=function(q,lo,hi,n)
@@ -1478,6 +1417,10 @@ function _init()
 		end
 	end
 	
+	local shade=function(lvl,c)
+		return bor(shl(sget(max(lvl-1)+16,c),4),sget(lvl+16,c))
+	end
+	
 	-- terrain shading
 	for j=0,63 do
 		for i=0,63 do
@@ -1487,14 +1430,11 @@ function _init()
 				-- tile
 				local q=qmap[k]
 				local hi,lo=get_q_colors(q)
-				-- get floating part
-				local darken=(j%2==0) and 0 or 1
-				darken+=((i%2==0) and 0 or 1)
-				local dither=1+darken
-				c=1
-				lo=bor(shl(sget(max(c-1)+16,lo),4),sget(c+16,lo))
-				hi=bor(shl(sget(max(c-1)+16,hi),4),sget(c+16,hi))
-				qmap[k]=set_q_colors(band(0xff,q),hi,lo,dither)
+				-- stripping pattern
+				local strip=(j%2==0) and 0 or 1
+				strip+=((i%2==0) and 0 or 1)
+				hi,lo=shade(1,hi),shade(1,lo)
+				qmap[k]=set_q_colors(band(0xff,q),hi,lo,1+strip)
 			end
 		end
 	end
