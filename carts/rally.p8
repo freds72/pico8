@@ -480,9 +480,9 @@ function make_bbox(model)
 	local v={}
 	for i=0,7 do
 		local v1={
-			one_if(band(0x1,i))*size[1],
-			one_if(band(0x2,i))*size[2],
-			one_if(band(0x4,i))*size[3],
+			one_if(band(0x2,i))*size[1],
+			one_if(band(0x4,i))*size[2],
+			one_if(band(0x1,i))*size[3],
 			-- contact time
 			contact_t=-99,
 			-- faces (reverse lookup)
@@ -518,7 +518,6 @@ function make_bbox(model)
 				v_add(p,pos)
 				local x,y,z,w=cam:project(p[1],p[2],p[3])
 				circfill(x,y,2,6)
-				print(i,x+2,y-4,7)
 			end
 		end}
 end
@@ -526,7 +525,8 @@ end
 -- models & rendering
 local all_models=json_parse'{"audi":{}}'
 local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]'
-local dither_pat2={0xffff,0xa5a5,0x0000}
+local dither_pat2=json_parse'[0xffff,0xa5a5,0x0000]'
+
 function draw_model(model,m,pos)
 
 	-- cam pos in object space
@@ -615,16 +615,6 @@ _g.control_plyr=function(self)
 		v_add(pos,m_fwd(plyr.m),-6)
 		self:add_force(force,pos)
  end
-
-	-- dampers
-	local h=get_altitude(self.pos[1],self.pos[3])
-	h-=self.pos[2]
-	if h<0 then
-		local ratio=lerp(1,0,smoothstep(-h/3))
-		local force=v_clone(v_up)
-		v_scale(force,-ratio*9.8*self.mass_inv*30)
-		self:add_force(force,self.pos)
-	end
 	
 	-- accelerate
 	if btn(2) then
@@ -753,13 +743,12 @@ function make_ground_contact(a,p,n,d)
 
 			local vn=v_dot(dv,n)
 			local lambda=-self.nm*(vn+self.bias)
-  	--local lambda=-self.nm*(vn)		
   	
 			local tempn=self.nimpulse
 			self.nimpulse=max(tempn+lambda)
 			lambda=self.nimpulse-tempn
-			self.lambda=lambda
 			
+			-- impulse too small
 			if(lambda<k_small) return
   	-- correct linear velocity
 			v_scale(n,lambda)			
@@ -846,8 +835,7 @@ function make_rigidbody(a)
 				depth=v_dot(n,{0,depth,0})
 				-- deep enough?
 				if depth>-k_small then
-					-- get contact normal
-					
+					-- get contact normal					
 					local ct=make_ground_contact(self,p,n,depth)
 					if ct then
 						add(contacts,ct)
@@ -857,14 +845,6 @@ function make_rigidbody(a)
 					end
 				end
 			end
-		end
-	end
-	-- override die (if any)
-	local _die=a.die
-	if _die then
-		a.die=function(self)
-			del(physic_actors,self)
-			_die(self)
 		end
 	end
 	-- register rigid bodies
@@ -1113,14 +1093,13 @@ function update_ground()
 	end
 end
 
-
 function draw_ground(self)
 	local imin,imax=-6,6
 	local cx,cz=cam.lookat[1],cam.lookat[3]
 	-- cell x/z ratio
 	local dx,dz=cx%ground_scale,cz%ground_scale
 	-- cell coordinates
-	local nx,ny=flr(shr(band(cx,0x7f),ground_shift)),flr(shr(band(cz,0x7f),ground_shift))
+	local nx,ny=flr(shr(cx,ground_shift)),flr(shr(cz,ground_shift))
 	
 	-- project anchor points
 	local p={}
@@ -1164,6 +1143,7 @@ function draw_ground(self)
 				 x3,y3=lerp(x0,x3,dx),lerp(y0,y3,dx)
 				 x2,y2=lerp(x1,x2,dx),lerp(y1,y2,dx)
 			end
+
 			-- depth cliping
 			if j==2 then
 				x0,y0=lerp(x0,x1,dz),lerp(y0,y1,dz)
@@ -1180,7 +1160,7 @@ function draw_ground(self)
  				trifill(x0,y0,x2,y2,x1,y1,c_hi)
  				trifill(x0,y0,x2,y2,x3,y3,c_lo)
  			elseif q_code==9 then
- 				draw_tex_quad({x0,y0,0,w0},{x1,y1,0,w1},shr(band(q,0xfff0),4))
+ 				draw_tex_quad({x0,y0,0,w0},{x1,y1,0,w1},c_hi,c_lo)
  			else
  				trifill(x1,y1,x3,y3,x0,y0,c_hi)
  				trifill(x1,y1,x3,y3,x2,y2,c_lo)
@@ -1190,7 +1170,7 @@ function draw_ground(self)
 			-- no need to go further, tile is not visible
 			if(x0>127) break
 			
-			x0,x1,y0,y1=x3,x2,y3,y2
+			x0,y0,x1,y1=x3,y3,x2,y2
 			x2+=dw1
 			x3+=dw0
 			ni+=1
@@ -1254,11 +1234,9 @@ function _draw()
 	zbuf_sort()
 	draw_ground()
 	
-	--[[
 	for _,a in pairs(physic_actors) do
 		a.bbox:draw(a.m,a.pos)
 	end
-	]]
 	
 	--[[
 	for _,c in pairs(world.contacts) do
@@ -1271,6 +1249,8 @@ function _draw()
  
 	rectfill(0,0,127,8,8)
 	print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)
+
+	print(plyr.h,2,18,7)	
 	
 	--[[
 	-- debug
@@ -1353,7 +1333,7 @@ function _init()
 				local w,k=hweights[k],idx+idx_offsets[k]
 				
 				local h=w[1]*get_noise(i,j)+w[2]*get_noise(i,j+1)+w[3]*get_noise(i+1,j)+w[4]*get_noise(i+1,j+1)
-				hmap[k]=h/4
+				hmap[k]=h/2
 			end
 		end
 	end
