@@ -130,8 +130,9 @@ function zbuf_sort()
  zbuf={}
 	local ci,cj=flr(shr(cam.lookat[1],ground_shift)),flr(shr(cam.lookat[3],ground_shift))
 	for _,d in pairs(drawables) do
-		-- find cell location
+		-- find cell location		
 		local di,dj=flr(shr(d.pos[1],ground_shift)),flr(shr(d.pos[3],ground_shift))
+		-- todo: incorrect
 		if abs(di-ci)<6 and abs(dj-cj)<10 then
 			-- safe index
 			dj=band(dj,0x7f)			
@@ -455,60 +456,13 @@ function m_from_q(q)
 		xz+wy,yz-wx,1-(xx+yy)}
 end
 
--- bounding box
-function make_bbox(model)
-	local one_if=function(cond)
-		return cond>0 and 1 or 0
-	end
+-- model bounding box
+function get_modelsize(model)
 	local vmin,vmax={32000,32000,32000},{-32000,-32000,-32000}
 	for _,v in pairs(model.v) do
 		vmin,vmax=v_min(vmin,v),v_max(vmax,v)
 	end
-	local size=make_v(vmin,vmax)
-	-- generate vertices
-	local v={}
-	for i=0,7 do
-		local v1={
-			one_if(band(0x2,i))*size[1],
-			one_if(band(0x4,i))*size[2],
-			one_if(band(0x1,i))*size[3],
-			-- contact time
-			contact_t=-99,
-			-- faces (reverse lookup)
-			f={}}
-		v_add(v1,vmin)
-		add(v,v1)
-	end
-	-- faces & normals
-	local faces=json_parse'[[1,5,6,2],[1,5,7,3],[3,4,8,7],[2,6,8,4],[1,3,4,2],[5,6,8,7]]'
-	local normals={}
-	for i=1,#faces do
-		local f=faces[i]
-		local n=make_v_cross(make_v(v[f[1]],v[f[2]]),make_v(v[f[1]],v[f[3]]))
-		v_normz(n)
-		add(normals,n)
-		-- assign face indices to vertices
-		for _,vi in pairs(f) do
-			add(v[vi].f,i)
-		end
-	end 
-	return {
-		size=size,
-		min=vmin,
-		max=vmax,
-		v=v,
-		f=faces,
-		n=normals,
-		-- debug only
-		draw=function(self,m,pos)
-			for i=1,#self.v do
-				local p=self.v[i]
-				p=m_x_v(m,p)
-				v_add(p,pos)
-				local x,y,z,w=cam:project(p[1],p[2],p[3])
-				circfill(x,y,2,6)
-			end
-		end}
+ return make_v(vmin,vmax)
 end
 
 -- models & rendering
@@ -573,7 +527,7 @@ function draw_model_shadow(model,m,pos)
 	m_inv_x_v(m,l)
 	
 	-- faces
-	local faces,p={},{}
+	local p={}
 	for i=1,#model.f do
 		local f,n=model.f[i],model.n[i]
 		-- viz calculation
@@ -581,39 +535,38 @@ function draw_model_shadow(model,m,pos)
 			-- project vertices
 			for _,vi in pairs(f.vi) do
 				if not p[vi] then
-					local v=model.v[vi]
-					v=m_x_v(m,v)
+					local v=m_x_v(m,model.v[vi])
 					v_add(v,pos)
 					v[2]=get_altitude(v[1],v[3])
 					local x,y,z,w=cam:project(v[1],v[2],v[3])
 					p[vi]={x,y,z,w}
 				end
 			end
-			-- register faces
-			add(faces,f)
-		end
-	end
-	-- draw faces using projected points
-	for _,f in pairs(faces) do
-		local p0=p[f.vi[1]]
-	 	for i=2,#f.vi-1 do
-		 	local p1,p2=p[f.vi[i]],p[f.vi[i+1]]
-		 	trifill(p0[1],p0[2],p1[1],p1[2],p2[1],p2[2],1)
+			-- draw faces using projected points
+			-- (no need to sort)
+			local p0=p[f.vi[1]]
+		 	for i=2,#f.vi-1 do
+			 	local p1,p2=p[f.vi[i]],p[f.vi[i+1]]
+		 		trifill(p0[1],p0[2],p1[1],p1[2],p2[1],p2[2],1)
+			end			
 		end
 	end
 end
 
-function add_tireforce(self,v,offset)
+function add_tireforce(self,v,offset,scale)
+ -- vector to world
 	v=m_x_v(self.m,v)
 	
 	-- todo: clamp
 	--local ratio=mid(5*v_dot(force,self.v),-5,5)
-	local ratio=v_dot(v,self.v)
-	v_scale(v,-ratio*self.mass_inv*30)
+	local ratio=scale or -v_dot(v,self.v)
+	-- wheels on ground?
+	ratio*=self.traction_ratio
+	v_scale(v,ratio*self.mass_inv*30)
 
 	-- application point (world space)
 	local pos=v_clone(self.pos)
-	v_add(pos,fwd,offset)
+	v_add(pos,m_fwd(self.m),offset)
 	self:add_force(v,pos)
 end
 
@@ -622,17 +575,15 @@ _g.control_plyr=function(self)
 	if(btn(0)) turn=1
 	if(btn(1)) turn=-1
 
-
+ --[[
 	if(btn(2)) z=-1
 	if(btn(3)) z=1
 	plyr.pos[1]-=turn/4
 	plyr.pos[3]+=z/4
-
+ ]]
  
 	self.turn+=turn/2
-	local fwd=m_fwd(self.m)
 	
-	--[[
 	if v_dot(self.v,self.v)>k_small then
 		-- steering angle
 		local angle=0.25+0.1*self.turn/2.33
@@ -640,21 +591,14 @@ _g.control_plyr=function(self)
 		-- rear wheels
 		add_tireforce(self,v_right,-3)
 	end
-	]]
+
 	-- accelerate
 	if btn(2) then
-		local force=v_clone(fwd)
-		v_scale(force,12)
-		self:add_force(force,self.pos)
+		add_tireforce(self,v_fwd,-1,12)		
 	end
 	-- brake
 	if btn(3) then
-		add_tireforce(self,v_fwd,0)
-		local force=v_clone(fwd)
-		-- braking = friction
-		local ratio=v_dot(force,self.v)
-		v_scale(force,-ratio*self.mass_inv*30)
-		self:add_force(force,self.pos)
+		add_tireforce(self,v_fwd,0,-4)
 	end
 	
 	if btn(4) or btn(5) then
@@ -674,12 +618,13 @@ _g.update_plyr=function(self)
 	
 	for i=1,4 do
 		local v=self.bbox.v[i]
-		if time_t-v.contact_t<5 then
+		if v.contact_t and time_t-v.contact_t<5 then
 			-- contact quality
 			local r=max(v_dot(up,v.n))
 			self.traction+=r
 		end
 	end
+	self.traction_ratio=self.traction/20
 	
 	--make_part("smoke",pos,v_up)
 	return true
@@ -689,8 +634,7 @@ _g.draw_plyr_shadow=function(self)
 	draw_model_shadow(all_models["audi_bbox"],self.m,self.pos)
 end
 
-
-local all_actors=json_parse'{"plyr":{"model":"audi","hardness":0.02,"mass":16,"turn":0,"traction":0,"control":"control_plyr","update":"update_plyr","draw_shadow":"draw_plyr_shadow"},"tree":{"model":"tree","update":"nop","rnd":{"angle":[0,1]}}}'
+local all_actors=json_parse'{"plyr":{"model":"audi","hardness":0.02,"mass":16,"turn":0,"traction":0,"traction_ratio":0,"control":"control_plyr","update":"update_plyr","draw_shadow":"draw_plyr_shadow"},"tree":{"model":"tree","update":"nop","rnd":{"angle":[0,1]}}}'
 
 function draw_actor(self)
 	draw_model(self.model,self.m,self.pos)
@@ -800,12 +744,12 @@ end
 
 -- rigid body extension for a given actor
 -- actor must have a 3d model
-function make_rigidbody(a)
+function make_rigidbody(a,bbox)
 	local rb={
 		force=v_zero(),
 		torque=v_zero(),
 		-- bounding box
-		bbox=make_bbox(a.model),
+		bbox=bbox,
 		i_inv=make_m(),
 		v=v_zero(),
 		omega=v_zero(),
@@ -874,12 +818,13 @@ function make_rigidbody(a)
 	}
 	
 	-- compute inertia tensor
-	local size=v_sqr(rb.bbox.size)
+	local size=v_sqr(get_modelsize(bbox))
 	local ibody=make_m(size[2]+size[3],size[1]+size[3],size[1]+size[2])
 	m_scale(ibody,a.mass/12)
 	
 	-- invert 
 	rb.ibody_inv=m_inv(ibody)
+	
 	-- register rigid bodies
 	return add(physic_actors,clone(rb,a))
 end
@@ -1065,6 +1010,18 @@ function draw_tex_quad(a,b,sx,sy)
 	palt()
 end
 
+function draw_htex_quad(a,b,sx,sy)
+	local t,invdy,wa,wb=0,1/(b[1]-a[1]),a[4],b[4]
+	for x=a[1],b[1] do
+		local y,w=lerp(a[2],b[2],t),lerp(wa,wb,t)
+		-- persp correction
+		local v=t*wb/w
+		sspr(sx+16*v,sy,1,16,x,y-shl(w,1),1,shl(w,1))
+		t+=invdy
+	end
+end
+
+
 -- draw actors on strip j
 function draw_actors(j)
 	local bucket=zbuf[band(j-1,0x7f)]
@@ -1085,7 +1042,7 @@ function update_ground()
 	local i0,j0=flr(shr(pos[1],ground_shift)),flr(shr(pos[3],ground_shift))
 	for i=i0-6,i0+6 do
 		local cx=band(i,0x7f)
-		for j=j0-9,j0+3 do
+		for j=j0-7,j0+5 do
 			local cy=band(j,0x7f)
 			local t=ground_actors[cx+cy*128]
 			if t then
@@ -1139,23 +1096,27 @@ function draw_ground(self)
 
 		 -- in screen tile?
 		 if x3>0 then
-		 -- left/right cliping
-		 if i==imin then
-			  x0,y0=lerp(x0,x3,dx),lerp(y0,y3,dx)
-				 x1,y1=lerp(x1,x2,dx),lerp(y1,y2,dx)
-			elseif i==imax then
-				 x3,y3=lerp(x0,x3,dx),lerp(y0,y3,dx)
-				 x2,y2=lerp(x1,x2,dx),lerp(y1,y2,dx)
-			end
+ 		 -- left/right cliping
 
-			-- depth cliping
-			if j==2 then
-				x0,y0=lerp(x0,x1,dz),lerp(y0,y1,dz)
-				x3,y3=lerp(x3,x2,dz),lerp(y3,y2,dz)
-			elseif j==#p then
-				x1,y1=lerp(x0,x1,dz),lerp(y0,y1,dz)
-				x2,y2=lerp(x3,x2,dz),lerp(y3,y2,dz)
-			end
+ 		 if i==imin then
+ 			 x0,y0=lerp(x0,x3,dx),lerp(y0,y3,dx)
+ 				x1,y1=lerp(x1,x2,dx),lerp(y1,y2,dx)
+ 			elseif i==imax then
+ 				x3,y3=lerp(x0,x3,dx),lerp(y0,y3,dx)
+ 				x2,y2=lerp(x1,x2,dx),lerp(y1,y2,dx)
+ 			end
+    
+ 			-- depth cliping
+ 			--[[
+ 			if j==2 then
+ 				x0,y0=lerp(x0,x1,dz),lerp(y0,y1,dz)
+ 				x3,y3=lerp(x3,x2,dz),lerp(y3,y2,dz)
+ 			elseif j==#p then
+ 				x1,y1=lerp(x0,x1,dz),lerp(y0,y1,dz)
+ 				x2,y2=lerp(x3,x2,dz),lerp(y3,y2,dz)
+ 			end
+ 			]]
+ 			
  			local c_hi,c_lo,c_dither=get_q_colors(q)
  			fillp(dither_pat2[c_dither])
  			
@@ -1163,12 +1124,19 @@ function draw_ground(self)
  			if q_code==1 or q_code==4 then
  				trifill(x0,y0,x2,y2,x1,y1,c_hi)
  				trifill(x0,y0,x2,y2,x3,y3,c_lo)
+
+				 if c_hi!=c_lo then
+						draw_htex_quad({x0,y0,0,w0},{x2,y2,0,w1},40,16)
+					end
  			elseif q_code==9 then
  				draw_tex_quad({x0,y0,0,w0},{x1,y1,0,w1},c_hi,c_lo)
  			else
- 				trifill(x1,y1,x3,y3,x0,y0,c_hi)
- 				trifill(x1,y1,x3,y3,x2,y2,c_lo)
- 			end
+	 			trifill(x1,y1,x3,y3,x0,y0,c_hi)
+	 			trifill(x1,y1,x3,y3,x2,y2,c_lo)
+				 if c_hi!=c_lo then
+						draw_htex_quad({x1,y1,0,w1},{x3,y3,0,w0},40,16)
+					end
+				end
 			end
 				
 			-- no need to go further, tile is not visible
@@ -1177,8 +1145,10 @@ function draw_ground(self)
 			x0,y0,x1,y1=x3,y3,x2,y2
 			x2+=dw1
 			x3+=dw0
+
 			ni+=1
-		end
+		end		
+		
 		fillp()
 		draw_actors(nj)
 		
@@ -1237,10 +1207,12 @@ function _draw()
 
 	zbuf_sort()
 	draw_ground()
-	
+
+	--[[	
 	for _,a in pairs(physic_actors) do
 		a.bbox:draw(a.m,a.pos)
 	end
+	]]
 	
 	--[[
 	for _,c in pairs(world.contacts) do
@@ -1254,7 +1226,7 @@ function _draw()
 	rectfill(0,0,127,8,8)
 	print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)
 
-	print(plyr.h,2,18,7)	
+	print(plyr.traction,2,18,7)	
 	
 	--[[
 	-- debug
@@ -1453,7 +1425,7 @@ function _init()
 
 	cam=make_cam(96)
 
-	plyr=make_rigidbody(make_actor("plyr",{32,4,32}))
+	plyr=make_rigidbody(make_actor("plyr",{32,4,32}),all_models["audi_bbox"])
 	
 end
 
@@ -1589,16 +1561,14 @@ __gfx__
 00000000000000000000000000000007700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000007700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000007700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000007700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000007700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000007700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000006666666666666666000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000007700000005555555555555555000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000007700000000001100000011000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000007700000000005500000055000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000007700000006666666666666666000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000007700000005555555555555555000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000001100000011000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000005500000055000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -1629,19 +1599,21 @@ __gfx__
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-3040c002f04110c409388607388607380909380909d88607d88607d80909d80927386ae8386a27a86ae8a86a0938d50738d509a8d507a8d5c869174769174769
-b8c869b8e8d78627d78627d709e8d70947e7bac8e7bae8d7f527d7f577386a77a86a98386a98a86a5738d557a8d5c8a8d5c838d507d8b74769b709d8b7c869b7
-09294607294609399507399519f7e619b7d619978619b74619f7261938461958861938d619f7b919b79919975919b71919f7f8193819195859193899f6f7e6f6
-b7d6f69786f6b746f6f726f63846f65886f638d6f6f7b9f6b799f69759f6b719f6f7f8f63819f65859f6389972e040e02061c117083670008040807031410819
-e8c000a040a04081a1e808d97000205020605270300788c7900070607080c002e1b008b8b99000505050104080720988c79000904090b0e1d157686aa0008040
-8040a0c0f878b99000d060d04212e0c1b10808e5700030403070b0901778b99000d040d0f03242e868d5800050605060012232f008b836700060406020e00107
-7836900010401050f0d0097836900011601182413162210869e79000504050728211f809377000704070526231271948c0006040605011210819c6c000514051
-61718108d7c7500061406151b1c108d74650008140817191a108d7d950002040203071611708c77000404040105181f808c77000906090d1f1a0a19108188a70
-003040309091712708d97000104010d0b151f808367000d140d1e102f108686a5000f140f102c0a0b8686aa0001240122201e02768d580004240423222120868
-d550006240625260211709377000824082728041e81948c000f040f05092b209f806901060406001c2a207f8069010924092a2c2b20839f59010e280e2d24333
-231303f219f786001063806353c3b3a393837319f7590010d380d3e3f30414243444f6f786001054805464748494a4b4c4f6f7590010722667080819b9e96738
-060808080a580a080808080a0a083808572606083808080608f9870608080a0808080a08e9c80826c808087996080608080608080628266708e9670808599926
-6738e9670808080a08080a08080608080626c808e9c8080a0808060808080a280a08080a080806080806080890c002f04110d0d0a1321080f667d52729d5f667
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+3040c002f04110c4693886a63886a6380969380969d886a6d886a6d80969d809d6386a39386ad6a86a39a86a6938d5a638d569a8d5a6a8d5196917f66917f669
+b81969b839d786d6d786d6d70939d70907e7ba09e7ba39d7f5d6d7f547386a47a86ad8386ad8a86a0738d507a8d509a8d50938d5a6d8b7f669b769d8b71969b7
+692946a62946693995a6399589f7e689b7d689978689b74689f7268938468958868938d689f7b989b79989975989b71989f7f889381989585989389986f7e686
+b7d686978686b74686f7268638468658868638d686f7b986b79986975986b71986f7f886381986585986389972e040e02061c1b6083670008040807031410819
+e8c000a040a04081a13908d9700020502060527030a688c7900070607080c002e1b008b8b99000505050104080726988c79000904090b0e1d107686aa0008040
+8040a0c05978b99000d060d04212e0c1b10808e5700030403070b090b678b99000d040d0f032423968d5800050605060012232f008b836700060406020e001a6
+7836900010401050f0d0697836900011601182413162210869e790005040507282114909377000704070526231c61948c0006040605011210819c6c000514051
+61718108d7c7500061406151b1c108d74650008140817191a108d7d95000204020307161b608c770004040401051815908c77000906090d1f1a0a19108188a70
+00304030909171d608d97000104010d0b1515908367000d140d1e102f108686a5000f140f102c0a009686aa0001240122201e0d668d580004240423222120868
+d55000624062526021c609377000824082728041491948c000f040f05092b269f806901060406001c2a2a6f8069010924092a2c2b20839f59010e280e2d24333
+231303f289f786001063806353c3b3a393837389f7590010d380d3e3f3041424344486f786001054805464748494a4b4c486f7590010723627080819b9d93748
+060808080a580a080808080a0a084808572606084808080608f9870608080a0808080a08c90908460908087996080608080608080628362708d9270808599936
+3748d9270808080a08080a080806080806460908c909080a0808060808080a280a08080a080806080806080890c002f04110d0d0a1321080f667d52729d5f667
 9a27290a1967d5e829d519679ae8290a60104010204030173818000030403040807008385a0000704070806050f8381800005040506020100838d50000304030
 70501008673800008040804020600829f700006006480808a8f90a4808080806080608080a0840f1d1010130b068083808c8080808a7086a08a7083808a8f8d8
 a88737a8870808f8d808873708877010301020302848f740003030302050e748f74000603060407048492830005030502010084828400070307040800849b730
