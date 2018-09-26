@@ -227,7 +227,7 @@ function make_v_cross(a,b)
 	return {ay*bz-az*by,az*bx-ax*bz,ax*by-ay*bx}
 end
 -- world axis
-local v_fwd,v_right,v_up,v_zero={0,0,1},{1,0,0},{0,1,0},{0,0,0}
+local v_fwd,v_right,v_up,v_zero={0,0,1},{1,0,0},{0,1,0},function() return {0,0,0} end
 
 function make_v(a,b)
 	return {
@@ -317,18 +317,7 @@ end
 
 -- generic matrix inverse
 function m_inv(me)
---[[
-0,1,2,3
-4,5,6,7,
-8,9,10,11,
-12,13,14,15
-
-1,2,3,
-4,5,6,
-7,8,9
-]]
-
-local te={
+	local te={
 	me[9]*me[5]-me[6]*me[8],
 	me[9]*me[2]+me[3]*me[8],
 	me[6]*me[2]-me[3]*me[5],
@@ -358,6 +347,7 @@ function m_transpose(m)
 		m[2],m[5],m[8],
 		m[3],m[6],m[9]}
 end
+-- matrix 
 function m_x_m(a,b)
 	local a11,a12,a13=a[1],a[4],a[7]
 	local a21,a22,a23=a[2],a[5],a[8]
@@ -366,7 +356,6 @@ function m_x_m(a,b)
 	local b21,b22,b23=b[2],b[5],b[8]
 	local b31,b32,b33=b[3],b[6],b[9]
 	
-
  return {
 		a11*b11+a12*b21+a13*b31,
 		a21*b11+a22*b21+a23*b31,
@@ -578,52 +567,89 @@ function draw_model(model,m,pos)
 	end
 end
 
+function draw_model_shadow(model,m,pos)
+	-- v_light dir in object space
+	local l=v_clone(v_light)
+	m_inv_x_v(m,l)
+	
+	-- faces
+	local faces,p={},{}
+	for i=1,#model.f do
+		local f,n=model.f[i],model.n[i]
+		-- viz calculation
+		if f.double_sided or v_dot(n,l)<0 then
+			-- project vertices
+			for _,vi in pairs(f.vi) do
+				if not p[vi] then
+					local v=model.v[vi]
+					v=m_x_v(m,v)
+					v_add(v,pos)
+					v[2]=get_altitude(v[1],v[3])
+					local x,y,z,w=cam:project(v[1],v[2],v[3])
+					p[vi]={x,y,z,w}
+				end
+			end
+			-- register faces
+			add(faces,f)
+		end
+	end
+	-- draw faces using projected points
+	for _,f in pairs(faces) do
+		local p0=p[f.vi[1]]
+	 	for i=2,#f.vi-1 do
+		 	local p1,p2=p[f.vi[i]],p[f.vi[i+1]]
+		 	trifill(p0[1],p0[2],p1[1],p1[2],p2[1],p2[2],1)
+		end
+	end
+end
+
+function add_tireforce(self,v,offset)
+	v=m_x_v(self.m,v)
+	
+	-- todo: clamp
+	--local ratio=mid(5*v_dot(force,self.v),-5,5)
+	local ratio=v_dot(v,self.v)
+	v_scale(v,-ratio*self.mass_inv*30)
+
+	-- application point (world space)
+	local pos=v_clone(self.pos)
+	v_add(pos,fwd,offset)
+	self:add_force(v,pos)
+end
+
 _g.control_plyr=function(self)
 	local turn,z=0,0
 	if(btn(0)) turn=1
 	if(btn(1)) turn=-1
 
- --[[
+
 	if(btn(2)) z=-1
 	if(btn(3)) z=1
 	plyr.pos[1]-=turn/4
 	plyr.pos[3]+=z/4
- ]]
+
  
 	self.turn+=turn/2
 	local fwd=m_fwd(self.m)
 	
+	--[[
 	if v_dot(self.v,self.v)>k_small then
-	 local angle=0.25+0.1*self.turn/2.33
-		local force=m_x_v(self.m,{-sin(angle),0,cos(angle)})
-		
-		--local ratio=mid(5*v_dot(force,self.v),-5,5)
-		local ratio=v_dot(force,self.v)
-		v_scale(force,-ratio*self.mass_inv*30)
-
-		-- application point (world space)
-		local pos=v_clone(self.pos)
-		v_add(pos,fwd,3)
-		self:add_force(force,pos)
-		
+		-- steering angle
+		local angle=0.25+0.1*self.turn/2.33
+		add_tireforce(self,{-sin(angle),0,cos(angle)},3)
 		-- rear wheels
-		force=m_right(self.m)
-		local ratio=v_dot(force,self.v)
-		v_scale(force,-ratio*self.mass_inv*30)
-		
-		-- application point (world space)
-		v_add(pos,m_fwd(plyr.m),-6)
-		self:add_force(force,pos)
- end
-	
+		add_tireforce(self,v_right,-3)
+	end
+	]]
 	-- accelerate
 	if btn(2) then
 		local force=v_clone(fwd)
 		v_scale(force,12)
 		self:add_force(force,self.pos)
 	end
-	-- brake		
+	-- brake
 	if btn(3) then
+		add_tireforce(self,v_fwd,0)
 		local force=v_clone(fwd)
 		-- braking = friction
 		local ratio=v_dot(force,self.v)
@@ -642,9 +668,10 @@ end
 
 _g.update_plyr=function(self)
 	local up=m_up(self.m)
-	-- damping
+	-- time decay
 	self.traction*=0.8
 	self.turn*=0.7
+	
 	for i=1,4 do
 		local v=self.bbox.v[i]
 		if time_t-v.contact_t<5 then
@@ -658,9 +685,14 @@ _g.update_plyr=function(self)
 	return true
 end
 
-local all_actors=json_parse'{"plyr":{"model":"audi","hardness":0.02,"mass":16,"turn":0,"traction":0,"control":"control_plyr","update":"update_plyr"},"tree":{"model":"tree","update":"nop","rnd":{"angle":[0,1]}}}'
+_g.draw_plyr_shadow=function(self)
+	draw_model_shadow(all_models["audi_bbox"],self.m,self.pos)
+end
 
-function draw_actor(self,x,y,z,w)
+
+local all_actors=json_parse'{"plyr":{"model":"audi","hardness":0.02,"mass":16,"turn":0,"traction":0,"control":"control_plyr","update":"update_plyr","draw_shadow":"draw_plyr_shadow"},"tree":{"model":"tree","update":"nop","rnd":{"angle":[0,1]}}}'
+
+function draw_actor(self)
 	draw_model(self.model,self.m,self.pos)
 end
 
@@ -676,6 +708,7 @@ function make_actor(src,p)
 	return add(actors,a)
 end
 
+-- note: limited to a single actor per tile
 function make_ground_actor(src,i,j)
 	local x,z=shl(i+rnd(),ground_shift),shl(j+rnd(),ground_shift)
 	local a=clone(all_actors[src],{
@@ -693,7 +726,7 @@ function make_ground_actor(src,i,j)
 end
 
 -- registers a ground collision
-function make_ground_contact(a,p,n,d)	
+function make_ground_contact(a,p,n,d)
 	local padot=a:pt_velocity(p)
 	local vrel=v_dot(n,padot)
 	-- resting condition?
@@ -766,89 +799,89 @@ function make_ground_contact(a,p,n,d)
 end
 
 -- rigid body extension for a given actor
+-- actor must have a 3d model
 function make_rigidbody(a)
-	a.force={0,0,0}
-	a.torque={0,0,0}
-	-- bounding box
-	a.bbox=make_bbox(a.model)
-	-- compute inertia tensor
-	size=v_sqr(a.bbox.size)
-	a.ibody=make_m(size[2]+size[3],size[1]+size[3],size[1]+size[2])
-	m_scale(a.ibody,a.mass/12)
-	a.mass_inv=1/a.mass
-	-- invert 
-	a.ibody_inv=m_inv(a.ibody)
-	a.i_inv=make_m()
-	a.v={0,0,0}
-	a.omega={0,0,0}
-	
-	-- world velocity
-	a.pt_velocity=function(self,p)
-		p=make_v_cross(self.omega,make_v(self.pos,p))
-		v_add(p,self.v)
-		return p
-	end
-
- 	-- register a force
- a.add_force=function(self,f,p)
-		v_add(self.force,f,self.mass)
-		v_add(self.torque,make_v_cross(make_v(self.pos,p),f))
- end
-	
-	-- apply forces & torque for iteration
-	a.prepare=function(self,dt)
-		-- add gravity
-		v_add(self.force,{0,-9.8*self.mass,0})
-	
-		-- inverse inertia tensor
-		self.i_inv=m_x_m(m_x_m(self.m,self.ibody_inv),m_transpose(self.m))
-
-		-- velocity
-		v_add(self.v,self.force,self.mass_inv*dt)
-
-		-- angular velocity
-		v_add(self.omega,m_x_v(self.i_inv,self.torque),dt)
+	local rb={
+		force=v_zero(),
+		torque=v_zero(),
+		-- bounding box
+		bbox=make_bbox(a.model),
+		i_inv=make_m(),
+		v=v_zero(),
+		omega=v_zero(),
+		mass_inv=1/a.mass,
+		-- world velocity
+		pt_velocity=function(self,p)
+			p=make_v_cross(self.omega,make_v(self.pos,p))
+			v_add(p,self.v)
+			return p
+		end,
+			-- register a force
+		add_force=function(self,f,p)
+			v_add(self.force,f,self.mass)
+			v_add(self.torque,make_v_cross(make_v(self.pos,p),f))
+		end,
+		-- apply forces & torque for iteration
+		prepare=function(self,dt)
+			-- add gravity
+			v_add(self.force,{0,-9.8*self.mass,0})
 		
-		-- damping
-		v_scale(self.v,1/(1+dt*0.4))
-		v_scale(self.omega,1/(1+dt*0.8))
-	end
-	a.integrate=function(self,dt)
-		v_add(self.pos,self.v,dt)
-		q_dydt(self.q,self.omega,dt)
-		self.m=m_from_q(self.q)
-		-- clear forces
-		self.force={0,0,0}
-		self.torque={0,0,0}
-	end
+			-- inverse inertia tensor
+			self.i_inv=m_x_m(m_x_m(self.m,self.ibody_inv),m_transpose(self.m))
 	
-	a.update_contacts=function(self,contacts)
-		local i=0
-		for _,v in pairs(self.bbox.v) do
-			-- to world space
-			local p=m_x_v(self.m,v)
-			v_add(p,self.pos)
-			local h=get_altitude(p[1],p[3])
-			local depth=h-p[2]
-			if depth>k_small then
-				local n=get_normal(p[1],p[3])
-				depth=v_dot(n,{0,depth,0})
-				-- deep enough?
-				if depth>-k_small then
-					-- get contact normal					
-					local ct=make_ground_contact(self,p,n,depth)
-					if ct then
-						add(contacts,ct)
-						-- record contact time
-						v.contact_t=time_t
-						v.n=n
+			-- velocity
+			v_add(self.v,self.force,self.mass_inv*dt)
+	
+			-- angular velocity
+			v_add(self.omega,m_x_v(self.i_inv,self.torque),dt)
+			
+			-- damping
+			v_scale(self.v,1/(1+dt*0.4))
+			v_scale(self.omega,1/(1+dt*0.8))
+		end,
+		integrate=function(self,dt)
+			v_add(self.pos,self.v,dt)
+			q_dydt(self.q,self.omega,dt)
+			self.m=m_from_q(self.q)
+			-- clear forces
+			self.force=v_zero()
+			self.torque=v_zero()
+		end,
+		update_contacts=function(self,contacts)
+			local i=0
+			for _,v in pairs(self.bbox.v) do
+				-- to world space
+				local p=m_x_v(self.m,v)
+				v_add(p,self.pos)
+				local h=get_altitude(p[1],p[3])
+				local depth=h-p[2]
+				if depth>k_small then
+					local n=get_normal(p[1],p[3])
+					depth=v_dot(n,{0,depth,0})
+					-- deep enough?
+					if depth>-k_small then
+						local ct=make_ground_contact(self,p,n,depth)
+						if ct then
+							add(contacts,ct)
+							-- record contact time
+							v.contact_t=time_t
+							v.n=n
+						end
 					end
 				end
 			end
 		end
-	end
+	}
+	
+	-- compute inertia tensor
+	local size=v_sqr(rb.bbox.size)
+	local ibody=make_m(size[2]+size[3],size[1]+size[3],size[1]+size[2])
+	m_scale(ibody,a.mass/12)
+	
+	-- invert 
+	rb.ibody_inv=m_inv(ibody)
 	-- register rigid bodies
-	return add(physic_actors,a)
+	return add(physic_actors,clone(rb,a))
 end
 
 -- physic world
@@ -1040,37 +1073,8 @@ function draw_actors(j)
 			d=d.obj
 			
 			-- draw shadow
-			if d.bbox then
- 			-- todo: quickhull
- 			local p,xmin,xmax,imin,imax={},32000,-32000
- 			for i=1,#d.bbox.v do
- 				local v=d.bbox.v[i]
- 				-- to world
- 				v=m_x_v(d.m,v)
- 				v_add(v,d.pos)
- 				-- altitude
- 				local h=get_altitude(v[1],v[3])
- 				local x,y,z,w=cam:project(v[1],h,v[3])
- 				if x>xmax then
- 					imax,xmax=i,x
- 				elseif x<xmin then
- 					imin,xmin=i,x
- 				end
- 				add(p,{x,y})
- 			end
- 			-- extreme points are on the convel hull
- 			-- trifill all other points
- 			if imin and imax then 
-  			local ymin,ymax=p[imin][2],p[imax][2]
-  			for i=1,#p do
-  				if i!=imin and i!=imax then
-  					trifill(xmin,ymin,xmax,ymax,p[i][1],p[i][2],1)
-  				end
-  			end
- 			end
- 		end
- 		
-		d:draw()
+			if (d.draw_shadow) d:draw_shadow()
+			d:draw()
 		end
 	end
 end
