@@ -548,7 +548,7 @@ function draw_model_shadow(model,m,pos)
 		 	for i=2,#f.vi-1 do
 			 	local p1,p2=p[f.vi[i]],p[f.vi[i+1]]
 		 		trifill(p0[1],p0[2],p1[1],p1[2],p2[1],p2[2],1)
-			end			
+			end
 		end
 	end
 end
@@ -559,7 +559,12 @@ function add_tireforce(self,v,offset,scale)
 	
 	-- todo: clamp
 	--local ratio=mid(5*v_dot(force,self.v),-5,5)
-	local ratio=scale or -v_dot(v,self.v)
+	local ratio,slide=scale,false
+	if not ratio then
+		ratio=-v_dot(v,self.v)
+		-- sliding?
+		slide=abs(self.traction_ratio*ratio)>1
+	end
 	-- wheels on ground?
 	ratio*=self.traction_ratio
 	v_scale(v,ratio*self.mass_inv*30)
@@ -568,6 +573,11 @@ function add_tireforce(self,v,offset,scale)
 	local pos=v_clone(self.pos)
 	v_add(pos,m_fwd(self.m),offset)
 	self:add_force(v,pos)
+	
+	--if slide then
+		add(pos,v_up)
+		make_part("smoke",pos)
+	--end
 end
 
 _g.control_plyr=function(self)
@@ -587,14 +597,14 @@ _g.control_plyr=function(self)
 	if v_dot(self.v,self.v)>k_small then
 		-- steering angle
 		local angle=0.25+0.1*self.turn/2.33
-		add_tireforce(self,{-sin(angle),0,cos(angle)},3)
+		add_tireforce(self,{-sin(angle),0,cos(angle)},1)
 		-- rear wheels
-		add_tireforce(self,v_right,-3)
+		add_tireforce(self,v_right,-1)
 	end
 
 	-- accelerate
 	if btn(2) then
-		add_tireforce(self,v_fwd,-1,12)		
+		add_tireforce(self,v_fwd,-1,12)
 	end
 	-- brake
 	if btn(3) then
@@ -881,6 +891,7 @@ function make_cam(f)
 		project=function(self,x,y,z)
 			x-=self.lookat[1]
 			local tmpy=y
+			-- fake 3d
 			y=-self.lookat[2]
 			z-=self.lookat[3]
 			z,y=self.c*z+self.s*y,-self.s*z+self.c*y
@@ -894,13 +905,14 @@ function make_cam(f)
 	return c
 end
 
--- particles & bullets
+-- particles
 _g.update_part=function(self)
 	if(self.t<time_t or self.r<0) return false
-	local p=self.pos
-	v_add(p,self.v,self.acc)
 	-- gravity
-	v_add(self.v,v_grav)
+	v_add(self.v,v_grav,self.g_scale)
+	-- update pos
+	local p=self.pos
+	v_add(p,self.v,0.1)
 	-- ground collision
 	local h=get_altitude(p[1],p[3])
 	if p[2]<h then
@@ -929,16 +941,16 @@ _g.draw_part=function(self)
 	 -- fire smoke
 		local s=flr(6*self.frame)
 		local c0,c1=sget(s,2),sget(max(s-1),2)
-		fillp(lerparray(dither_pat,1-self.frame))
+		fillp(lerparray(dither_pat,1-self.frame)+0x0.f)
 		circfill(x,y,w*self.r,bor(shl(c1,4),c0))
 		fillp()
 	end
 end
 
-all_parts=json_parse'{"smoke":{"rnd":{"r":[0.4,0.6],"c":[5,6,7],"dly":[24,32]},"frame":0,"dv":0.9,"dr":-0.05,"kind":0}}'
+all_parts=json_parse'{"smoke":{"rnd":{"r":[0.1,0.2],"c":[5,6,7],"dly":[12,18],"g_scale":[-0.03,-0.05]},"frame":0,"dv":0.9,"dr":0.05,"kind":0}}'
 
 function make_part(part,p,v)
-	local pt=add(parts,clone(all_parts[part],{pos=v_clone(p),v=v_clone(v),draw=_g.draw_part,c=c}))
+	local pt=add(parts,clone(all_parts[part],{pos=v_clone(p),v=v and v_clone(v) or v_zero(),draw=_g.draw_part,c=c}))
 	pt.t,pt.update=time_t+pt.dly,pt.update or _g.update_part
 	pt.df=1/pt.dly
 	if(pt.sfx) sfx_v(pt.sfx,p)
