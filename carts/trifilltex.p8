@@ -56,22 +56,20 @@ function _draw()
  trifill2(
 		{x=v[1][1],y=v[1][2],w=v[1][4],uv=points[1].uv},
 		{x=v[2][1],y=v[2][2],w=v[2][4],uv=points[2].uv},
-		{x=v[3][1],y=v[3][2],w=v[3][4],uv=points[3].uv},
-		11)
+		{x=v[3][1],y=v[3][2],w=v[3][4],uv=points[3].uv})
  trifill2(
 		{x=v[4][1],y=v[4][2],w=v[4][4],uv=points[4].uv},
 		{x=v[5][1],y=v[5][2],w=v[5][4],uv=points[5].uv},
-		{x=v[6][1],y=v[6][2],w=v[6][4],uv=points[6].uv},
-		11)
+		{x=v[6][1],y=v[6][2],w=v[6][4],uv=points[6].uv})
 	
-	--[[
+
+ --[[	
 	quadfill(
 		{x=v[1][1],y=v[1][2],w=v[1][4],uv=points[1].uv},
+		{x=v[6][1],y=v[6][2],w=v[6][4],uv=points[6].uv},
 		{x=v[2][1],y=v[2][2],w=v[2][4],uv=points[2].uv},
-		{x=v[5][1],y=v[5][2],w=v[5][4],uv=points[5].uv},
-		{x=v[3][1],y=v[3][2],w=v[3][4],uv=points[3].uv},
-		11)
-	]]
+ 	{x=v[3][1],y=v[3][2],w=v[3][4],uv=points[3].uv})
+ ]]
 	print(stat(1),2,2,7)
 end
 
@@ -450,47 +448,42 @@ function trifill2(a,b,c)
  end
 end
 
-function quadfill(v0,v1,v2,v3,c)
-	color(c)
+function quadfill(a,b,c,d)
  -- compute triangle bounding box
- local minx,miny=min(v0.x,min(v1.x,min(v2.x,v3.x))),min(v0.y,min(v1.y,min(v2.y,v3.y)))
- local maxx,maxy=max(v0.x,max(v1.x,max(v2.x,v3.x))),max(v0.y,max(v1.y,max(v2.y,v3.y)))
+ local minx,miny=min(a.x,min(b.x,min(c.x,d.x))),min(a.y,min(b.y,min(c.y,d.y)))
+ local maxx,maxy=max(a.x,max(b.x,max(c.x,d.x))),max(a.y,max(b.y,max(c.y,d.y)))
 
  -- clip against screen bounds
  minx,miny=max(minx),max(miny)
  maxx,maxy=min(maxx,127),min(maxy,127)
 
- local a01,b01=v0.y-v1.y,v1.x-v0.x
- local a12,b12=v1.y-v2.y,v2.x-v1.x
- local a23,b23=v2.y-v3.y,v3.x-v2.x
- local a30,b30=v3.y-v0.y,v0.x-v3.x
+ local a01,b01=a.y-b.y,b.x-a.x
+ local a12,b12=b.y-c.y,c.x-b.x
+ local a23,b23=c.y-d.y,d.x-c.x
+ local a30,b30=d.y-a.y,a.x-d.x
    
  local p={x=minx,y=miny}
-local w0_row = (v2.x - v1.x)*(p.y - v1.y) - (v2.y - v1.y)*(p.x - v1.x)
-	local w1_row = (v3.x - v2.x)*(p.y - v2.y) - (v3.y - v2.y)*(p.x - v2.x)
-	local w2_row = (v0.x - v3.x)*(p.y - v3.y) - (v0.y - v3.y)*(p.x - v3.x)
-	local w3_row = (v1.x - v0.x)*(p.y - v0.y) - (v1.y - v0.y)*(p.x - v0.x)
-
-	--[[
- local w0_row=orient2d(v1, v2, p)
- local w1_row=orient2d(v2, v3, p)
- local w2_row=orient2d(v3, v2, p)
- local w3_row=orient2d(v0, v1, p)
-	local area=1/orient2d(v0,v1,v2)
-	]]
+ local w0_row=(c.x-b.x)*(p.y-b.y)-(c.y-b.y)*(p.x-b.x)
+	local w1_row=(d.x-c.x)*(p.y-c.y)-(d.y-c.y)*(p.x-c.x)
+	local w2_row=(a.x-d.x)*(p.y-d.y)-(a.y-d.y)*(p.x-d.x)
+	local w3_row=(b.x-a.x)*(p.y-a.y)-(b.y-a.y)*(p.x-a.x)
+	
  -- rasterize
  for y=miny,maxy do
   local w0,w1,w2,w3=w0_row,w1_row,w2_row,w3_row
+  local u0,v0=a.uv[1]*a.w,a.uv[2]*a.w
+  local u1,v1=b.uv[1]*b.w,b.uv[2]*b.w
+  local u2,v2=c.uv[1]*c.w,c.uv[2]*c.w
+  local u3,v3=d.uv[1]*d.w,d.uv[2]*d.w
   local inout=false
  	for x=minx,maxx do 
    -- if p is on or inside all edges, render pixel.
-   if bor(w0,bor(w1,bor(w2,w3)))>=0 then
-			local z=64*(w0*v0.w+w1*v1.w+w2*v2.w+w3*v3.w)
-    local s=(w0*v0.uv[1]+w1*v1.uv[1]+w2*v2.uv[1]+w3*v3.uv[1])/z
-    local t=(w0*v0.uv[2]+w1*v1.uv[2]+w2*v2.uv[2]+w3*v3.uv[2])/z
+   if bor(w0,bor(w1,bor(w2,w3)))>0 then
+			 local z=1/(w0*a.w+w1*b.w+w2*c.w+w3*d.w)
+    local s,t=(w0*u0+w1*u1+w2*u2+w3*u3)*z,(w0*v0+w1*v1+w2*v2+w3*v3)*z
     
     -- persp correction
-    pset(x,y,sget(8+max(7,8*s),max(7,8*t)))
+    pset(x,y,11) --sget(8+8*(s+t),8*(t-s)))
     --
     inout=true
  	elseif inout==true then
