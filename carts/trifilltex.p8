@@ -11,11 +11,11 @@ function _init()
 	
 	--
 	add(points,{-2,0,-2,uv={0,0}})
-	add(points,{2,0,-2,uv={1,0}})
-	add(points,{-2,1,2,uv={0,1}})
-
-	add(points,{2,0,-2,uv={1,0}})
 	add(points,{2,0,2,uv={1,1}})
+	add(points,{2,0,-2,uv={1,0}})
+
+	add(points,{2,0,2,uv={1,1}})
+	add(points,{-2,0,-2,uv={0,0}})
 	add(points,{-2,0,2,uv={0,1}})
 
 end
@@ -25,7 +25,8 @@ function _update()
 	cam_angle+=0.01
 	local q=make_q(v_up,cam_angle)
 	local m=m_from_q(q)	
-	cam:track(m_x_v(m,{0,2,-4}),q)
+	cam:track(m_x_v(m,{0,2,-8}),q)
+	cam:track(m_x_v(m,{0,2,-8}),q)
 	cam:update()
 end
 
@@ -51,7 +52,7 @@ function _draw()
 		v[6][1],v[6][2],v[6][3],v2_clone(points[6].uv),
 		11)
  ]]
-
+  
  trifill2(
 		{x=v[1][1],y=v[1][2],w=v[1][4],uv=points[1].uv},
 		{x=v[2][1],y=v[2][2],w=v[2][4],uv=points[2].uv},
@@ -97,8 +98,8 @@ function make_cam(f)
 			-- distance to camera plane
 			v[3]-=1
 			-- view to screen
- 		local w=self.focal/v[3]
- 		return {64+v[1]*w,64-v[2]*w,v[3],w}
+ 		local w=1/v[3]
+ 		return {64+self.focal*v[1]*w,64-self.focal*v[2]*w,v[3],w}
 		end
 	}
 	return c
@@ -391,46 +392,52 @@ end
 local function orient2d(a,b,c)
  return (b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x)
 end
-function trifill2(v0,v1,v2,c)
-	color(c)
+local function istopleft(a,b)
+	return a.x<b.x and a.y<b.y
+end
+function trifill2(a,b,c)
  -- compute triangle bounding box
- local minx,miny=min(v0.x,min(v1.x,v2.x)),min(v0.y,min(v1.y,v2.y))
- local maxx,maxy=max(v0.x,max(v1.x,v2.x)),max(v0.y,max(v1.y,v2.y))
+ local minx,miny=min(a.x,min(b.x,c.x)),min(a.y,min(b.y,c.y))
+ local maxx,maxy=max(a.x,max(b.x,c.x)),max(a.y,max(b.y,c.y))
 
  -- clip against screen bounds
  minx,miny=max(minx),max(miny)
  maxx,maxy=min(maxx,127),min(maxy,127)
 
- local a01,b01=v0.y-v1.y,v1.x-v0.x
- local a12,b12=v1.y-v2.y,v2.x-v1.x
- local a20,b20=v2.y-v0.y,v0.x-v2.x
-   
- local p={x=minx,y=miny}
- local w0_row=orient2d(v1, v2, p)
- local w1_row=orient2d(v2, v0, p)
- local w2_row=orient2d(v0, v1, p)
+ local a01,b01=a.y-b.y,b.x-a.x
+ local a12,b12=b.y-c.y,c.x-b.x
+ local a20,b20=c.y-a.y,a.x-c.x
 
-	local area=1/orient2d(v0,v1,v2)
+ local bias0=istopleft(b,c) and 0 or -1
+ local bias1=istopleft(c,a) and 0 or -1
+ local bias2=istopleft(a,b) and 0 or -1
+     
+ local p={x=minx,y=miny}
+ local w0_row=orient2d(b,c,p)+bias0
+ local w1_row=orient2d(c,a,p)+bias1
+ local w2_row=orient2d(a,b,p)+bias2
 
  -- rasterize
  for y=miny,maxy do
   local w0,w1,w2=w0_row,w1_row,w2_row
+  local u0,v0=a.uv[1]*a.w,a.uv[2]*a.w
+  local u1,v1=b.uv[1]*b.w,b.uv[2]*b.w
+  local u2,v2=c.uv[1]*c.w,c.uv[2]*c.w
   local inout=false
  	for x=minx,maxx do 
    -- if p is on or inside all edges, render pixel.
    if bor(w0,bor(w1,w2))>=0 then
-			--local z=(w0*v0.w+w1*v1.w+w2*v2.w)
-    local s=(w0*v0.uv[1]+w1*v1.uv[1]+w2*v2.uv[1])*area
-    local t=(w0*v0.uv[2]+w1*v1.uv[2]+w2*v2.uv[2])*area
+			 local z=1/(w0*a.w+w1*b.w+w2*c.w)
+    local s,t=(w0*u0+w1*u1+w2*u2)*z,(w0*v0+w1*v1+w2*v2)*z
     
     -- persp correction
     pset(x,y,sget(8+8*s,8*t))
     --
     inout=true
- 	elseif inout==true then
- 		-- end of segment?
- 		break
- 	end
+ 		elseif inout==true then
+ 			-- end of segment?
+ 			break
+ 		end
  		-- one step to the right
    w0+=a12
    w1+=a20
@@ -504,11 +511,11 @@ local w0_row = (v2.x - v1.x)*(p.y - v1.y) - (v2.y - v1.y)*(p.x - v1.x)
  end
 end
 __gfx__
-00000000001122330000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000001122330000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00700700445566770000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00077000445566770000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000770008899aabb0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-007007008899aabb0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000ccddeeff0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000ccddeeff0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000777777770011223300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000700000070011223300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00700700700880074455667700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00077000700080074455667700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00077000700080078899aabb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00700700700888078899aabb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000070000007ccddeeff00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000077777777ccddeeff00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
