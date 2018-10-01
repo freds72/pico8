@@ -10,13 +10,13 @@ function _init()
 	cam=make_cam(64)
 	
 	--
-	add(points,{0,0,0,uv={0,0}})
-	add(points,{1,0,0,uv={1,0}})
-	add(points,{0,1,0,uv={0,1}})
+	add(points,{-2,0,-2,uv={0,0}})
+	add(points,{2,0,-2,uv={1,0}})
+	add(points,{-2,1,2,uv={0,1}})
 
-	add(points,{1,0,0,uv={1,0}})
-	add(points,{1,1,0,uv={1,1}})
-	add(points,{0,1,0,uv={0,1}})
+	add(points,{2,0,-2,uv={1,0}})
+	add(points,{2,0,2,uv={1,1}})
+	add(points,{-2,0,2,uv={0,1}})
 
 end
 
@@ -25,7 +25,7 @@ function _update()
 	cam_angle+=0.01
 	local q=make_q(v_up,cam_angle)
 	local m=m_from_q(q)	
-	cam:track(m_x_v(m,{0,2,-5}),q)
+	cam:track(m_x_v(m,{0,2,-4}),q)
 	cam:update()
 end
 
@@ -51,17 +51,26 @@ function _draw()
 		v[6][1],v[6][2],v[6][3],v2_clone(points[6].uv),
 		11)
  ]]
+
  trifill2(
-		{x=v[1][1],y=v[1][2],w=v[1][3],uv=points[1].uv},
-		{x=v[2][1],y=v[2][2],w=v[2][3],uv=points[2].uv},
-		{x=v[3][1],y=v[3][2],w=v[3][3],uv=points[3].uv},
+		{x=v[1][1],y=v[1][2],w=v[1][4],uv=points[1].uv},
+		{x=v[2][1],y=v[2][2],w=v[2][4],uv=points[2].uv},
+		{x=v[3][1],y=v[3][2],w=v[3][4],uv=points[3].uv},
 		11)
  trifill2(
-		{x=v[4][1],y=v[4][2],w=v[4][3],uv=points[4].uv},
-		{x=v[5][1],y=v[5][2],w=v[5][3],uv=points[5].uv},
-		{x=v[6][1],y=v[6][2],w=v[6][3],uv=points[6].uv},
+		{x=v[4][1],y=v[4][2],w=v[4][4],uv=points[4].uv},
+		{x=v[5][1],y=v[5][2],w=v[5][4],uv=points[5].uv},
+		{x=v[6][1],y=v[6][2],w=v[6][4],uv=points[6].uv},
 		11)
 	
+	--[[
+	quadfill(
+		{x=v[1][1],y=v[1][2],w=v[1][4],uv=points[1].uv},
+		{x=v[2][1],y=v[2][2],w=v[2][4],uv=points[2].uv},
+		{x=v[5][1],y=v[5][2],w=v[5][4],uv=points[5].uv},
+		{x=v[3][1],y=v[3][2],w=v[3][4],uv=points[3].uv},
+		11)
+	]]
 	print(stat(1),2,2,7)
 end
 
@@ -406,16 +415,22 @@ function trifill2(v0,v1,v2,c)
  -- rasterize
  for y=miny,maxy do
   local w0,w1,w2=w0_row,w1_row,w2_row
+  local inout=false
  	for x=minx,maxx do 
    -- if p is on or inside all edges, render pixel.
    if bor(w0,bor(w1,w2))>=0 then
-				local z=(w0*v0.w+w1*v1.w+w2*v2.w)*area
+			--local z=(w0*v0.w+w1*v1.w+w2*v2.w)
     local s=(w0*v0.uv[1]+w1*v1.uv[1]+w2*v2.uv[1])*area
     local t=(w0*v0.uv[2]+w1*v1.uv[2]+w2*v2.uv[2])*area
     
     -- persp correction
     pset(x,y,sget(8+8*s,8*t))
- 		end
+    --
+    inout=true
+ 	elseif inout==true then
+ 		-- end of segment?
+ 		break
+ 	end
  		-- one step to the right
    w0+=a12
    w1+=a20
@@ -425,6 +440,67 @@ function trifill2(v0,v1,v2,c)
   w0_row+=b12
   w1_row+=b20
   w2_row+=b01
+ end
+end
+
+function quadfill(v0,v1,v2,v3,c)
+	color(c)
+ -- compute triangle bounding box
+ local minx,miny=min(v0.x,min(v1.x,min(v2.x,v3.x))),min(v0.y,min(v1.y,min(v2.y,v3.y)))
+ local maxx,maxy=max(v0.x,max(v1.x,max(v2.x,v3.x))),max(v0.y,max(v1.y,max(v2.y,v3.y)))
+
+ -- clip against screen bounds
+ minx,miny=max(minx),max(miny)
+ maxx,maxy=min(maxx,127),min(maxy,127)
+
+ local a01,b01=v0.y-v1.y,v1.x-v0.x
+ local a12,b12=v1.y-v2.y,v2.x-v1.x
+ local a23,b23=v2.y-v3.y,v3.x-v2.x
+ local a30,b30=v3.y-v0.y,v0.x-v3.x
+   
+ local p={x=minx,y=miny}
+local w0_row = (v2.x - v1.x)*(p.y - v1.y) - (v2.y - v1.y)*(p.x - v1.x)
+	local w1_row = (v3.x - v2.x)*(p.y - v2.y) - (v3.y - v2.y)*(p.x - v2.x)
+	local w2_row = (v0.x - v3.x)*(p.y - v3.y) - (v0.y - v3.y)*(p.x - v3.x)
+	local w3_row = (v1.x - v0.x)*(p.y - v0.y) - (v1.y - v0.y)*(p.x - v0.x)
+
+	--[[
+ local w0_row=orient2d(v1, v2, p)
+ local w1_row=orient2d(v2, v3, p)
+ local w2_row=orient2d(v3, v2, p)
+ local w3_row=orient2d(v0, v1, p)
+	local area=1/orient2d(v0,v1,v2)
+	]]
+ -- rasterize
+ for y=miny,maxy do
+  local w0,w1,w2,w3=w0_row,w1_row,w2_row,w3_row
+  local inout=false
+ 	for x=minx,maxx do 
+   -- if p is on or inside all edges, render pixel.
+   if bor(w0,bor(w1,bor(w2,w3)))>=0 then
+			local z=64*(w0*v0.w+w1*v1.w+w2*v2.w+w3*v3.w)
+    local s=(w0*v0.uv[1]+w1*v1.uv[1]+w2*v2.uv[1]+w3*v3.uv[1])/z
+    local t=(w0*v0.uv[2]+w1*v1.uv[2]+w2*v2.uv[2]+w3*v3.uv[2])/z
+    
+    -- persp correction
+    pset(x,y,sget(8+max(7,8*s),max(7,8*t)))
+    --
+    inout=true
+ 	elseif inout==true then
+ 		-- end of segment?
+ 		break
+ 	end
+ 		-- one step to the right
+   w0+=a12
+   w1+=a23
+   w2+=a30
+   w3+=a01
+ 	end
+ 	-- one row step
+  w0_row+=b12
+  w1_row+=b23
+  w2_row+=b30
+  w3_row+=b01
  end
 end
 __gfx__
