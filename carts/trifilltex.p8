@@ -26,7 +26,6 @@ function _update()
 	local q=make_q(v_up,cam_angle)
 	local m=m_from_q(q)	
 	cam:track(m_x_v(m,{0,2,-8}),q)
-	cam:track(m_x_v(m,{0,2,-8}),q)
 	cam:update()
 end
 
@@ -37,18 +36,18 @@ function _draw()
 	for i=1,#points do
 		local p=points[i]
 		v[i]=cam:project(p[1],p[2],p[3])
+		v[i][4]=p.uv[1]
+		v[i][5]=p.uv[2]
 	end
-	
-	--[[
-	trifill(
-		{v[1][1],v[1][2],v[1][4],points[1].uv[1],points[1].uv[2]},
-		{v[2][1],v[2][2],v[2][4],points[2].uv[1],points[2].uv[2]},
-		{v[3][1],v[3][2],v[3][4],points[3].uv[1],points[3].uv[2]})
-  trifill(
-		{v[4][1],v[4][2],v[4][4],points[4].uv[1],points[4].uv[2]},
-		{v[5][1],v[5][2],v[5][4],points[5].uv[1],points[5].uv[2]},
-		{v[6][1],v[6][2],v[6][4],points[6].uv[1],points[6].uv[2]})
-	]]
+
+	trifill(v[1],v[2],v[3])
+ trifill(v[4],v[5],v[6])
+
+ --[[ 
+ rasterize_tri(v[1],v[2],v[3])
+ rasterize_tri(v[4],v[5],v[6])
+ ]]
+ 
  --[[
  trifill2(
 		{x=v[1][1],y=v[1][2],w=v[1][4],uv=points[1].uv},
@@ -60,12 +59,13 @@ function _draw()
 		{x=v[6][1],y=v[6][2],w=v[6][4],uv=points[6].uv})
 	]]
 
- 
+ --[[
 	quadfill(
 		{x=v[1][1],y=v[1][2],w=v[1][4],uv=points[1].uv},
 		{x=v[6][1],y=v[6][2],w=v[6][4],uv=points[6].uv},
 		{x=v[2][1],y=v[2][2],w=v[2][4],uv=points[2].uv},
  	{x=v[3][1],y=v[3][2],w=v[3][4],uv=points[3].uv})
+ ]]
  
 	print(stat(1),2,2,7)
 end
@@ -94,41 +94,18 @@ function make_cam(f)
 			v[3]-=1
 			-- view to screen
  		local w=1/v[3]
- 		return {64+self.focal*v[1]*w,64-self.focal*v[2]*w,v[3],w}
+ 		return {64+self.focal*v[1]*w,64-self.focal*v[2]*w,w}
+		end,
+		project2d=function(self,x,y,z)
+			return {64+16*x,64-16*z,1,1}
 		end
 	}
 	return c
 end
 -->8
 -- trifill
-function lerp(a,b,t)
-	return a*(1-t)+b*t
-end
-function v2_print(a)
-	print(a[1].."/"..a[2])
-end
-function make_v2(a,b)
-	return {
-		b[1]-a[1],
-		b[2]-a[2]}
-end
 function v5_clone(a)
 	return {a[1],a[2],a[3],a[4],a[5]}
-end
-function v2_add(a,b,scale)
-	scale=scale or 1
-	a[1]+=scale*b[1]
-	a[2]+=scale*b[2]
-end
-function v2_lerp(a,b,t)
-	return {
-		lerp(a[1],b[1],t),
-		lerp(a[2],b[2],t)}
-end
-function v2_scale(v,scale)
-	return {
-		v[1]*scale,
-		v[2]*scale}
 end
 
 function p01_trapeze_h(l,dl,r,dr,y0,y1)
@@ -151,22 +128,22 @@ function p01_trapeze_h(l,dl,r,dr,y0,y1)
 	-- rasterization
 	for y0=y0,y1 do
 		--rectfill(l[1],y0,r[1],y0,11)
-		
-		local len=ceil(r[1]-l[1])
-		local t,dx=0,1/len
-		local w0,w1=l[3],r[3]
-		local u0,v0,u1,v1=w0*l[4],w0*l[5],w1*r[4],w1*r[5]
-		for i=l[1],r[1] do
-			local w=lerp(w0,w1,t)
-
-			local u,v=lerp(u0,u1,t),lerp(v0,v1,t)
-		u/=w
-		v/=w
-		pset(i,y0,sget(8+8*u,8*v))
-		t+=dx
-	end 
-	
-	
+		local len=r[1]-l[1]
+		if len>0 then
+ 		local dx=1/len
+ 		local w0,w1=l[3],r[3]
+ 		local u0,v0=w0*l[4],w0*l[5]
+ 		local du,dv=(w1*r[4]-u0)*dx,(w1*r[5]-v0)*dx
+ 		local dw=(w1-w0)*dx
+ 		for i=l[1],r[1] do
+	 		local c=sget(8+shl(u0/w0,3),shl(v0/w0,3))
+ 			if(c!=14)pset(i,y0,c)
+ 			u0+=du
+ 			v0+=dv
+ 			w0+=dw
+ 		end 
+		end
+			
   for i=1,#l do
  		l[i]+=dl[i]
  		r[i]+=dr[i]
@@ -187,8 +164,12 @@ function trifill(v0,v1,v2)
  	v02[i]=v0[i]+(v2[i]-v0[i])*mt
  end
  if(v1[1]>v02[1])v1,v02=v02,v1
- p01_trapeze_h(v0,v5_clone(v1),v0,v5_clone(v02),y0,y1)
+ 
+ -- upper trapeze
+ p01_trapeze_h(v0,v5_clone(v1),v5_clone(v0),v5_clone(v02),y0,y1)
+ -- lower trapeze
  p01_trapeze_h(v1,v5_clone(v2),v02,v2,y1,y2)
+ 
 end
 
 -->8
@@ -488,7 +469,7 @@ function quadfill(a,b,c,d)
     local s,t=(w0*u0+w1*u1+w2*u2+w3*u3)*z,(w0*v0+w1*v1+w2*v2+w3*v3)*z
     
     -- persp correction
-    pset(x,y,11) --sget(8+8*(s+t),8*(t-s)))
+    pset(x,y,sget(8+8*(s+t-0.5),8*(s-t+0.5)))
     --
     inout=true
  	elseif inout==true then
@@ -508,12 +489,158 @@ function quadfill(a,b,c,d)
   w3_row+=b01
  end
 end
+-->8
+-- hyperspace
+ -- v0 top, v1 left, v2 right vertices
+function rasterize_flat_tri(v0,v1,v2,uv0,uv1,uv2)
+	local y0 = v0[2]
+	local y1 = v1[2]
+	
+	local firstline
+	local lastline 
+	
+	if y0<y1 then
+		firstline=flr(y0+0.5)+0.5
+		lastline=flr(y1-0.5)+0.5
+	elseif y0==y1 then
+		return
+	else
+		firstline=flr(y1+0.5)+0.5
+		lastline=flr(y0-0.5)+0.5
+	end
+		
+	firstline=max(0.5,firstline)
+	lastline=min(lastline,127.5)
+	
+	local x0 = v0[1]
+	local z0 = v0[3]
+	local x1 = v1[1]
+	local z1 = v1[3]
+	local x2 = v2[1]
+	local y2 = v2[2]
+	local z2 = v2[3]
+	
+	local uv0x = uv0[1]
+	local uv0y = uv0[2]
+	local uv1x = uv1[1]
+	local uv1y = uv1[2]
+	local uv2x = uv2[1]
+	local uv2y = uv2[2]
+			
+	local cb0=x1*y2-x2*y1
+	local cb1=x2*y0-x0*y2
+	
+	local d=cb0+cb1+x0*y1-x1*y0
+	local invdy=1/(y1-y0)
+	
+	for y=firstline,lastline do	
+		local coef=(y-y0)*invdy
+		local xfirst=max(0.5,flr(x0+coef*(x1-x0)+0.48)+0.5)
+		local xlast=min(flr(x0+coef*(x2-x0)-0.48)+0.5,127.5)
+				
+		local x0y=x0*y
+		local x1y=x1*y
+		local x2y=x2*y
+						
+		for x=xfirst,xlast do
+		
+			local b0=(cb0+x*y1+x2y-x*y2-x1y)/d
+			local b1=(cb1+x*y2+x0y-x*y0-x2y)/d
+			local b2=1-b0-b1 -- as the pixel is inside
+			
+			-- perspective correction
+			b0 *= z0
+			b1 *= z1
+			b2 *= z2
+			
+			local d2=b0+b1+b2
+			local uvx=(b0*uv0x+b1*uv1x+b2*uv2x)/d2
+			local uvy=(b0*uv0y+b1*uv1y+b2*uv2y)/d2
+								
+			pset(x,y,sget(8+8*uvx,8*uvy))
+		end
+	end
+end
+
+function rasterize_tri(v0,v1,v2)
+	local x0 = v0[1]
+	local y0 = v0[2]
+	local x1 = v1[1]
+	local y1 = v1[2]
+	local x2 = v2[1]
+	local y2 = v2[2]
+	
+	local uv0 = {v0[5],v0[6]}
+	local uv1 = {v1[5],v1[6]}
+	local uv2 = {v2[5],v2[6]}
+		
+	local tmp
+	if v1[2] < v0[2] then
+		tmp = v1
+		v1 = v0
+		v0 = tmp
+		tmp = uv1
+		uv1 = uv0
+		uv0 = tmp	
+	end
+	
+	if v2[2] < v0[2] then
+		tmp = v2
+		v2 = v0
+		v0 = tmp
+		tmp = uv2
+		uv2 = uv0
+		uv0 = tmp
+	end
+		
+	if v2[2] < v1[2] then
+		tmp = v2
+		v2 = v1
+		v1 = tmp
+		tmp = uv2
+		uv2 = uv1
+		uv1 = tmp
+	end
+	
+	x0 = v0[1]
+	y0 = v0[2]
+	y1 = v1[2]
+	y2 = v2[2]
+	local z0 = v0[3]
+	local z2 = v2[3]
+	
+	if (y0 == y2) return -- safe guard
+	
+	local c=(y1-y0)/(y2-y0)
+	local v3={
+		x0+c*(v2[1]-x0),
+		y1,
+		z0+c*(z2-z0)}
+	
+	-- interpolate uv of v3 in a perspective cor way
+	local b0=(1-c)*z0
+	local b1=c*z2
+	local invd=1/(b0+b1)
+	
+	local uv3={
+		(b0*uv0[1]+b1*uv2[1])*invd,
+		(b0*uv0[2]+b1*uv2[2])*invd
+	}
+	
+	if v1[1] <= v3[1] then
+		rasterize_flat_tri(v0,v1,v3,uv0,uv1,uv3)
+		rasterize_flat_tri(v2,v1,v3,uv2,uv1,uv3)
+	else	
+		rasterize_flat_tri(v0,v3,v1,uv0,uv3,uv1)
+		rasterize_flat_tri(v2,v3,v1,uv2,uv3,uv1)
+	end	
+end
 __gfx__
 00000000777777770011223300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000700000070011223300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00700700700880074455667700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00077000700080074455667700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00077000700080078899aabb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00700700700888078899aabb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000070000007ccddeeff00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000000007eeeeee70011223300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+007007007ee88ee74455667700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000770007eee8ee74455667700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000770007eee8ee78899aabb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+007007007ee888e78899aabb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000000007eeeeee7ccddeeff00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000077777777ccddeeff00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
