@@ -41,18 +41,15 @@ function _draw()
 	
 	--[[
 	trifill(
-		v[1][1],v[1][2],v[1][3],v2_clone(points[1].uv),
-		v[2][1],v[2][2],v[1][3],v2_clone(points[2].uv),
-		v[3][1],v[3][2],v[1][3],v2_clone(points[3].uv),
-		11)
-	
-	trifill(
-		v[4][1],v[4][2],v[4][3],v2_clone(points[4].uv),
-		v[5][1],v[5][2],v[5][3],v2_clone(points[5].uv),
-		v[6][1],v[6][2],v[6][3],v2_clone(points[6].uv),
-		11)
- ]]
-  
+		{v[1][1],v[1][2],v[1][4],points[1].uv[1],points[1].uv[2]},
+		{v[2][1],v[2][2],v[2][4],points[2].uv[1],points[2].uv[2]},
+		{v[3][1],v[3][2],v[3][4],points[3].uv[1],points[3].uv[2]})
+  trifill(
+		{v[4][1],v[4][2],v[4][4],points[4].uv[1],points[4].uv[2]},
+		{v[5][1],v[5][2],v[5][4],points[5].uv[1],points[5].uv[2]},
+		{v[6][1],v[6][2],v[6][4],points[6].uv[1],points[6].uv[2]})
+	]]
+ --[[
  trifill2(
 		{x=v[1][1],y=v[1][2],w=v[1][4],uv=points[1].uv},
 		{x=v[2][1],y=v[2][2],w=v[2][4],uv=points[2].uv},
@@ -61,15 +58,15 @@ function _draw()
 		{x=v[4][1],y=v[4][2],w=v[4][4],uv=points[4].uv},
 		{x=v[5][1],y=v[5][2],w=v[5][4],uv=points[5].uv},
 		{x=v[6][1],y=v[6][2],w=v[6][4],uv=points[6].uv})
-	
+	]]
 
- --[[	
+ 
 	quadfill(
 		{x=v[1][1],y=v[1][2],w=v[1][4],uv=points[1].uv},
 		{x=v[6][1],y=v[6][2],w=v[6][4],uv=points[6].uv},
 		{x=v[2][1],y=v[2][2],w=v[2][4],uv=points[2].uv},
  	{x=v[3][1],y=v[3][2],w=v[3][4],uv=points[3].uv})
- ]]
+ 
 	print(stat(1),2,2,7)
 end
 
@@ -115,8 +112,8 @@ function make_v2(a,b)
 		b[1]-a[1],
 		b[2]-a[2]}
 end
-function v2_clone(a)
-	return {a[1],a[2]}
+function v5_clone(a)
+	return {a[1],a[2],a[3],a[4],a[5]}
 end
 function v2_add(a,b,scale)
 	scale=scale or 1
@@ -134,58 +131,66 @@ function v2_scale(v,scale)
 		v[2]*scale}
 end
 
-function p01_trapeze_h(l,r,lt,rt,wl,wr,wlt,wrt,y0,y1,uvl,uvr,uvlt,uvrt)
+function p01_trapeze_h(l,dl,r,dr,y0,y1)
  local dy=1/(y1-y0)
- lt,rt=(lt-l)*dy,(rt-r)*dy
- wlt,wrt=(wlt-wl)*dy,(wrt-wr)*dy
- uvlt,uvrt=v2_scale(make_v2(uvl,uvlt),dy),v2_scale(make_v2(uvr,uvrt),dy)
+ for i=1,#l do
+ 	dl[i]=(dl[i]-l[i])*dy
+ 	dr[i]=(dr[i]-r[i])*dy
+ end
 
  -- cliping
  if y0<0 then
-		v2_add(uvl,uvlt,-y0)
-		v2_add(uvr,uvrt,-y0)
- 	l,r,wl,wr,y0=l-y0*lt,r-y0*rt,wl-y0*wlt,wr-y0*wrt,0
+ 	for i=1,#l do
+ 		l[i]-=y0*dl[i]
+ 		r[i]-=y0*dr[i]
+ 	end
+ 	y0=0
  end
 	y1=min(y1,127)
 
 	-- rasterization
 	for y0=y0,y1 do
-  --rectfill(l,y0,r,y0)
-  local len=ceil(r-l)
+		--rectfill(l[1],y0,r[1],y0,11)
+		
+		local len=ceil(r[1]-l[1])
 		local t,dx=0,1/len
-  for i=l,r do
-	  local w=lerp(wl,wr,t)
-	  local uv=v2_lerp(v2_scale(uvl,wl),v2_scale(uvr,wr),t)
-	  uv[1]/=w
-	  uv[2]/=w
-  	pset(i,y0,sget(8+8*uv[1],8*uv[2]))
-  	t+=dx
-  end 
+		local w0,w1=l[3],r[3]
+		local u0,v0,u1,v1=w0*l[4],w0*l[5],w1*r[4],w1*r[5]
+		for i=l[1],r[1] do
+			local w=lerp(w0,w1,t)
 
-  l+=lt
-  r+=rt
-  wl+=wlt
-  wr+=wrt
-  v2_add(uvl,uvlt)
-  v2_add(uvr,uvrt)
+			local u,v=lerp(u0,u1,t),lerp(v0,v1,t)
+		u/=w
+		v/=w
+		pset(i,y0,sget(8+8*u,8*v))
+		t+=dx
+	end 
+	
+	
+  for i=1,#l do
+ 		l[i]+=dl[i]
+ 		r[i]+=dr[i]
+ 	end
  end
 end
 
-function trifill(x0,y0,w0,uv0,x1,y1,w1,uv1,x2,y2,w2,uv2,col)
- color(col)
- if(y1<y0)x0,x1,y0,y1,w0,w1,uv0,uv1=x1,x0,y1,y0,w1,w0,uv1,uv0
- if(y2<y0)x0,x2,y0,y2,w0,w2,uv0,uv2=x2,x0,y2,y0,w2,w0,uv2,uv0
- if(y2<y1)x1,x2,y1,y2,w1,w2,uv1,uv2=x2,x1,y2,y1,w2,w1,uv2,uv1
+function trifill(v0,v1,v2)
+ local y0,y1,y2=v0[2],v1[2],v2[2]
+ if(y1<y0)v0,v1,y0,y1=v1,v0,y1,y0
+ if(y2<y0)v0,v2,y0,y2=v2,v0,y2,y0
+ if(y2<y1)v1,v2,y1,y2=v2,v1,y2,y1
  -- mid point
  local mt=1/(y2-y0)*(y1-y0)
- col=x0+(x2-x0)*mt
- local w02=w0+(w2-w0)*mt
- local uv02=v2_clone(uv0)
- v2_add(uv02,make_v2(uv0,uv2),mt)
- if(x1>col)x1,col,w1,w02,uv1,uv02=col,x1,w02,w1,uv02,uv1
- p01_trapeze_h(x0,x0,x1,col,w0,w0,w1,w02,y0,y1,v2_clone(uv0),v2_clone(uv0),v2_clone(uv1),v2_clone(uv02))
- p01_trapeze_h(x1,col,x2,x2,w1,w02,w1,w1,y1,y2,uv1,uv02,uv2,uv2)
+ 
+ local v02={}
+ for i=1,#v0 do
+ 	v02[i]=v0[i]+(v2[i]-v0[i])*mt
+ end
+ if(v1[1]>v02[1])v1,v02=v02,v1
+ p01_trapeze_h(v0,v5_clone(v1),v0,v5_clone(v02),y0,y1)
+ p01_trapeze_h(v1,v5_clone(v2),v02,v2,y1,y2)
 end
+
 -->8
 -- vector math
 function v_print(v,x,y,c)
