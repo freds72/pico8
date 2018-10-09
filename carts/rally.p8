@@ -4,6 +4,8 @@ __lua__
 -- globals
 local time_t,time_dt=0,1/30
 local actors,ground_actors,parts,v_light,cam,plyr,active_ground_actors={},{},{},{0,1,0}
+local track
+
 local physic_actors={}
 -- physic thresoholds
 local k_small=0.001
@@ -212,9 +214,6 @@ function sort(data)
 end
 
 -- vector math
-function v_print(v,x,y,c)
-	print(v[1].."|"..v[2].."|"..v[3],x,y,c)
-end
 function sqr_dist(a,b)
 	local dx,dy,dz=b[1]-a[1],b[2]-a[2],b[3]-a[3]
 
@@ -238,12 +237,6 @@ function make_v(a,b)
 end
 function v_clone(v)
 	return {v[1],v[2],v[3]}
-end
-function v_lerp(a,b,t)
-	return {
-		lerp(a[1],b[1],t),
-		lerp(a[2],b[2],t),
-		lerp(a[3],b[3],t)}
 end
 function v_dot(a,b)
 	return a[1]*b[1]+a[2]*b[2]+a[3]*b[3]
@@ -415,25 +408,8 @@ function q_dydt(q,v,dt)
 	q[3]+=0.5*dq[3]
 	q[4]+=0.5*dq[4]
 	q_normz(q)
-
-		-- angular velocity "converted" to quaternion
-		-- not: q[v,0]!!
-		--[[
-	local qdot=v_clone(v)
-	qdot[4]=0
-	q_x_q(qdot,q)
-	q_scale(qdot,0.5)
-	q[1]+=dt*qdot[1]
-	q[2]+=dt*qdot[2]
-	q[3]+=dt*qdot[3]
-	q[4]+=dt*qdot[4]
-	q_normz(q)
-	]]
 end
 
-function q_scale(q,scale)
-	return {scale*q[1],scale*q[2],scale*q[3],scale*q[4]}
-end
 function q_x_q(a,b)
 	local qax,qay,qaz,qaw=a[1],a[2],a[3],a[4]
 	local qbx,qby,qbz,qbw=b[1],b[2],b[3],b[4]
@@ -518,7 +494,7 @@ function draw_model(model,m,pos,outline)
 			local uv1,uv2=f.uv[i],f.uv[i+1]
 			p1[4],p1[5]=uv1[1],uv1[2]
 			p2[4],p2[5]=uv2[1],uv2[2]
-	 	tritex(p0,p1,p2)			
+	 	tritex(p0,p1,p2)
 			-- trifill(p0[1],p0[2],p1[1],p1[2],p2[1],p2[2],11)
 		end	
 	end
@@ -540,7 +516,7 @@ function draw_model_shadow(model,m,pos)
 				if not p[vi] then
 					local v=m_x_v(m,model.v[vi])
 					v_add(v,pos)
-					v[2]=get_altitude(v[1],v[3])
+					v[2]=get_altitude(v)
 					local x,y,z,w=cam:project(v[1],v[2],v[3])
 					p[vi]={x,y,z,w}
 				end
@@ -689,10 +665,12 @@ end
 function make_ground_actor(src,i,j)
 	local x,z=shl(i+rnd(),ground_shift),shl(j+rnd(),ground_shift)
 	local a=clone(all_actors[src],{
-		pos={x,get_altitude(x,z),z}
+		pos={x,0,z}
 	})
 	a.model=all_models[a.model]
 	a.draw=a.draw or draw_actor
+	-- adjust pos
+	a.pos[2]=get_altitude(a.pos)
 	-- any angle defined in instance?
 	local q=make_q(v_up,a.angle or 0)
 	local m=m_from_q(q)
@@ -740,7 +718,7 @@ function make_ground_contact(a,p,n,d)
 			local va=v_clone(a.v)
 			v_add(va,make_v_cross(a.omega,ra))
 			local dv=-v_dot(va,n)
-			-- find out unit??
+			-- todo:find out unit??
 			if dv<-1 then
 				bias-=a.hardness*dv
 			end
@@ -776,7 +754,7 @@ function make_ground_contact(a,p,n,d)
 end
 
 -- rigid body extension for a given actor
--- actor must have a 3d model
+-- note:actor must have a 3d model
 function make_rigidbody(a,bbox)
 	local rb={
 		force=v_zero(),
@@ -821,8 +799,7 @@ function make_rigidbody(a,bbox)
 			q_dydt(self.q,self.omega,dt)
 			self.m=m_from_q(self.q)
 			-- clear forces
-			self.force=v_zero()
-			self.torque=v_zero()
+			self.force,self.torque=v_zero(),v_zero()
 		end,
 		update_contacts=function(self,contacts)
 			local i=0
@@ -830,7 +807,7 @@ function make_rigidbody(a,bbox)
 				-- to world space
 				local p=m_x_v(self.m,v)
 				v_add(p,self.pos)
-				local h=get_altitude(p[1],p[3])
+				local h=get_altitude(p)
 				local depth=h-p[2]
 				if depth>k_small then
 					local n=get_normal(p[1],p[3])
@@ -896,7 +873,41 @@ function world:update()
 	end
 end
 
--- camera
+-- track
+function make_track(laps,segments)
+	local t={
+		i=0, -- active index
+		segments=segments,
+		t=0, -- total time
+		chrono={}, -- intermediate times
+		laps=laps,
+		on_new_lap=nop, -- lap callback
+		start_pos=function(self)
+			return segments[1].pos
+		end,
+		is_over=function(self)
+			return flr(self.i/self.length)>self.laps
+		end,
+		update=function(self)
+			local p=self.segments[self.i%self.length+1]
+			if sqr_dist(self.pos,p.pos)<16 then
+				self.i+=1
+				if self.i%self.length==0 then
+					self.chrono={}
+					self:on_new_lap()
+				end
+				if p.chrono then
+					-- diff time
+					add(self.chrono,self.t-(self.chrono[#self.chrono] or 0))
+				end
+			end
+			self.t+=1
+		end
+	}
+	t.length=#segments
+	return t
+end
+
 -- camera
 function make_cam(f)
 	local c={
@@ -938,7 +949,7 @@ _g.update_part=function(self)
 	local p=self.pos
 	v_add(p,self.v,0.1)
 	-- ground collision
-	local h=get_altitude(p[1],p[3])
+	local h=get_altitude(p)
 	if p[2]<h then
 		p[2]=h
 		-- todo: proper reflection vector
@@ -1008,8 +1019,9 @@ function get_q_colors(q)
 	return shl(band(0x0.00ff,q),16),shl(band(0x0.ff00,q),8),shr(band(0xf00,q),8)
 end
 
-function get_altitude(x,z)
+function get_altitude(v)
 	-- cell
+	local x,z=v[1],v[3]
 	local dx,dz=shr(x%ground_scale,ground_shift),shr(z%ground_scale,ground_shift)
 	local i,j=flr(shr(x,ground_shift)),flr(shr(z,ground_shift))
 	local h0,h1
@@ -1053,18 +1065,6 @@ function draw_tex_quad(a,b,sx,sy)
 		t+=invdx
 	end
 end
-
-function draw_htex_quad(a,b,sx,sy)
-	local t,invdy,wa,wb=0,1/(b[1]-a[1]),a[4],b[4]
-	for x=a[1],b[1] do
-		local y,w=lerp(a[2],b[2],t),lerp(wa,wb,t)
-		-- persp correction
-		local v=t*wb/w
-		sspr(sx+16*v,sy,1,16,x,y-shl(w,1),1,shl(w,1))
-		t+=invdy
-	end
-end
-
 
 -- draw actors on strip j
 function draw_actors(j)
@@ -1273,7 +1273,8 @@ function _update()
 			cam:track(lookat,0.15)
 		end
 	end
- 
+	
+	track:update()
 end
 
 function draw_hud()
@@ -1394,11 +1395,13 @@ function _init()
 		add(noise,c)
 	end
 	
+	--[[
 	for i=0,63 do
 		for j=0,63 do
-			--noise[band(i,0x3f)+64*band(j,0x3f)+1]=0
+			noise[band(i,0x3f)+64*band(j,0x3f)+1]=0
 		end
 	end
+	]]
 	
 	-- height map weights
 	local hweights=json_parse'[[1,0,0,0],[0.5,0,0.5,0],[0.5,0.5,0,0],[0,0.5,0.5,0]]'
@@ -1525,8 +1528,13 @@ function _init()
 	end
 
 	cam=make_cam(96)
+	
+	track=make_track(3,{
+	})
+	local pos=track:start_pos()
+	v_add(start_pos,v_up,4)
 
-	plyr=make_rigidbody(make_actor("plyr",{32,4,32}),all_models["205gti_bbox"])
+	plyr=make_rigidbody(make_actor("plyr",pos),all_models["205gti_bbox"])
 	
 end
 
