@@ -312,15 +312,9 @@ end
 -- generic matrix inverse
 function m_inv(me)
 	local te={
-	me[9]*me[5]-me[6]*me[8],
-	me[9]*me[2]+me[3]*me[8],
-	me[6]*me[2]-me[3]*me[5],
-	-me[9]*me[4]+me[6]*me[7],
-	me[9]*me[1]-me[3]*me[7],
-	-me[6]*me[1]+me[3]*me[4],
-	me[9]*me[4]-me[5]*me[8],
-	-me[8]*me[1]+me[2]*me[7],
-	me[5]*me[1]-me[2]*me[4]}
+	me[9]*me[5]-me[6]*me[8],me[9]*me[2]+me[3]*me[8],me[6]*me[2]-me[3]*me[5],
+	-me[9]*me[4]+me[6]*me[7],me[9]*me[1]-me[3]*me[7],-me[6]*me[1]+me[3]*me[4],
+	me[9]*me[4]-me[5]*me[8],-me[8]*me[1]+me[2]*me[7],me[5]*me[1]-me[2]*me[4]}
 
 	local det = me[1]*te[1]+me[2]*te[4]+me[3]*te[7]
 	-- not inversible?
@@ -532,7 +526,7 @@ function draw_model_shadow(model,m,pos)
 	end
 end
 
-function add_tireforce(self,v,offset,scale)
+function add_tireforce(self,v,offset,scale,isrear)
  -- force to world
 	v=m_x_v(self.m,v)
 	
@@ -540,10 +534,11 @@ function add_tireforce(self,v,offset,scale)
 	if not ratio then
 		ratio=-v_dot(v,self.v)
 		-- sliding?
-		if abs(self.traction_ratio*ratio)>3 then
+		local max_traction=isrear and 2 or 6
+		if abs(self.traction_ratio*ratio)>max_traction then
 			slide=true
 			-- clamp
-		 -- ratio=mid(ratio,-3,3)
+		 ratio=mid(ratio,-max_traction,max_traction)
 		end
 	end
 	-- wheels on ground?
@@ -555,7 +550,8 @@ function add_tireforce(self,v,offset,scale)
 	v_add(pos,m_fwd(self.m),offset)
 	self:add_force(v,pos)
 	
-	if slide then
+	-- smoke only for rear wheels
+	if isrear and slide then
 	 pos=v_clone(pos)
 	 v_add(pos,m_right(self.m),rnd(2)-1)
 		--add(pos,v_up)
@@ -582,7 +578,7 @@ _g.control_plyr=function(self)
 		local angle=0.25+0.05*self.turn/2.33
 		add_tireforce(self,{-sin(angle),0,cos(angle)},2)
 		-- rear wheels
-		add_tireforce(self,v_right,-2)
+		add_tireforce(self,v_right,-2,nil,true)
 	end
 
 	-- accelerate
@@ -636,10 +632,10 @@ _g.draw_plyr_shadow=function(self)
 end
 
 _g.draw_spr_actor=function(self)
-	local x,y,z,w=cam:project(self.pos[1],self.pos[2],self.pos[3])
 	palt(0,false)
 	palt(14,true)
-	spr(39,x-8,y-8,2,2)
+	local x,y,z,w=cam:project(self.pos[1],self.pos[2],self.pos[3])
+	sspr(self.sx,self.sy,16,16,x-8,y-8,16,16)
 	pal()
 end
 
@@ -790,7 +786,7 @@ function make_rigidbody(a,bbox)
 			-- angular velocity
 			v_add(self.omega,m_x_v(self.i_inv,self.torque),dt)
 			
-			-- damping
+			-- friction
 			v_scale(self.v,1/(1+dt*0.9))
 			v_scale(self.omega,1/(1+dt*0.8))
 		end,
@@ -882,7 +878,7 @@ function make_track(laps,segments)
 		chrono={}, -- intermediate times
 		laps=laps,
 		on_new_lap=nop, -- lap callback
-		start_pos=function(self)
+		get_startpos=function(self)
 			return segments[1].pos
 		end,
 		is_over=function(self)
@@ -890,7 +886,7 @@ function make_track(laps,segments)
 		end,
 		update=function(self)
 			local p=self.segments[self.i%self.length+1]
-			if sqr_dist(self.pos,p.pos)<16 then
+			if sqr_dist(plyr.pos,p.pos)<16 then
 				self.i+=1
 				if self.i%self.length==0 then
 					self.chrono={}
@@ -981,7 +977,15 @@ _g.draw_part=function(self)
 		circfill(x,y,w*self.r,bor(shl(c1,4),c0))
 		fillp()
 		]]
-		pset(x,y,rnd()>0.5 and 4 or 9)
+		local ss={7,23,8}
+		local s=ss[flr(self.frame*3+0.5)]
+		if s then
+			palt(0,false)
+			palt(14,true)
+			spr(s,x-4,y-4)
+			pal()	
+		end
+		
 		--[[
 		w*=1
 		
@@ -993,7 +997,7 @@ _g.draw_part=function(self)
 	end
 end
 
-all_parts=json_parse'{"smoke":{"rnd":{"r":[0.1,0.2],"c":[5,6,7],"dly":[12,32],"g_scale":[-0.03,-0.05]},"frame":0,"dv":0.9,"dr":0.02,"kind":0}}'
+all_parts=json_parse'{"smoke":{"rnd":{"r":[0.1,0.2],"c":[5,6,7],"dly":[8,20],"g_scale":[-0.03,-0.05]},"frame":0,"dv":0.9,"dr":0.02,"kind":0}}'
 
 function make_part(part,p,v)
 	local pt=add(parts,clone(all_parts[part],{pos=v_clone(p),v=v and v_clone(v) or v_zero(),draw=_g.draw_part,c=c}))
@@ -1530,9 +1534,12 @@ function _init()
 	cam=make_cam(96)
 	
 	track=make_track(3,{
+		{pos={32,0,32},chrono=true},
+		{pos={40,0,32}},
+		{pos={48,0,32},chrono=true},
 	})
-	local pos=track:start_pos()
-	v_add(start_pos,v_up,4)
+	local pos=v_clone(track:get_startpos())
+	v_add(pos,v_up,4)
 
 	plyr=make_rigidbody(make_actor("plyr",pos),all_models["205gti_bbox"])
 	
@@ -1648,6 +1655,9 @@ end
 
 -->8
 -- trifilltex
+function v4_clone(a,xy)
+	return {a[xy],a[3],a[4],a[5]}
+end
 local function trapeze_strip_y(x0,x1,y,u,du,v,dv,w,dw)
 	for x=x0,x1 do
 		local c=sget(u/w,80+v/w)
@@ -1717,17 +1727,17 @@ function tritex(v0,v1,v2)
   -- upper trapeze
   -- x w u v
   trapezefill(
-  	{v0[1],v0[3],v0[4],v0[5]},
-  	{v1[1],v1[3],v1[4],v1[5]},
-  	{v0[1],v0[3],v0[4],v0[5]},
-  	{v02[1],v02[3],v02[4],v02[5]},
+	  v4_clone(v0,1),
+	  v4_clone(v1,1),
+	  v4_clone(v0,1),
+	  v4_clone(v02,1),
    y0,y1,trapeze_strip_y)
   -- lower trapeze
   trapezefill(
-  	{v1[1],v1[3],v1[4],v1[5]},
-  	{v2[1],v2[3],v2[4],v2[5]},
-  	{v02[1],v02[3],v02[4],v02[5]},
-  	{v2[1],v2[3],v2[4],v2[5]},
+	  v4_clone(v1,1),
+	  v4_clone(v2,1),
+	  v4_clone(v02,1),
+	  v4_clone(v2,1),
    y1,y2,trapeze_strip_y)
  else
   if(x1<x0)v0,v1,x0,x1,y0,y1=v1,v0,x1,x0,y1,y0
@@ -1744,37 +1754,37 @@ function tritex(v0,v1,v2)
   -- upper trapeze
   -- x w u v
   trapezefill(
-  	{v0[2],v0[3],v0[4],v0[5]},
-  	{v1[2],v1[3],v1[4],v1[5]},
-  	{v0[2],v0[3],v0[4],v0[5]},
-  	{v02[2],v02[3],v02[4],v02[5]},
-   x0,x1,trapeze_strip_x)
+  	v4_clone(v0,2),
+  	v4_clone(v1,2),
+  	v4_clone(v0,2),
+  	v4_clone(v02,2),
+  x0,x1,trapeze_strip_x)
   -- lower trapeze
   trapezefill(
-  	{v1[2],v1[3],v1[4],v1[5]},
-  	{v2[2],v2[3],v2[4],v2[5]},
-  	{v02[2],v02[3],v02[4],v02[5]},
-  	{v2[2],v2[3],v2[4],v2[5]},
-   x1,x2,trapeze_strip_x)
+  	v4_clone(v1,2),
+  	v4_clone(v2,2),
+  	v4_clone(v02,2),
+  	v4_clone(v2,2),
+  x1,x2,trapeze_strip_x)
  end 
 end
 __gfx__
-1ca9b34500015100000000007700770077007700eeeeeeeeeee77777eeeeeeee00000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000
-0000000001dc7700010000007700770077007700eeeeeeee77710007eeeeeeee11111111eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000
-4950000012e77700520000000077007700770077eeeeee7710700007eeeeeeee22222222eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000
-000000003333b700130000000077007700770077eeeee71000100000ee33beee33355511eeeeeeeb5eeeeeeeeeeeeeeb0eeeeeeeeeeeeee00eeeeeee00000000
-000000002497a700240000007700770077007700eeee700000000000eb003eee44225511eeeeebb3355eeeeeeeeeebb3500eeeeeeeeee665500eeeee00000000
-0000000015d76700150000007700770077007700eee7070000000000ee3003ee55551111eeebb33333355eeeeeebb33355500eeeeee6655555500eee00000000
-0000000015676700540000000077007700770077ee71007000000000eee303ee66dd5511ebb333333333355eebb333335555500ee66555555555500e00000000
-0000000015566700670000000077007700770077ee70000000000000eeeebeee7766dd51b333333333333335b333333355555550b33333333333333000000000
-5c0000002288ee00280000000000000000000000e71000000000000000000000888222119bb33333333335549bb33333555550049bb333333333355400000000
-00000000499ffa00540000000000000000000000e7000000000000000000000099999999999bb33333355444999bb33355500444999bb3333335544400000000
-0000000099aaa7009a0000000000000000000000e77100000000000000000000aa99442149999bb33554444149999bb35004444149999bb33554444100000000
-0000000055533b003b0000000000000000000000710000000000000000000000bb335511e449999b5444411ee449999b0444411ee449999b5444411e00000000
-000000001dcc7c001c0000000000000000000000700000000000000000000000cc551111eee4499944411eeeeee4499944411eeeeee4499944411eee00000000
-00000000115dd6001d0000000000000000000000700000000000000000000000dd225511eeeee449411eeeeeeeeee449411eeeeeeeeee449411eeeee00000000
-000000001122ee002e0000007777777777777777700000000000000000000000eedd5511eeeeeee41eeeeeeeeeeeeee41eeeeeeeeeeeeee41eeeeeee00000000
-0000000022eeff00ef0000007777777777777777777000000000000000000000ffdd5511eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000
+1ca9b34500015100000000007700770077007700eeeeeeeeeee77777eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000
+0000000001dc7700010000007700770077007700eeeeeeee77710007ee9994eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000
+4950000012e77700520000000077007700770077eeeeee7710700007e999994eee99eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000
+000000003333b700130000000077007700770077eeeee71000100000e999994eee94eeeeeeeeeeeb5eeeeeeeeeeeeeeb0eeeeeeeeeeeeee00eeeeeee00000000
+000000002497a700240000007700770077007700eeee700000000000e499944eeeeeeeeeeeeeebb3355eeeeeeeeeebb3500eeeeeeeeee665500eeeee00000000
+0000000015d76700150000007700770077007700eee7070000000000e444444eeeeeeeeeeeebb33333355eeeeeebb33355500eeeeee6655555500eee00000000
+0000000015676700540000000077007700770077ee71007000000000ee4444eeeeeeeeeeebb333333333355eebb333335555500ee66555555555500e00000000
+0000000015566700670000000077007700770077ee70000000000000eeeeeeeeeeeeeeeeb333333333333335b333333355555550b33333333333333000000000
+5c0000002288ee00280000000000000000000000e710000000000000eeeeeeee888222119bb33333333335549bb33333555550049bb333333333355400000000
+00000000499ffa00540000000000000000000000e700000000000000ee9994ee99999999999bb33333355444999bb33355500444999bb3333335544400000000
+0000000099aaa7009a0000000000000000000000e771000000000000e999994eaa99442149999bb33554444149999bb35004444149999bb33554444100000000
+0000000055533b003b00000000000000000000007100000000000000e999444ebb335511e449999b5444411ee449999b0444411ee449999b5444411e00000000
+000000001dcc7c001c00000000000000000000007000000000000000e4944eeecc551111eee4499944411eeeeee4499944411eeeeee4499944411eee00000000
+00000000115dd6001d00000000000000000000007000000000000000e444eeeedd225511eeeee449411eeeeeeeeee449411eeeeeeeeee449411eeeee00000000
+000000001122ee002e00000077777777777777777000000000000000ee44eeeeeedd5511eeeeeee41eeeeeeeeeeeeee41eeeeeeeeeeeeee41eeeeeee00000000
+0000000022eeff00ef00000077777777777777777770000000000000eeeeeeeeffdd5511eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000
 0000000000000000000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000
 0000000000000000000000000000000770000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000
 0000000000000000000000000000000770000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000
