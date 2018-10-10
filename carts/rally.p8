@@ -441,7 +441,6 @@ local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b01111111110
 local dither_pat2=json_parse'[0xffff,0xa5a5,0x0000]'
 
 function draw_model(model,m,pos,outline)
-
 	-- cam pos in object space
 	local cam_pos=v_clone(cam.pos)
 	v_add(cam_pos,pos,-1)
@@ -474,9 +473,11 @@ function draw_model(model,m,pos,outline)
 		end
 	end
 
-	-- sort faces
-	sort(faces)
-
+ if not outline then
+		-- sort faces
+		sort(faces)
+	end
+	
 	-- draw faces using projected points
 	for _,f in pairs(faces) do
 		f=f.face
@@ -488,8 +489,13 @@ function draw_model(model,m,pos,outline)
 			local uv1,uv2=f.uv[i],f.uv[i+1]
 			p1[4],p1[5]=uv1[1],uv1[2]
 			p2[4],p2[5]=uv2[1],uv2[2]
-	 	tritex(p0,p1,p2)
-			-- trifill(p0[1],p0[2],p1[1],p1[2],p2[1],p2[2],11)
+	 	if outline then
+	 		fillp(0xf0f0.f)
+			 trifill(p0[1],p0[2],p1[1],p1[2],p2[1],p2[2],0x1)
+				fillp()			 
+	 	else
+		 	tritex(p0,p1,p2)
+		 end
 		end	
 	end
 end
@@ -510,7 +516,7 @@ function draw_model_shadow(model,m,pos)
 				if not p[vi] then
 					local v=m_x_v(m,model.v[vi])
 					v_add(v,pos)
-					v[2]=get_altitude(v)
+					v[2]=get_altitude_and_n(v)
 					local x,y,z,w=cam:project(v[1],v[2],v[3])
 					p[vi]={x,y,z,w}
 				end
@@ -576,7 +582,7 @@ _g.control_plyr=function(self)
 	if v_dot(self.v,self.v)>k_small then
 		-- steering angle
 		local angle=0.25+0.05*self.turn/2.33
-		add_tireforce(self,{-sin(angle),0,cos(angle)},3)
+		add_tireforce(self,{-sin(angle),0,cos(angle)},2)
 		-- rear wheels
 		add_tireforce(self,v_right,-2,nil,true)
 	end
@@ -628,7 +634,7 @@ _g.update_plyr=function(self)
 end
 
 _g.draw_plyr_shadow=function(self)
-	draw_model_shadow(all_models[self.shadow_model],self.m,self.pos)
+	draw_model_shadow(self.model,self.m,self.pos)
 end
 
 _g.draw_spr_actor=function(self)
@@ -639,7 +645,7 @@ _g.draw_spr_actor=function(self)
 	pal()
 end
 
-local all_actors=json_parse'{"plyr":{"model":"205gti","shadow_model":"205gti","hardness":0.02,"mass":16,"turn":0,"traction":0,"traction_ratio":0,"control":"control_plyr","update":"update_plyr","draw_shadow":"draw_plyr_shadow"},"tree":{"model":"tree","update":"nop","draw":"draw_spr_actor","sx":56,"sy":16}}'
+local all_actors=json_parse'{"plyr":{"model":"205gti","hardness":0.02,"mass":16,"turn":0,"traction":0,"traction_ratio":0,"control":"control_plyr","update":"update_plyr","draw_shadow":"draw_plyr_shadow"},"tree":{"model":"tree","update":"nop","draw":"draw_spr_actor","sx":56,"sy":16}}'
 
 function draw_actor(self)
 	draw_model(self.model,self.m,self.pos)
@@ -666,7 +672,7 @@ function make_ground_actor(src,i,j)
 	a.model=all_models[a.model]
 	a.draw=a.draw or draw_actor
 	-- adjust pos
-	a.pos[2]=get_altitude(a.pos)
+	a.pos[2]=get_altitude_and_n(a.pos)
 	-- any angle defined in instance?
 	local q=make_q(v_up,a.angle or 0)
 	local m=m_from_q(q)
@@ -803,10 +809,9 @@ function make_rigidbody(a,bbox)
 				-- to world space
 				local p=m_x_v(self.m,v)
 				v_add(p,self.pos)
-				local h=get_altitude(p)
+				local h,n=get_altitude_and_n(p,true)
 				local depth=h-p[2]
 				if depth>k_small then
-					local n=get_normal(p[1],p[3])
 					depth=v_dot(n,{0,depth,0})
 					-- deep enough?
 					if depth>-k_small then
@@ -902,7 +907,7 @@ function make_track(laps,segments)
 		-- debug draw
 		draw=function(self)
 			for _,v in pairs(self.segments) do
-				local x,y,z,w=cam:project(v.pos[1],get_altitude(v.pos),v.pos[3])
+				local x,y,z,w=cam:project(v.pos[1],get_altitude_and_n(v.pos),v.pos[3])
 				spr(48,x-4,y-4)				
 			end
 		end
@@ -952,7 +957,7 @@ _g.update_part=function(self)
 	local p=self.pos
 	v_add(p,self.v,0.1)
 	-- ground collision
-	local h=get_altitude(p)
+	local h=get_altitude_and_n(p)
 	if p[2]<h then
 		p[2]=h
 		-- todo: proper reflection vector
@@ -1030,40 +1035,33 @@ function get_q_colors(q)
 	return shl(band(0x0.00ff,q),16),shl(band(0x0.ff00,q),8),shr(band(0xf00,q),8)
 end
 
-function get_altitude(v)
+-- return altitude & normal (optional)
+function get_altitude_and_n(v,with_n)
 	-- cell
 	local x,z=v[1],v[3]
 	local dx,dz=shr(x%ground_scale,ground_shift),shr(z%ground_scale,ground_shift)
 	local i,j=flr(shr(x,ground_shift)),flr(shr(z,ground_shift))
-	local h0,h1
+	local h0,h1,n
 	if dx>dz then
 		local h=get_height(i,j)
 		h0,h1=lerp(h,get_height(i+1,j),dz),lerp(h,get_height(i+1,j+1),dx)
+		if with_n then
+			n=make_v_cross(
+				{ground_scale,get_height(i+1,j+1)-h,ground_scale},
+				{ground_scale,get_height(i+1,j)-h,0})
+			v_normz(n)
+		end
 	else
 		local h=get_height(i+1,j+1)
 		h0,h1=lerp(get_height(i,j),h,dz),lerp(get_height(i,j+1),h,dx)
+		if with_n then
+			n=make_v_cross(
+				{0,get_height(i,j+1)-h,ground_scale},
+				{ground_scale,get_height(i+1,j+1)-h,ground_scale})
+			v_normz(n)
+		end
 	end
-	return lerp(h0,h1,dz)
-end
-
-
--- get map normal
-function get_normal(x,z)
-	local dx,dz=shr(x%ground_scale,ground_shift),shr(z%ground_scale,ground_shift)
-	local i,j=flr(shr(x,ground_shift)),flr(shr(z,ground_shift))
-	local h=hmap[safe_index(i,j)]
-	if dx>dz then
-		local n0=make_v_cross(
-			{ground_scale,hmap[safe_index(i+1,j+1)]-h,ground_scale},
-			{ground_scale,hmap[safe_index(i+1,j)]-h,0})
-		v_normz(n0)
-		return n0
-	end	
-	local n1=make_v_cross(
-		{0,hmap[safe_index(i,j+1)]-h,ground_scale},
-		{ground_scale,hmap[safe_index(i+1,j+1)]-h,ground_scale})
-	v_normz(n1)
-	return n1
+	return lerp(h0,h1,dz),n
 end
 
 function draw_tex_quad(a,b,sx,sy)
@@ -1110,6 +1108,10 @@ function update_ground()
 end
 
 function draw_ground(self)
+	local shade=function(lvl,c)
+		return bor(shl(sget(max(lvl-1)+16,c),4),sget(lvl+16,c))
+	end
+
 	local imin,imax=-6,6
 	local cx,cz=cam.lookat[1],cam.lookat[3]
 	-- cell x/z ratio
@@ -1144,9 +1146,6 @@ function draw_ground(self)
 		local ni=nx+imin
 		local h0,h1=get_height(ni,nj),get_height(ni,nj+1)
 		local y0,y1=flr(v0[2]-w0*h0),flr(v1[2]-w1*h1)
-
-		palt(14,true)
-		palt(0,false)
 		
 		for i=imin,imax do
 			local q=get_raw_qcode(ni,nj)
@@ -1177,7 +1176,12 @@ function draw_ground(self)
 				end
 							
 				local c_hi,c_lo,c_dither=get_q_colors(q)
-				fillp(dither_pat2[c_dither])
+
+				local strip=(nj%4<2) and 0 or 1
+				strip+=((ni%4<2) and 0 or 1)
+				c_hi,c_lo=shade(1,c_hi),shade(1,c_lo)
+
+				fillp(dither_pat2[strip+1])
 
 				local q_code=band(q,0xff)
 				if q_code==1 or q_code==4 then
@@ -1214,7 +1218,6 @@ function draw_ground(self)
 	end
 	-- last strip
 	draw_actors(nj)
-	pal()
 end
 
 --[[
@@ -1317,7 +1320,7 @@ function _draw()
  		ghost_k=deserialize(ghost,ghost_k,q)
 		 ghost_m=m_from_q(q)
  	end
- 	--draw_model(all_models["205gti"],ghost_m,ghost_p,true)
+ 	draw_model(all_models["205gti"],ghost_m,ghost_p,true)
  end
 
 	track:draw()
@@ -1436,24 +1439,6 @@ function _init()
 			end
 		end
 	end
-	--[[
-	for j=0,127 do
-		for i=0,127 do
-			local idx=safe_index(i,j)
-			local h=hmap[idx]
-			local n0=make_v_cross(
-			{ground_scale,hmap[safe_index(i+1,j)]-h,0},
-			{ground_scale,hmap[safe_index(i+1,j+1)]-h,ground_scale})
-			v_normz(n0)
-			local n1=make_v_cross(
-			{0,hmap[safe_index(i,j+1)]-h,ground_scale},
-			{ground_scale,hmap[safe_index(i+1,j+1)]-h,ground_scale})
-			v_normz(n1)
-			nmap[idx]={n0=n0,n1=n1}
-		end
-	end 
-	]]	
-	
 	
 	-- create multiple layers
 	local layers=json_parse'[{"level":16,"margin":2,"hi":4,"lo":11},{"level":16,"margin":1.5,"hi":9}]'
@@ -1495,28 +1480,7 @@ function _init()
 			end
 		end
 	end
-	
-	local shade=function(lvl,c)
-		return bor(shl(sget(max(lvl-1)+16,c),4),sget(lvl+16,c))
-	end
-	
-	-- terrain shading
-	for j=0,63 do
-		for i=0,63 do
-			local idx=2*i+2*128*j
-			for k=1,4 do
-				local k=idx+idx_offsets[k]
-				-- tile
-				local q=qmap[k]
-				local hi,lo=get_q_colors(q)
-				-- stripping pattern
-				local strip=(j%2==0) and 0 or 1
-				strip+=((i%2==0) and 0 or 1)
-				hi,lo=shade(1,hi),shade(1,lo)
-				qmap[k]=set_q_colors(band(0xff,q),hi,lo,1+strip)
-			end
-		end
-	end
+
 
 	-- textured strip demo
  local idx=safe_index(0,0)
@@ -1564,6 +1528,7 @@ end
 
 -->8
 -- trifill
+-- by @p01
 function p01_trapeze_h(l,r,lt,rt,y0,y1)
  lt,rt=(lt-l)/(y1-y0),(rt-r)/(y1-y0)
  if(y0<0)l,r,y0=l-y0*lt,r-y0*rt,0 
@@ -1672,7 +1637,8 @@ end
 
 -->8
 -- trifilltex
-function v4_clone(a,xy)
+-- 
+local function v4_clone(a,xy)
 	return {a[xy],a[3],a[4],a[5]}
 end
 local function trapeze_strip_y(x0,x1,y,u,du,v,dv,w,dw)
@@ -1693,97 +1659,82 @@ local function trapeze_strip_x(y0,y1,x,u,du,v,dv,w,dw)
  	w+=dw
  end 
 end
-function trapezefill(l,dl,r,dr,start,finish,fn)
- local dt=1/(finish-start)
- for k,v in pairs(l) do
- 	dl[k],dr[k]=(dl[k]-v)*dt,(dr[k]-r[k])*dt
- end
+function trapezefill(l,dl,r,dr,start,finish,fn,dir)
+	local l,r,dl,dr=v4_clone(l,dir),v4_clone(r,dir),v4_clone(dl,dir),v4_clone(dr,dir)
+	local dt=1/(finish-start)
+	for k=1,4 do
+		dl[k],dr[k]=(dl[k]-l[k])*dt,(dr[k]-r[k])*dt
+	end
 
- -- cliping
- if start<0 then
- 	for k,v in pairs(dl) do
- 		l[k]-=start*v
- 		r[k]-=start*dr[k]
- 	end
- 	start=0
- end
+	-- cliping
+	if start<0 then
+		for k=1,4 do
+			l[k]-=start*dl[k]
+			r[k]-=start*dr[k]
+		end
+		start=0
+	end
 
 	-- rasterization
 	for j=start,min(finish,127) do
 		--rectfill(l[1],y0,r[1],y0,11)
 		local len=r[1]-l[1]
 		if len>0 then
- 		local dx,w0,w1=1/len,l[2],r[2]
- 		local u0,v0=w0*l[3],w0*l[4]
- 		local du,dv=(w1*r[3]-u0)*dx,(w1*r[4]-v0)*dx
+			local dx,w0,w1=1/len,l[2],r[2]
+			local u0,v0=w0*l[3],w0*l[4]
+			local du,dv=(w1*r[3]-u0)*dx,(w1*r[4]-v0)*dx
 			local dw=(w1-w0)*dx
-   fn(l[1],r[1],j,u0,du,v0,dv,w0,dw)
+			fn(l[1],r[1],j,u0,du,v0,dv,w0,dw)
 		end
-	 
-  for k,v in pairs(dl) do
- 		l[k]+=v
- 		r[k]+=dr[k]
- 	end
- end
+
+		for k=1,4 do
+			l[k]+=dl[k]
+			r[k]+=dr[k]
+		end
+	end
 end
 function tritex(v0,v1,v2)
 	local x0,x1,x2=v0[1],v1[1],v2[1]
- local y0,y1,y2=v0[2],v1[2],v2[2]
- if(y1<y0)v0,v1,x0,x1,y0,y1=v1,v0,x1,x0,y1,y0
- if(y2<y0)v0,v2,x0,x2,y0,y2=v2,v0,x2,x0,y2,y0
- if(y2<y1)v1,v2,x1,x2,y1,y2=v2,v1,x2,x1,y2,y1
+	local y0,y1,y2=v0[2],v1[2],v2[2]
+	if(y1<y0)v0,v1,x0,x1,y0,y1=v1,v0,x1,x0,y1,y0
+	if(y2<y0)v0,v2,x0,x2,y0,y2=v2,v0,x2,x0,y2,y0
+	if(y2<y1)v1,v2,x1,x2,y1,y2=v2,v1,x2,x1,y2,y1
 
 	if max(x2,max(x1,x0))-min(x2,min(x1,x0)) > y2-y0 then
-  -- mid point
-  local v02,mt={},1/(y2-y0)*(y1-y0)
-  for k,v in pairs(v0) do
-  	v02[k]=v+(v2[k]-v)*mt
-  end
-  if(x1>v02[1])v1,v02=v02,v1
-  
-  -- upper trapeze
-  -- x w u v
-  trapezefill(
-	  v4_clone(v0,1),
-	  v4_clone(v1,1),
-	  v4_clone(v0,1),
-	  v4_clone(v02,1),
-   y0,y1,trapeze_strip_y)
-  -- lower trapeze
-  trapezefill(
-	  v4_clone(v1,1),
-	  v4_clone(v2,1),
-	  v4_clone(v02,1),
-	  v4_clone(v2,1),
-   y1,y2,trapeze_strip_y)
- else
-  if(x1<x0)v0,v1,x0,x1,y0,y1=v1,v0,x1,x0,y1,y0
-	 if(x2<x0)v0,v2,x0,x2,y0,y2=v2,v0,x2,x0,y2,y0
-	 if(x2<x1)v1,v2,x1,x2,y1,y2=v2,v1,x2,x1,y2,y1
-  
-  -- mid point
-  local v02,mt={},1/(x2-x0)*(x1-x0)
-  for k,v in pairs(v0) do
-  	v02[k]=v+(v2[k]-v)*mt
-  end
-  if(y1>v02[2])v1,v02=v02,v1
-  
-  -- upper trapeze
-  -- x w u v
-  trapezefill(
-  	v4_clone(v0,2),
-  	v4_clone(v1,2),
-  	v4_clone(v0,2),
-  	v4_clone(v02,2),
-  x0,x1,trapeze_strip_x)
-  -- lower trapeze
-  trapezefill(
-  	v4_clone(v1,2),
-  	v4_clone(v2,2),
-  	v4_clone(v02,2),
-  	v4_clone(v2,2),
-  x1,x2,trapeze_strip_x)
- end 
+		-- mid point
+		local v02,mt={},1/(y2-y0)*(y1-y0)
+		for k,v in pairs(v0) do
+			v02[k]=v+(v2[k]-v)*mt
+		end
+		if(x1>v02[1])v1,v02=v02,v1
+
+		-- upper trapeze
+		-- x w u v
+		trapezefill(v0,v1,v0,v02,
+			y0,y1,trapeze_strip_y,1)
+		-- lower trapeze
+		trapezefill(v1,v2,v02,v2,
+			y1,y2,trapeze_strip_y,1)
+	else
+		if(x1<x0)v0,v1,x0,x1,y0,y1=v1,v0,x1,x0,y1,y0
+		if(x2<x0)v0,v2,x0,x2,y0,y2=v2,v0,x2,x0,y2,y0
+		if(x2<x1)v1,v2,x1,x2,y1,y2=v2,v1,x2,x1,y2,y1
+
+		-- mid point
+		local v02,mt={},1/(x2-x0)*(x1-x0)
+		for k,v in pairs(v0) do
+			v02[k]=v+(v2[k]-v)*mt
+		end
+		if(y1>v02[2])v1,v02=v02,v1
+
+		-- upper trapeze
+		-- x w u v
+		trapezefill(v0,v1,v0,v02,
+			x0,x1,trapeze_strip_x,2)
+		-- lower trapeze
+		trapezefill(v1,v2,v02,v2,
+			x1,x2,trapeze_strip_x,2)
+	end 
 end
 __gfx__
 1ca9b34500015100000000007700770077007700eeeeeeeeeee77777eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000
