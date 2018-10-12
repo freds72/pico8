@@ -1481,7 +1481,6 @@ function _init()
 		end
 	end
 
-
 	-- textured strip demo
  local idx=safe_index(0,0)
 	qmap[idx]=set_q_colors(9,24,0)
@@ -1492,6 +1491,40 @@ function _init()
 			hmap[idx+idx_offsets[k]]=2
 		end
 	end
+	
+	local tohex={}
+	for i=0,15 do
+		tohex[i]=sub(tostr(i,true),6,6)
+	end
+	printh("--------")
+	local dump=""
+	for j=0,127 do
+		local count=0
+		local s=""
+		for i=0,127 do
+			local q=qmap[i+128*j]
+			local hi,lo=get_q_colors(q)
+			if hi!=11 or lo!=11 then
+				-- q hi+lo
+				s=s..tohex[band(q,0xf)]
+				s=s..sub(tostr(shl(hi,8)+lo,true),3,6)
+				count+=1
+			elseif count>0 then
+				-- start pos
+				-- count
+				-- codes
+				s=sub(tostr(i+128*j,true),3,6)..sub(tostr(count,true),5,6)..s
+				dump=dump..s
+				s=""
+				count=0
+			end
+		end
+		if count>0 then
+			s=sub(tostr(count,true),5,6)..s
+			dump=dump..s
+		end
+	end
+	printh(dump)
 	
 	-- read models from gfx/map data
 	unpack_models()
@@ -1529,11 +1562,11 @@ end
 -->8
 -- trifill
 -- by @p01
+--[[
 function p01_trapeze_h(l,r,lt,rt,y0,y1)
  lt,rt=(lt-l)/(y1-y0),(rt-r)/(y1-y0)
  if(y0<0)l,r,y0=l-y0*lt,r-y0*rt,0 
-	y1=min(y1,128)
-	for y0=y0,y1 do
+	for y0=y0,min(y1,128) do
   rectfill(l,y0,r,y0)
   l+=lt
   r+=rt
@@ -1542,8 +1575,7 @@ end
 function p01_trapeze_w(t,b,tt,bt,x0,x1)
  tt,bt=(tt-t)/(x1-x0),(bt-b)/(x1-x0)
  if(x0<0)t,b,x0=t-x0*tt,b-x0*bt,0 
- x1=min(x1,128)
- for x0=x0,x1 do
+ for x0=x0,min(x1,128) do
   rectfill(x0,t,x0,b)
   t+=tt
   b+=bt
@@ -1567,6 +1599,7 @@ function trifill(x0,y0,x1,y1,x2,y2,col)
   p01_trapeze_w(y1,col,y2,y2,x1,x2)
  end
 end
+]]
 
 -->8
 -- unpack models
