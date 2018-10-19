@@ -476,7 +476,6 @@ function draw_model(model,m,pos,outline)
  if not outline then
 		-- sort faces
 		sort(faces)
-		fillp(0xa5a5.f)
 		for _,f in pairs(faces) do
 			f=f.face
 			local p0=p[f.vi[1]]
@@ -489,7 +488,6 @@ function draw_model(model,m,pos,outline)
 				end
 			end	
 		end
-		fillp()
 	end
 	
 	-- draw faces using projected points
@@ -549,11 +547,17 @@ function add_tireforce(self,v,offset,scale,isrear)
  -- force to world
 	v=m_x_v(self.m,v)
 	
+		-- application point (world space)
+	local pos=v_clone(self.pos)
+	v_add(pos,m_fwd(self.m),offset)
+
 	local ratio,slide=scale,false
 	if not ratio then
-		ratio=-v_dot(v,self.v)
+		-- point velocity
+		local relv=self:pt_velocity(pos)
+		ratio=-v_dot(v,relv)
 		-- sliding?
-		local max_traction=isrear and 2 or 6
+		local max_traction=isrear and 5 or 5
 		if abs(self.traction_ratio*ratio)>max_traction then
 			slide=true
 			-- clamp
@@ -564,9 +568,7 @@ function add_tireforce(self,v,offset,scale,isrear)
 	ratio*=self.traction_ratio
 	v_scale(v,ratio*self.mass_inv*30)
 
-	-- application point (world space)
-	local pos=v_clone(self.pos)
-	v_add(pos,m_fwd(self.m),offset)
+	-- apply 
 	self:add_force(v,pos)
 	
 	-- smoke only for rear wheels
@@ -583,28 +585,30 @@ _g.control_plyr=function(self)
 	if(btn(0)) turn=1
 	if(btn(1)) turn=-1
 
+ --[[
 	if(btn(2)) z=-1
 	if(btn(3)) z=1
 	plyr.pos[1]-=turn/4
 	plyr.pos[3]+=z/4
+ ]]
  
 	self.turn+=turn
 	
 	if v_dot(self.v,self.v)>k_small then
 		-- steering angle
 		local angle=0.25+0.05*self.turn/2.33
-		add_tireforce(self,{-sin(angle),0,cos(angle)},2)
+		add_tireforce(self,{-sin(angle),0,cos(angle)},5)
 		-- rear wheels
 		add_tireforce(self,v_right,-2,nil,true)
 	end
 
 	-- accelerate
 	if btn(2) then
-		add_tireforce(self,v_fwd,-1,12)
+		add_tireforce(self,v_fwd,-1,8)
 	end
 	-- brake
 	if btn(3) then
-		add_tireforce(self,v_fwd,0,-4)
+		add_tireforce(self,v_fwd,0,-6)
 	end
 	
 	if btn(4) or btn(5) then
@@ -656,7 +660,7 @@ _g.draw_spr_actor=function(self)
 	pal()
 end
 
-local all_actors=json_parse'{"plyr":{"model":"205gti","hardness":0.02,"mass":16,"turn":0,"traction":0,"traction_ratio":0,"control":"control_plyr","update":"update_plyr","draw_shadow":"draw_plyr_shadow"},"tree":{"model":"tree","update":"nop","draw":"draw_spr_actor","sx":56,"sy":16}}'
+local all_actors=json_parse'{"plyr":{"model":"205gti","hardness":0.02,"mass":24,"turn":0,"traction":0,"traction_ratio":0,"control":"control_plyr","update":"update_plyr","draw_shadow":"draw_plyr_shadow"},"tree":{"model":"tree","update":"nop","draw":"draw_spr_actor","sx":56,"sy":16}}'
 
 function draw_actor(self)
 	draw_model(self.model,self.m,self.pos)
@@ -804,8 +808,8 @@ function make_rigidbody(a,bbox)
 			v_add(self.omega,m_x_v(self.i_inv,self.torque),dt)
 			
 			-- friction
-			v_scale(self.v,1/(1+dt*0.9))
-			v_scale(self.omega,1/(1+dt*0.8))
+			v_scale(self.v,1/(1+dt*0.2))
+			v_scale(self.omega,1/(1+dt*0.4))
 		end,
 		integrate=function(self,dt)
 			v_add(self.pos,self.v,dt)
@@ -1290,7 +1294,7 @@ function _update()
 	update_ground()
 	
 	-- physic update
-	-- world:update()
+	world:update()
 	
 	-- game logic update
 	zbuf_filter(actors)
@@ -1350,11 +1354,14 @@ function _draw()
 	 
  draw_hud()
 
+	print((30*sqrt(v_dot(plyr.v,plyr.v))/3.6).."km/h",2,18,7)
+ --[[
 	print("done:"..(track:is_over() and "yes" or "no"),2,8,9)
  for i=1,#track.chrono do
  	local c=track.chrono[i]
  	print("chrono "..i..":"..c,2,18+i*6,9)
  end
+ ]]
 	--[[	
 	for _,a in pairs(physic_actors) do
 		a.bbox:draw(a.m,a.pos)
@@ -1590,7 +1597,7 @@ function trifill(x0,y0,x1,y1,x2,y2,col)
   p01_trapeze_w(y1,col,y2,y2,x1,x2)
  end
 end
-function trifill(x0,y0,x1,y1,x2,y2,col)
+function trifill2(x0,y0,x1,y1,x2,y2,col)
  color(col)
  line(x0,y0,x1,y1)
  line(x1,y1,x2,y2)
