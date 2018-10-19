@@ -1441,7 +1441,7 @@ function _init()
 	end
 	
 	-- create multiple layers
-	local layers=json_parse'[{"level":16,"margin":2,"hi":4,"lo":11},{"level":16,"margin":1.5,"hi":9}]'
+	local layers=json_parse'[{"level":16,"margin":2,"hi":2,"lo":1},{"level":16,"margin":1.5,"hi":3}]'
 
 	for l=1,#layers do
 		local layer=layers[l]
@@ -1480,17 +1480,6 @@ function _init()
 			end
 		end
 	end
-
-	-- textured strip demo
- local idx=safe_index(0,0)
-	qmap[idx]=set_q_colors(9,24,0)
-	for j=1,7 do
-		local idx=safe_index(0,j)
-		qmap[idx]=set_q_colors(9,24,16)
-		for k=1,4 do
-			hmap[idx+idx_offsets[k]]=2
-		end
-	end
 	
 	local tohex={}
 	for i=0,15 do
@@ -1502,29 +1491,32 @@ function _init()
 		local count=0
 		local s=""
 		for i=0,127 do
-			local q=qmap[i+128*j]
+			local idx=i+128*j
+			local q=qmap[idx]
 			local hi,lo=get_q_colors(q)
-			if hi!=11 or lo!=11 then
+			local istex=band(q,0xf)==9
+			if hi!=1 or lo!=1 then
 				-- q hi+lo
 				s=s..tohex[band(q,0xf)]
-				s=s..sub(tostr(shl(hi,8)+lo,true),3,6)
+				-- texture coords
+				if istex then
+					s=s..sub(tostr(shl(hi,8)+lo,true),3,6)
+				else
+					s=s..tohex[shl(hi,2)+lo]
+				end
 				count+=1
 			elseif count>0 then
 				-- start pos
 				-- count
 				-- codes
-				s=sub(tostr(i+128*j,true),3,6)..sub(tostr(count,true),5,6)..s
+				s=sub(tostr(idx,true),3,6)..sub(tostr(count,true),5,6)..s
 				dump=dump..s
-				s=""
-				count=0
+				count,s=0,""
 			end
-		end
-		if count>0 then
-			s=sub(tostr(count,true),5,6)..s
-			dump=dump..s
 		end
 	end
 	printh(dump)
+	stop()
 	
 	-- read models from gfx/map data
 	unpack_models()
@@ -1897,6 +1889,8 @@ b655556665555ccccccccccc111111111111111111cc555566655556600000000000000000000000
 bb55555755555cccccccccccc111111111111111111c555557555556600000000000000000000000000000000000000000000000000000000000000000000000
 bbb555555555055555555555555555555555555555550555555555bbb00000000000000000000000000000000000000000000000000000000000000000000000
 bbbb5555555bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb5555555bbbb00000000000000000000000000000000000000000000000000000000000000000000000
-bbbbb55555bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb55555bbbbb00000000000000000000000000000000000000000000000000000000000000000000000
+bbbbb55555bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb55555bbbbb00000000000000000000000000000000000000000000000000000000000000000000003
+__map__
+3000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __sfx__
 000200090765006650066500665006650306500565005650056500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
