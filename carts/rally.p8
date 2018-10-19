@@ -476,26 +476,39 @@ function draw_model(model,m,pos,outline)
  if not outline then
 		-- sort faces
 		sort(faces)
+		fillp(0xa5a5.f)
+		for _,f in pairs(faces) do
+			f=f.face
+			local p0=p[f.vi[1]]
+			for i=2,#f.vi-1 do
+				local p1,p2=p[f.vi[i]],p[f.vi[i+1]]
+		 		for i=-1,1,2 do
+		 			for j=-1,1,2 do
+				 	trifill(p0[1]+i,p0[2]+j,p1[1]+i,p1[2]+j,p2[1]+i,p2[2]+j,0)
+				 end
+				end
+			end	
+		end
+		fillp()
 	end
 	
 	-- draw faces using projected points
 	for _,f in pairs(faces) do
 		f=f.face
-		local p0=p[f.vi[1]]
 		local p0,uv0=p[f.vi[1]],f.uv[1]
 		p0[4],p0[5]=uv0[1],uv0[2]
 		for i=2,#f.vi-1 do
 			local p1,p2=p[f.vi[i]],p[f.vi[i+1]]
-			local uv1,uv2=f.uv[i],f.uv[i+1]
-			p1[4],p1[5]=uv1[1],uv1[2]
-			p2[4],p2[5]=uv2[1],uv2[2]
-	 	if outline then
-	 		fillp(0xf0f0.f)
-			 trifill(p0[1],p0[2],p1[1],p1[2],p2[1],p2[2],0x1)
-				fillp()			 
-	 	else
-		 	tritex(p0,p1,p2)
-		 end
+			if outline then
+				fillp(0xf0f0.f)
+				trifill(p0[1],p0[2],p1[1],p1[2],p2[1],p2[2],0x1)
+				fillp()
+			else
+				local uv1,uv2=f.uv[i],f.uv[i+1]
+				p1[4],p1[5]=uv1[1],uv1[2]
+				p2[4],p2[5]=uv2[1],uv2[2]
+				tritex(p0,p1,p2)
+			end
 		end	
 	end
 end
@@ -570,12 +583,10 @@ _g.control_plyr=function(self)
 	if(btn(0)) turn=1
 	if(btn(1)) turn=-1
 
- --[[
 	if(btn(2)) z=-1
 	if(btn(3)) z=1
 	plyr.pos[1]-=turn/4
 	plyr.pos[3]+=z/4
- ]]
  
 	self.turn+=turn
 	
@@ -908,7 +919,7 @@ function make_track(laps,segments)
 		draw=function(self)
 			for _,v in pairs(self.segments) do
 				local x,y,z,w=cam:project(v.pos[1],get_altitude_and_n(v.pos),v.pos[3])
-				spr(48,x-4,y-4)				
+				spr(48,x-4,y-4)
 			end
 		end
 	}
@@ -922,7 +933,7 @@ function make_cam(f)
 		pos={0,6*hscale,0},
 		lookat={0,0,-7*16},
 		focal=f,
-		dist=shl(5,ground_shift),
+		dist=shl(8,ground_shift),
 		-- camera rotation
 		c=1,s=0,
 		track=function(self,pos,angle)
@@ -1101,7 +1112,7 @@ function update_ground()
 			if t then
 				t:update(i,j)
 				add(active_ground_actors,t)
-			 add(drawables,t)
+				add(drawables,t)
 			end
 		end
 	end
@@ -1136,37 +1147,50 @@ function draw_ground(self)
 	local w0,nj=v0[4],v0[5]
 	local dw0=shl(w0,ground_shift)
 	for j=2,#p do
+		-- offset to grid space
+		local ni=nx+imin
+		local i,di=imin,1
+		
 		local v1=p[j]
 		local w1=v1[4]
 		local dw1=shl(w1,ground_shift)
 		local x0,x1=v0[1],v1[1]
-		local x2,x3=v1[1]+dw1,v0[1]+dw0
 		
-		-- offset to grid space
-		local ni=nx+imin
+		-- todo: unit for w?
 		local h0,h1=get_height(ni,nj),get_height(ni,nj+1)
 		local y0,y1=flr(v0[2]-w0*h0),flr(v1[2]-w1*h1)
-		
-		for i=imin,imax do
+
+		while i<=imax do
 			local q=get_raw_qcode(ni,nj)
-			local h2,h3=get_height(ni+1,nj+1),get_height(ni+1,nj)
+			local q_code=band(q,0xff)
+			-- detail tile?
+			local dxi=0
+			if band(q_code,0x10)>1 or ni%2==1 then
+				di=1
+			else
+				di=2
+				dxi=0.5
+			end
+			q_code=band(q_code,0xf)
+			local x2,x3=x1+di*dw1,x0+di*dw0
+			local h2,h3=get_height(ni+di,nj+1),get_height(ni+di,nj)
 			local y2,y3=flr(v1[2]-w1*h2),flr(v0[2]-w0*h3)
 
 			-- in screen tile?
 			if x3>0 then
 				-- left/right cliping
-				if i==imin then
-					x0,y0=lerp(x0,x3,dx),lerp(y0,y3,dx)
-					x1,y1=lerp(x1,x2,dx),lerp(y1,y2,dx)
+				if i==imin or (i==imin-1 and di==2) then
+					x0,y0=lerp(x0,x3,dx),lerp(y0,y3,dxi+dx/di)
+					x1,y1=lerp(x1,x2,dx),lerp(y1,y2,dxi+dx/di)
 				elseif i==imax then
-					x3,y3=lerp(x0,x3,dx),lerp(y0,y3,dx)
-					x2,y2=lerp(x1,x2,dx),lerp(y1,y2,dx)
+					x3,y3=lerp(x0,x3,dx),lerp(y0,y3,dxi+dx/di)
+					x2,y2=lerp(x1,x2,dx),lerp(y1,y2,dxi+dx/di)
 				end
-		
+
 				-- backup values
 				local xx0,yy0,xx3,yy3=x0,y0,x3,y3
 				local xx1,yy1,xx2,yy2=x1,y1,x2,y2
-				-- depth cliping 			
+				-- depth cliping
 				if j==2 then
 					x0,y0=lerp(x0,x1,dz),lerp(y0,y1,dz)
 					x3,y3=lerp(x3,x2,dz),lerp(y3,y2,dz)
@@ -1174,7 +1198,7 @@ function draw_ground(self)
 					x1,y1=lerp(x0,x1,dz),lerp(y0,y1,dz)
 					x2,y2=lerp(x3,x2,dz),lerp(y3,y2,dz)
 				end
-							
+				
 				local c_hi,c_lo,c_dither=get_q_colors(q)
 
 				local strip=(nj%4<2) and 0 or 1
@@ -1183,17 +1207,16 @@ function draw_ground(self)
 
 				fillp(dither_pat2[strip+1])
 
-				local q_code=band(q,0xff)
 				if q_code==1 or q_code==4 then
 					trifill(x0,y0,x2,y2,x1,y1,c_hi)
 					trifill(x0,y0,x2,y2,x3,y3,c_lo)
-				elseif q_code==9 then			
+				elseif q_code==9 then
 					draw_tex_quad({x0,y0,0,w0},{x1,y1,0,w1},c_hi,c_lo)
 				else
 					trifill(x1,y1,x3,y3,x0,y0,c_hi)
-					trifill(x1,y1,x3,y3,x2,y2,c_lo)					
+					trifill(x1,y1,x3,y3,x2,y2,c_lo)
 				end
-							
+				
 				-- restore values (for clipping)
 				x0,y0,x3,y3=xx0,yy0,xx3,yy3
 				x1,y1,x2,y2=xx1,yy1,xx2,yy2
@@ -1201,14 +1224,12 @@ function draw_ground(self)
 					
 			-- no need to go further, tile is not visible
 			if(x0>127) break
-						
 			x0,y0,x1,y1=x3,y3,x2,y2
 			h0,h1=h3,h2
-			x2+=dw1
-			x3+=dw0
 
-			ni+=1
-		end		
+			ni+=di
+			i+=di
+		end
 		
 		fillp()
 		draw_actors(nj)
@@ -1269,7 +1290,7 @@ function _update()
 	update_ground()
 	
 	-- physic update
-	world:update()
+	-- world:update()
 	
 	-- game logic update
 	zbuf_filter(actors)
@@ -1283,7 +1304,7 @@ function _update()
 			v_add(lookat,m_fwd(plyr.m),3)
 			-- keep altitude
 			lookat[2]=plyr.pos[2]+2
-			cam.dist=mid(sqrt(v_dot(plyr.v,plyr.v)),8,15)
+			--cam.dist=mid(sqrt(v_dot(plyr.v,plyr.v)),8,15)
 			cam:track(lookat,0.15)
 		end
 	end
@@ -1292,6 +1313,7 @@ function _update()
 end
 
 function draw_hud()
+	--[[
  palt(14,true)
  palt(0,false)
 	spr(5,0,96,2,2)
@@ -1302,6 +1324,7 @@ function draw_hud()
 	line(15,111,15+10*cos(v),111+10*sin(v),8)
 	circfill(15,111,3,7)
 	palt()
+	]]
 end
 
 local ghost_k=1
@@ -1377,7 +1400,7 @@ end
 function _init()
 	
 	local idx_offsets=json_parse'[0,1,128,129]'
-	local q_codes=json_parse'[[0,0,0,0],[0,0,1,0],[0,0,0,2],[0,0,0x45,0x45],[0,4,0,0],[2,0,0,8],[0,0x15,0,0x15],[2,5,5,5],[8,0,0,0],[0x35,0,0x35,0],[5,1,4,5],[5,1,5,5],[0x25,0x25,0,0],[5,5,5,8],[5,5,4,5],[5,5,5,5]]'
+	local q_codes=json_parse'[[0,0,0,0],[0,0,0x11,0x10],[0,0,0x10,0x12],[0,0,5,5],[0x10,0x14,0,0],[0x12,0x10,0x10,0x18],[0,5,0,5],[0x12,0x15,5,5],[0x18,0x10,0,0],[5,0,5,0],[0x15,0x11,0x14,0x15],[0x15,0x11,5,5],[5,5,0,0],[5,5,0x15,0x18],[5,5,0x14,0x15],[5,5,5,5]]'
 	
 	-- temp array to store the 64x64 noise map
 	local noise={}
@@ -1492,39 +1515,7 @@ function _init()
 		end
 	end
 	
-	local tohex={}
-	for i=0,15 do
-		tohex[i]=sub(tostr(i,true),6,6)
-	end
-	printh("--------")
-	local dump=""
-	for j=0,127 do
-		local count=0
-		local s=""
-		for i=0,127 do
-			local q=qmap[i+128*j]
-			local hi,lo=get_q_colors(q)
-			if hi!=11 or lo!=11 then
-				-- q hi+lo
-				s=s..tohex[band(q,0xf)]
-				s=s..sub(tostr(shl(hi,8)+lo,true),3,6)
-				count+=1
-			elseif count>0 then
-				-- start pos
-				-- count
-				-- codes
-				s=sub(tostr(i+128*j,true),3,6)..sub(tostr(count,true),5,6)..s
-				dump=dump..s
-				s=""
-				count=0
-			end
-		end
-		if count>0 then
-			s=sub(tostr(count,true),5,6)..s
-			dump=dump..s
-		end
-	end
-	printh(dump)
+	
 	
 	-- read models from gfx/map data
 	unpack_models()
@@ -1562,7 +1553,6 @@ end
 -->8
 -- trifill
 -- by @p01
---[[
 function p01_trapeze_h(l,r,lt,rt,y0,y1)
  lt,rt=(lt-l)/(y1-y0),(rt-r)/(y1-y0)
  if(y0<0)l,r,y0=l-y0*lt,r-y0*rt,0 
@@ -1581,6 +1571,7 @@ function p01_trapeze_w(t,b,tt,bt,x0,x1)
   b+=bt
  end
 end
+
 function trifill(x0,y0,x1,y1,x2,y2,col)
  color(col)
  if(y1<y0)x0,x1,y0,y1=x1,x0,y1,y0
@@ -1599,7 +1590,12 @@ function trifill(x0,y0,x1,y1,x2,y2,col)
   p01_trapeze_w(y1,col,y2,y2,x1,x2)
  end
 end
-]]
+function trifill(x0,y0,x1,y1,x2,y2,col)
+ color(col)
+ line(x0,y0,x1,y1)
+ line(x1,y1,x2,y2)
+ line(x0,y0,x2,y2)
+end
 
 -->8
 -- unpack models
