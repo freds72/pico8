@@ -82,6 +82,15 @@ s = s + "{:02x}".format(len(obdata.polygons))
 for f in obdata.polygons:
     s = s + "{}{}{}".format(pack_float(f.normal.x), pack_float(f.normal.z), pack_float(f.normal.y))
 
+# all edges and corresponding faces
+s = s + "{:02x}".format(len(bm.edges))
+for e in bm.edges:
+    s = s + "{:02x}{:02x}".format(e.verts[0].index+1, e.verts[1].index+1)
+    # number of connected faces
+    s = s + "{:02x}".format(len(e.link_faces))
+    for f in e.link_faces:
+        s = s + "{:02x}".format(f.index+1)
+
 #
 with open(args.out, 'w') as f:
     f.write(s)
