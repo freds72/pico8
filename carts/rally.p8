@@ -559,7 +559,7 @@ function add_tireforce(self,v,offset,scale,isrear)
 		ratio*=self.mass_inv*30
 		-- sliding?
 
-		local max_traction=isrear and 64 or 8
+		local max_traction=isrear and 6 or 6
 		if abs(self.traction_ratio*ratio)>max_traction then
 			slide=true
 			-- clamp
@@ -805,7 +805,7 @@ function make_rigidbody(a,bbox)
 		-- apply forces & torque for iteration
 		prepare=function(self,dt)
 			-- add gravity
-			v_add(self.force,{0,-9.8*self.mass,0})
+			v_add(self.force,{0,-16*self.mass,0})
 		
 			-- inverse inertia tensor
 			self.i_inv=m_x_m(m_x_m(self.m,self.ibody_inv),m_transpose(self.m))
@@ -957,16 +957,14 @@ function make_cam(f)
 		end,
 		project=function(self,x,y,z)
 			x-=self.lookat[1]
-			local tmpy=y
-			-- fake 3d
-			y=-self.lookat[2]
+			y-=self.lookat[2]
 			z-=self.lookat[3]
 			z,y=self.c*z+self.s*y,-self.s*z+self.c*y
 
   	local xe,ye,ze=x,y,z-self.dist
 
 		 local w=-self.focal/ze
-  	return 64+xe*w,64-(tmpy+ye)*w,ze,w
+  	return 64+xe*w,64-ye*w,ze,w
 		end
 	}
 	return c
@@ -1134,72 +1132,67 @@ function draw_ground(self)
 	local shade=function(lvl,c)
 		return bor(shl(sget(max(lvl-1)+16,c),4),sget(lvl+16,c))
 	end
-
-	local imin,imax=-7,7
+	-- grid width extend
+	local imin,imax=-6,6
 	local cx,cz=cam.lookat[1],cam.lookat[3]
 	-- cell x/z ratio
 	local dx,dz=cx%ground_scale,cz%ground_scale
 	-- cell coordinates
 	local nx,ny=flr(shr(cx,ground_shift)),flr(shr(cz,ground_shift))
 	
-	-- project anchor points
+	-- project grid
 	local p={}
 	-- grid depth extent
 	for j=-7,5 do
-	 -- project leftmost grid points
-		local x,y,z,w=cam:project(-dx+cx+shl(imin,ground_shift),0,-dz+cz+shl(j,ground_shift))
-		add(p,{x,y,z,w,ny+j})
+		local row={}
+		local nj=ny+j
+		for i=imin,imax do
+			local ni=nx+i
+			local h,q=get_height(ni,nj),get_raw_qcode(ni,nj)
+		 -- compute grid points centered on lookat pos
+			local xx,zz=-dx+cx+shl(i,ground_shift),-dz+cz+shl(j,ground_shift)
+			local x,y,z,w=cam:project(xx,h,zz)
+			add(row,{flr(x),flr(y),z,w,x=xx,y=h,z=zz,q=q,nj=nj})
+		end
+		add(p,row)
 	end
-	
 	-- move to 0-1 range
 	dx/=ground_scale
 	dz/=ground_scale
 	
-	local v0=p[1]
-	local w0,nj=v0[4],v0[5]
-	local dw0=shl(w0,ground_shift)
+	local r0=p[1]
+	local nj=ny-9
 	for j=2,#p do
-		-- offset to grid space
-		local ni=nx+imin
-		local i,di=imin,1
-		
-		local v1=p[j]
-		local w1=v1[4]
-		local dw1=shl(w1,ground_shift)
-		local x0,x1=v0[1],v1[1]
-		
-		-- todo: unit for w?
-		local h0,h1=get_height(ni,nj),get_height(ni,nj+1)
-		local y0,y1=flr(v0[2]-w0*h0),flr(v1[2]-w1*h1)
+		local r1=p[j]
+		local v0,v1,q0=r0[1],r1[1],r0[1].q
+		-- strip off screen?
+		if v0[1]<127 then
+ 		for i=2,#r1 do
+ 			local v3,v2,q3=r0[i],r1[i],r0[i].q
 
-		while i<=imax do
-			local q=get_raw_qcode(ni,nj)
-			local q_code=band(q,0xff)
-			-- detail tile?
-			if i==imin or i>=imax-1 or band(q_code,0x10)>1 or ni%2==1 then
-				di=1
-			else
-				di=2
-			end
-			q_code=band(q_code,0xf)
-			local x2,x3=x1+di*dw1,x0+di*dw0
-			local h2,h3=get_height(ni+di,nj+1),get_height(ni+di,nj)
-			local y2,y3=flr(v1[2]-w1*h2),flr(v0[2]-w0*h3)
+ 			local q_code=band(q0,0xff)
+				local c_hi,c_lo,c_dither=get_q_colors(q)
 
-			-- in screen tile?
-			if x3>0 then
-				-- left/right cliping
-				if i==imin or (i==imin-1 and di==2) then
-					x0,y0=lerp(x0,x3,dx),lerp(y0,y3,dx)
-					x1,y1=lerp(x1,x2,dx),lerp(y1,y2,dx)
-				elseif i==imax then
-					x3,y3=lerp(x0,x3,dx),lerp(y0,y3,dx)
-					x2,y2=lerp(x1,x2,dx),lerp(y1,y2,dx)
+				local strip=(nj%4<2) and 0 or 1
+				strip+=((i%4<2) and 0 or 1)
+				c_hi,c_lo=shade(1,c_hi),shade(1,c_lo)
+
+				--fillp(dither_pat2[strip+1])
+				 			
+ 			-- left/right clipping
+				local x0,y0=v0[1],v0[2]
+				local x1,y1=v1[1],v1[2]
+				local x3,y3=v3[1],v3[2]
+				local x2,y2=v2[1],v2[2]
+
+				if i==2 then
+			  x0,y0=lerp(v0[1],v3[1],dx),lerp(v0[2],v3[2],dx)
+				 x1,y1=lerp(v1[1],v2[1],dx),lerp(v1[2],v2[2],dx)
+				elseif i==#r1 then
+				 x3,y3=lerp(v0[1],v3[1],dx),lerp(v0[2],v3[2],dx)
+				 x2,y2=lerp(v1[1],v2[1],dx),lerp(v1[2],v2[2],dx)
 				end
-
-				-- backup values
-				local xx0,yy0,xx3,yy3=x0,y0,x3,y3
-				local xx1,yy1,xx2,yy2=x1,y1,x2,y2
+				
 				-- depth cliping
 				if j==2 then
 					x0,y0=lerp(x0,x1,dz),lerp(y0,y1,dz)
@@ -1208,45 +1201,28 @@ function draw_ground(self)
 					x1,y1=lerp(x0,x1,dz),lerp(y0,y1,dz)
 					x2,y2=lerp(x3,x2,dz),lerp(y3,y2,dz)
 				end
-				
-				local c_hi,c_lo,c_dither=get_q_colors(q)
-
-				local strip=(nj%4<2) and 0 or 1
-				strip+=((ni%4<2) and 0 or 1)
-				c_hi,c_lo=shade(1,c_hi),shade(1,c_lo)
-
-				fillp(dither_pat2[strip+1])
-
-				if q_code==1 or q_code==4 then
-					trifill(x0,y0,x2,y2,x1,y1,c_hi)
-					trifill(x0,y0,x2,y2,x3,y3,c_lo)
-				elseif q_code==9 then
-					draw_tex_quad({x0,y0,0,w0},{x1,y1,0,w1},c_hi,c_lo)
-				else
-					trifill(x1,y1,x3,y3,x0,y0,c_hi)
-					trifill(x1,y1,x3,y3,x2,y2,c_lo)
-				end
-				
-				-- restore values (for clipping)
-				x0,y0,x3,y3=xx0,yy0,xx3,yy3
-				x1,y1,x2,y2=xx1,yy1,xx2,yy2
-			end
-					
-			-- no need to go further, tile is not visible
-			if(x0>127) break
-			x0,y0,x1,y1=x3,y3,x2,y2
-			h0,h1=h3,h2
-
-			ni+=di
-			i+=di
-		end
-		
-		fillp()
+						
+ 			if q_code==1 or q_code==4 then
+ 				trifill(x0,y0,x2,y2,x1,y1,1)		
+ 				trifill(x0,y0,x2,y2,x3,y3,5)
+ 				
+ 			elseif q_code==9 then
+ 				draw_tex_quad({x0,y0,0,v0[4]},{x1,y1,0,v1[4]},c_hi,c_lo)
+ 			else
+ 				trifill(x1,y1,x3,y3,x0,y0,8)
+ 				trifill(x1,y1,x3,y3,x2,y2,7)
+ 			end
+ 			
+ 			v0,v1,q0=v3,v2,q3
+ 		end
+ 	end
+ 
+ 	fillp()
 		draw_actors(nj)
-		
-		v0,w0,dw0=v1,w1,dw1
+		r0=r1
 		nj+=1
 	end
+	
 	-- last strip
 	draw_actors(nj)
 end
