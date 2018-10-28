@@ -189,6 +189,13 @@ function _init()
 	 	action=function()
 	 		clear_map()
 	 	end
+	 },
+	 -- export
+	 {
+	 	spr=43,
+	 	action=function()
+	 		export_map()
+	 	end
 	 }
 	},function(item)
 		tool=item
@@ -366,6 +373,14 @@ end
 function make_track()
 	local track={}
 	return {
+		is_near=function(self,x,y,dist)
+		 dist*=dist
+		 for _,t in pairs(track) do
+			 local dx,dy=x-t.pos[1],y-t.pos[2]
+			 if(dx*dx+dy*dy<=dist) return true
+		 end
+		 return false
+		end,
 		nearest_segment=function(self,x,y)
  		local t,t_i
  		for i=1,#track do
@@ -485,6 +500,153 @@ function make_track()
   end
 	}
 end
+-->8
+-- export map
+local tohex={}
+for i=0,15 do
+	tohex[i]=sub(tostr(i,true),6,6)
+end
+
+function export_map()
+ local idx_offsets={0,1,128,129}
+	local q_codes={
+		{0,0,0,0},
+		{0,0,1,0},
+		{0,0,0,2},
+		{0,0,5,5},
+		{0,4,0,0},
+		{2,0,0,8},
+		{0,5,0,5},
+		{2,5,5,5},
+		{8,0,0,0},
+		{5,0,5,0},
+		{5,1,4,5},
+		{5,1,5,5},
+		{5,5,0,0},
+		{5,5,5,8},
+		{5,5,4,5},
+		{5,5,5,5}}
+	
+	-- returns whether value is above a given level
+	local is_solid=function(i,j,dist)
+		return track:is_near(i,j,dist) and 1 or 0
+	end
+	-- converts four corners into a single lookup index
+	-- cf: https://en.wikipedia.org/wiki/marching_squares
+	local marching_code=function(i,j,level,margin)
+		return
+		8*is_solid(i,j,level,margin)+
+		4*is_solid(i+1,j,level,margin)+
+		2*is_solid(i+1,j+1,level,margin)+
+		is_solid(i,j+1,level,margin)
+	end
+	
+	local get_q_colors=function(q)
+		return shl(band(0x0.00ff,q),16),shl(band(0x0.ff00,q),8),shr(band(0xf00,q),8)
+	end
+	
+	-- q binary layout
+	-- 0x0f00: dither pattern
+	-- 0x00ff: q code
+	-- 0x0.00ff: lo color
+	-- 0x0.ff00: hi color
+	local set_q_colors=function(q,lo,hi,n)
+		return bor(q,bor(shl(n,8),bor(shr(lo,16),shr(hi,8))))
+	end
+	
+	local qmap={}
+	
+	-- create multiple layers
+	local layers={
+		{dist=4,hi=2,lo=1},
+		{dist=3.5,hi=3}}
+
+	for l=1,#layers do
+		local layer=layers[l]
+		for j=0,63 do
+			for i=0,63 do
+				local q=marching_code(i,j,layer.dist)				
+				local idx=2*i+2*128*j
+				local code=q_codes[q+1]
+				for k=1,4 do
+					local q,k=code[k],idx+idx_offsets[k]
+					-- hi/lo colors
+					local hi,lo=layer.hi,layer.lo
+					-- previous tile
+					local prev_q=qmap[k]
+					if prev_q then
+						prev_hi,prev_lo=get_q_colors(prev_q)
+						-- replace lo color
+						lo=prev_lo
+					end
+					-- replace only full hi tiles
+					prev_q=band(0xff,prev_q or 5)
+					if prev_q==5 then
+						if q==0 then
+							hi,lo=lo,lo
+						elseif band(0xf,q)==5 then
+							hi,lo=hi,hi
+						elseif q==1 or q==8 then
+							hi,lo=hi,lo
+						elseif q==4 or q==2 then
+							hi,lo=lo,hi
+						end
+						q=set_q_colors(q,hi,lo,1)
+						qmap[k]=q
+					end
+				end
+			end
+		end
+	end
+	--[[
+	cls()
+	for j=0,127 do
+		for i=0,127 do
+			local idx=i+128*j
+		 local hi,lo=get_q_colors(qmap[idx])
+			pset(i,j,hi)
+		end
+	end
+	flip()
+	while(btn(4)==false) do
+	end
+	]]
+	
+	local dump=""
+	for j=0,127 do
+		local count,s,start_idx=0,""
+		for i=0,127 do
+			local idx=i+128*j
+			local q=qmap[idx]
+			local hi,lo=get_q_colors(q)
+			if hi!=1 or lo!=1 then
+				-- q
+				s=s..tohex[band(q,0xf)]
+				-- hi lo
+				s=s..tohex[shl(hi,2)+lo]
+				count+=1
+				if not start_idx then
+					start_idx=idx
+				end
+			elseif count>0 then
+				-- start pos
+				-- count
+				-- codes
+				s=sub(tostr(start_idx,true),3,6)..sub(tostr(count,true),5,6)..s
+				dump=dump..s
+				count,s,start_idx=0,""
+			end
+		end
+		-- trailing data?
+		if count>0 then
+			s=sub(tostr(start_idx,true),3,6)..sub(tostr(count,true),5,6)..s
+			dump=dump..s
+		end		
+	end
+	-- clipboard 
+	printh(dump,"@clip")	
+end
+
 __gfx__
 01000000015d6fa70001000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 17100000000000000017100000171000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -504,11 +666,11 @@ bbb00000bbb0000080080000eee00000777000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000111110000010000000000000000000000000000000000000000000000000000
-00011100000111000001100001111110000010000001110000011100001001000101111001111100001000000000000000000000000000000000000000000000
-000111000001d1000011110000000000000110000000010000010000000110000111111000000000001100000000000000000000000000000000000000000000
+00011100000111000001100001111110000010000001110000011100001001000101111001111100001000000101101000000000000000000000000000000000
+000111000001d1000011110000000000000110000000010000010000000110000111111000000000001100000101101000000000000000000000000000000000
 000111000001dd000111111001111110000010000000110000011100000110000100001001111100001110000000000000000000000000000000000000000000
-00011100000111000000000000111100000010000000010000000100001001000100001001010100001110000000000000000000000000000000000000000000
-00001000000010000111111000011000000111000001110000011100000000000111111000111000001000000000000000000000000000000000000000000000
+00011100000111000000000000111100000010000000010000000100001001000100001001010100001110000110101000000000000000000000000000000000
+00001000000010000111111000011000000111000001110000011100000000000111111000111000001000000110101000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
