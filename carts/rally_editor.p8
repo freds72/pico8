@@ -286,6 +286,21 @@ function _draw()
 		spr(0,mouse.x,mouse.y)
 	end
 end
+
+-->8
+-- binary export helpers
+local int={}
+function int:tostr(v)
+	return sub(tostr(v,true),3,6)
+end
+local byte={}
+function byte:tostr(v)
+	return sub(tostr(v,true),5,6)
+end
+local nible={}
+function nible:tostr(v)
+	return sub(tostr(i,true),6,6)
+end
 -->8
 -- menu
 function make_menu(items,cb)
@@ -516,6 +531,12 @@ for i=0,15 do
 	tohex[i]=sub(tostr(i,true),6,6)
 end
 
+function log(s)
+	rectfill(0,120,127,127,15)
+	print(s,2,121,0)
+	flip()
+end
+
 function export_map()
  local idx_offsets={0,1,128,129}
 	local q_codes={
@@ -573,6 +594,7 @@ function export_map()
 	for l=1,#layers do
 		local layer=layers[l]
 		for j=0,63 do
+			log("generating qmap:"..j.."/63")
 			for i=0,63 do
 				local q=marching_code(i,j,layer.dist)				
 				local idx=2*i+2*128*j
@@ -622,18 +644,19 @@ function export_map()
 	]]
 	
 	local dump=""
-	for j=0,127 do
-		local count,s,start_idx=0,""
-		local commit=function()
-			if count>0 then
-				-- start pos
-				-- count
-				-- codes
-				s=int:tostr(start_idx)..byte:tostr(count)..s
-				dump=dump..s
-				count,s,start_idx=0,""
-			end
+	local count,s,start_idx=0,""
+	local commit=function()
+		if count>0 then
+			-- start pos
+			-- count
+			-- codes
+			s=int:tostr(start_idx)..byte:tostr(count)..s
+			dump=dump..s
+			count,s,start_idx=0,""
 		end
+	end
+	for j=0,127 do
+		log("exporting:"..j.."/127")
 		for i=0,127 do
 			local idx=i+128*j
 			local q=qmap[idx]
@@ -654,23 +677,13 @@ function export_map()
 		-- trailing data?
 		commit()
 	end
-	dump=dump..track:tostr()
+	-- number of items + track
+	dump=int:tostr(#dump)..dump..track:tostr()
 	-- clipboard
 	printh(dump,"@clip")
+	log("copied to clipboard")
 end
 
-local int={}
-function int:tostr(v)
-	return sub(tostr(v,true),3,6)
-end
-local byte={}
-function byte:tostr(v)
-	return sub(tostr(v,true),5,6)
-end
-local nible={}
-function nible:tostr(v)
-	return sub(tostr(i,true),6,6)
-end
 
 __gfx__
 01000000015d6fa70001000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
