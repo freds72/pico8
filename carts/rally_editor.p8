@@ -494,9 +494,18 @@ function make_track()
   		mem+=1
   		local y=peek(mem)
   		mem+=1
-  		add(track,{pos={x,y}})		
+  		add(track,{pos={x,y}})
   	end
   	return mem
+  end,
+  tostr=function(self)
+  	local s=byte:tostr(#track)
+  	for i=1,#track do
+  		local t=track[i]
+  		s=s..byte:tostr(t.pos[1])
+  		s=s..byte:tostr(t.pos[2])
+  	end
+  	return s
   end
 	}
 end
@@ -615,36 +624,52 @@ function export_map()
 	local dump=""
 	for j=0,127 do
 		local count,s,start_idx=0,""
+		local commit=function()
+			if count>0 then
+				-- start pos
+				-- count
+				-- codes
+				s=int:tostr(start_idx)..byte:tostr(count)..s
+				dump=dump..s
+				count,s,start_idx=0,""
+			end
+		end
 		for i=0,127 do
 			local idx=i+128*j
 			local q=qmap[idx]
 			local hi,lo=get_q_colors(q)
 			if hi!=1 or lo!=1 then
 				-- q
-				s=s..tohex[band(q,0xf)]
+				s=s..nible:tostr(q)
 				-- hi lo
-				s=s..tohex[shl(hi,2)+lo]
+				s=s..nible:tostr(shl(hi,2)+lo)
 				count+=1
 				if not start_idx then
 					start_idx=idx
 				end
-			elseif count>0 then
-				-- start pos
-				-- count
-				-- codes
-				s=sub(tostr(start_idx,true),3,6)..sub(tostr(count,true),5,6)..s
-				dump=dump..s
-				count,s,start_idx=0,""
+			else
+				commit()
 			end
 		end
 		-- trailing data?
-		if count>0 then
-			s=sub(tostr(start_idx,true),3,6)..sub(tostr(count,true),5,6)..s
-			dump=dump..s
-		end		
+		commit()
 	end
-	-- clipboard 
-	printh(dump,"@clip")	
+	dump=dump..track:tostr()
+	-- clipboard
+	printh(dump,"@clip")
+end
+
+local int={}
+function int:tostr(v)
+	return sub(tostr(v,true),3,6)
+end
+local byte={}
+function byte:tostr(v)
+	return sub(tostr(v,true),5,6)
+end
+local nible={}
+function nible:tostr(v)
+	return sub(tostr(i,true),6,6)
 end
 
 __gfx__
