@@ -299,7 +299,7 @@ function byte:tostr(v)
 end
 local nible={}
 function nible:tostr(v)
-	return sub(tostr(i,true),6,6)
+	return sub(tostr(v,true),6,6)
 end
 -->8
 -- menu
@@ -644,7 +644,7 @@ function export_map()
 	]]
 	
 	local dump=""
-	local count,s,start_idx=0,""
+	local n,count,s,start_idx=0,0,""
 	local commit=function()
 		if count>0 then
 			-- start pos
@@ -653,13 +653,14 @@ function export_map()
 			s=int:tostr(start_idx)..byte:tostr(count)..s
 			dump=dump..s
 			count,s,start_idx=0,""
+			n+=1
 		end
 	end
 	for j=0,127 do
 		log("exporting:"..j.."/127")
 		for i=0,127 do
 			local idx=i+128*j
-			local q=qmap[idx]
+			local q=qmap[idx]		
 			local hi,lo=get_q_colors(q)
 			if hi!=1 or lo!=1 then
 				-- q
@@ -678,7 +679,7 @@ function export_map()
 		commit()
 	end
 	-- number of items + track
-	dump=int:tostr(#dump)..dump..track:tostr()
+	dump=int:tostr(n)..dump..track:tostr()
 	-- clipboard
 	printh(dump,"@clip")
 	log("copied to clipboard")
