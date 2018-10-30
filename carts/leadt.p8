@@ -6,6 +6,7 @@ local particles={}
 local cam
 local time_t=0
 local target
+local use_lead=true
 
 function make_v(a,b)
 	return {b[1]-a[1],b[2]-a[2]}
@@ -20,6 +21,9 @@ function v_clone(v)
 end
 function sqr_dist(a,b)
 	local dx,dy=b[1]-a[1],b[2]-a[2]
+	if abs(dx)>128 or abs(dy)>128 then
+		return 32000
+	end
 	local d=dx*dx+dy*dy
 	return d<0 and 32000 or d
 end
@@ -40,12 +44,12 @@ function v_scale(v,scale)
 end
 
 function make_actor(x,y)
- local angle=rnd()
+ local angle=flr(4*rnd())/4
 	local a={
 		r=4,
 		pos={x,y},
 		fwd={cos(angle),sin(angle)},
-		acc=0.6,
+		acc=0.4,
 		die=function(self)
 			self.disabled=true
 			del(actors,self)
@@ -71,31 +75,37 @@ function make_turret(x,y)
 		update=function(self)
 			if target and not target.disabled and self.fire_t<time_t then
 				make_laser(self,target)
-				self.fire_t=time_t+8
+				self.fire_t=time_t+45
+				make_flash(self.pos)
 			end
 		end,
 		draw=function(self)
 			local x,y=cam:project(self.pos)
-			circfill(x,y,3,9)
+			spr(2,x-4,y-4)
 		end
 	}
 	add(actors,a)
 end
 
-local blt_acc=3
+local blt_acc=0.8
 function make_laser(self,target)
 	local v=v_clone(target.pos)
-	local lead_t=0
+	local leads={}
+	if use_lead then
+ 	local lead_t=0
   for i=1,2 do
-		lead_t=sqrt(sqr_dist(v,self.pos))/blt_acc-lead_t
-		-- not converging
-		-- if(lead_t<0) break
-		v_add(v,target.fwd,lead_t*target.acc)
+ 		lead_t=sqrt(sqr_dist(v,self.pos))/blt_acc-lead_t
+ 		-- not converging
+ 		if(lead_t<0) break
+ 		v_add(v,target.fwd,lead_t*target.acc)
+ 		add(leads,v_clone(v))
+ 	end
 	end
-	v_add(v,self.pos,-1)
-	v_normz(v) 
+ v_add(v,self.pos,-1)
+ v_normz(v) 
 		
-	make_blt(self.pos,v)
+	local b=make_blt(self.pos,v)
+	b.leads=leads
 end
 
 function blt_obj_col(self)
@@ -127,14 +137,35 @@ function blt_obj_col(self)
 	return false
 end
 
+function make_flash(pos)
+	local p={
+		pos=v_clone(pos),
+		t=24,
+		update=function(self)			
+			if self.t<0 then
+				del(particles,self)
+			end
+			self.t-=1
+		end,
+		draw=function(self)
+			local x,y=cam:project(self.pos)
+			circfill(x,y,self.t/8,7)
+		end
+	}
+	return add(particles,p)
+end
+
 function make_blt(pos,u)
 	local a={
 		pos=v_clone(pos),
 		fwd=u,
 		acc=blt_acc,
-		t=time_t+95,
-		die=function(self)
+		t=time_t+180,
+		die=function(self,hit)
 			del(particles,self)
+			if hit then
+				make_flash(self.pos)
+			end
 		end,
 		update=function(self)
 			if self.t<time_t then
@@ -144,8 +175,9 @@ function make_blt(pos,u)
 			self.prev_pos=v_clone(self.pos)
 			v_add(self.pos,self.fwd,self.acc)
 			
-			if blt_obj_col(self) or not cam:is_viz(self.pos) then
-				self:die()
+			local hit=blt_obj_col(self)
+			if hit or not cam:is_viz(self.pos) then
+				self:die(hit)
 			end
 		end,
 		draw=function(self)
@@ -154,9 +186,17 @@ function make_blt(pos,u)
 			v_add(v1,self.fwd)
 			local x1,y1=cam:project(v1)
 			line(x,y,x1,y1,8)
+			
+			-- draw lead positions
+			for i=1,#self.leads do
+			 local l=self.leads[i]
+				x,y=cam:project(l)
+				pset(x,y,9)
+				print(i,x-2,y+4,7)
+			end
 		end
 	}
-	add(particles,a)
+	return add(particles,a)
 end
 
 function make_cam()
@@ -176,13 +216,16 @@ function forall(a,fn)
 	end	
 end
 
-function _update()
+function _update60()
 	time_t+=1
 	forall(actors,"update")
 	forall(particles,"update")
 	
 	if btnp(4) then
 		target=make_actor(rnd(96)-48,rnd(96)-48)
+	end
+	if btnp(5) then
+		use_lead=not use_lead
 	end
 end
 
@@ -191,7 +234,13 @@ function _draw()
 	forall(actors,"draw")
 	forall(particles,"draw")
 	
-	print(#particles,2,2,7)
+ local s="lead:"..(use_lead and "on" or "off")
+ for i=-1,1,2 do
+ 	for j=-1,1,2 do
+		 print(s,2+i,2+j,1)
+		end
+	end
+	print(s,2,2,6)
 end
 
 function _init()
@@ -199,10 +248,11 @@ function _init()
  make_turret(0,0)
 end
 __gfx__
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000c70000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0070070000cccc000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000770000333b7300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0007700033333b730000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00700700011111100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000001111000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000055550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000c70000566775000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0070070000cccc005666667500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000770000333b7305668e67500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0007700033333b735668866500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00700700011111105666666500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000001111000566665000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000055550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000

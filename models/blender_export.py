@@ -10,7 +10,7 @@ else:
    argv = argv[argv.index("--") + 1:]
 
 try:
-    parser = argparse.ArgumentParser(description='Exports Blender model as a byte array',prog = "blender -b -P "+__file__+" --")
+    parser = argparse.ArgumentParser(description='Exports Blender model as a byte array for wireframe rendering',prog = "blender -b -P "+__file__+" --")
     parser.add_argument('-o','--out', help='Output file', required=True, dest='out')
     args = parser.parse_args(argv)
 except Exception as e:

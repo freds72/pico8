@@ -1,0 +1,367 @@
+﻿<html>
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="X-UA-Compatible" content="IE=edge">
+		<title>PICO-8 Cartridge</title>
+		<meta name="description" content="">
+		<meta name="viewport" content="initial-scale=1, maximum-scale=1, user-scalable=no">
+
+<STYLE TYPE="text/css">
+<!--
+canvas#canvas {}
+
+.pico8_el {
+	box-sizing:border-box;
+	float:center;
+	width:19.3%;
+	display:inline-block;
+	padding:4px;
+	text-align:center;
+	color:#FFF1E8;
+	background-color:#83769c;
+	font-family:verdana;
+	font-size:11px;
+	cursor:pointer;
+	cursor:hand;
+	white-space:nowrap;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	vertical-align:middle;
+}
+
+.pico8_el:hover{
+	background-color:#FF77A8;
+}
+
+.center{
+	text-align:center;
+	/* Safari, Opera, and Chrome */
+	display:-webkit-box;
+	-webkit-box-pack:center;
+	-webkit-box-align:center;
+	/* Firefox */
+	display:-moz-box;
+	-moz-box-pack:center;
+	-moz-box-align:center;
+	/* Internet Explorer 10 */
+	display:-ms-flexbox;
+	-ms-flex-pack:center;
+	-ms-flex-align:center;
+
+	margin:0 0;
+	border:0px;
+}
+
+.plate{
+	visibility:hidden; /*for graceful loading*/
+	background-color:#000;
+	border:4px solid #000;
+	box-sizing:content-box;
+	box-shadow:0px 0px 20px #000;
+
+	-webkit-user-select:none; /* Chrome, Opera, Safari */
+	-moz-user-select:none; /* Firefox 2+ */
+	-ms-user-select:none; /* IE 10+ */
+	user-select:none; /* Standard syntax */
+	user-drag:none;
+	-webkit-user-drag:none;
+}
+
+canvas{
+	cursor:none;
+	outline:none;
+}
+
+.menubar{
+	box-sizing:border-box;
+	background-color:#000;
+    border-style:solid;
+    border-width:4px 0px 0px 0px;
+	border-color:#000;
+	visibility:hidden;
+
+	display:flex;
+    align-items:stretch;
+    justify-content:space-between;
+    width:100%;
+    margin:0;
+    padding:0;
+}
+
+.startbutton{
+	position:absolute;
+	left:0; right:0;
+	top:0; bottom:0;
+	margin-left:auto; margin-right:auto;
+	margin-top:auto; margin-bottom:auto;
+	width:96px; height:96px;
+	cursor:pointer;
+	cursor:hand;
+}
+
+.pixels{
+	image-rendering:optimizeSpeed;
+	image-rendering:-moz-crisp-edges;
+	image-rendering:-webkit-optimize-contrast;
+	image-rendering:optimize-contrast;
+	image-rendering:pixelated;
+	-ms-interpolation-mode:nearest-neighbor;
+}
+
+-->
+</STYLE>
+
+</head>
+
+<body bgcolor=#5F574F class=center style="height:100%;border:0px;overflow:hidden;" leftmargin=0 topmargin=0> <!-- margins for chrome (defaults on 8) -->
+
+	<div id="plate" class=plate oncontextmenu="return false;">
+
+	<!-- the itch app messes with the first found canvas -->
+	<canvas id="dummy4itchapp" style="position:absolute;visibility:hidden;width:0;height:0;"></canvas>
+
+	<div id="frame" class=center style="visibility:hidden;"> <!-- firefox can't resize a fullscreen canvas (?)-->
+	<canvas class="emscripten pixels" id="canvas" oncontextmenu="event.preventDefault()" tabindex="1"></canvas>
+	</div>
+
+	<div id="start" class="startbutton pixels" onclick="loadCart();">
+	<img alt="START" height=72 src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAaklEQVR4Ae2dOwoAMQhE15A+rfc/3bZ7AlMnQfywCkKsfcgMM9ZP+QHtIn0vLeBAFduiFdQ/0DmvtR5LXJ6CPSXe2ZXcFNlTxFbemKrbZPs35XogeS9xeQr+anT6LzoOwEDwZJ7jwhXUnwkTTiDQ2Ja34AAAABB0RVh0TG9kZVBORwAyMDExMDIyMeNZtsEAAAAASUVORK5CYII="/>
+	</div>
+
+	<center>
+	<div id="menubar" class=menubar>
+
+		<div class=pico8_el onclick="Module.pico8Reset();">
+		<img alt="Reset" height=12 src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAaklEQVR4Ae2dOwoAMQhE15A+rfc/3bZ7AlMnQfywCkKsfcgMM9ZP+QHtIn0vLeBAFduiFdQ/0DmvtR5LXJ6CPSXe2ZXcFNlTxFbemKrbZPs35XogeS9xeQr+anT6LzoOwEDwZJ7jwhXUnwkTTiDQ2Ja34AAAABB0RVh0TG9kZVBORwAyMDExMDIyMeNZtsEAAAAASUVORK5CYII="/>
+		</div>
+
+		<div class=pico8_el onclick="Module.pico8TogglePaused();">
+		<img alt="Pause" height=12 src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAPUlEQVR4Ae3doQ0AIAxEUWABLPtPh2WCq26DwFSU/JPNT166QSu/Hg86W9dwLte+diP7AwAAAAAAgD+A+jM2ZAgo84I0PgAAABB0RVh0TG9kZVBORwAyMDExMDIyMeNZtsEAAAAASUVORK5CYII="/>
+		</div>
+
+		<div class=pico8_el onclick="toggleFullscreen();">
+		<img alt="Fullscreen" height=12 src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAaklEQVR4Ae2dsQ1AIQhExfze1v2ns3UCrfgFhmgUUAoGgHscp21wX9BqaZoDojbB96OkDJKNcTN2BHTyYNYmoT2BlPL7BKgcPfHjAVXKKadkHOn9K1r16N0czN6a95N8mnA7Aq2fTZ3Af3UKmCSMazL8HwAAABB0RVh0TG9kZVBORwAyMDExMDIyMeNZtsEAAAAASUVORK5CYII="/>
+		</div>
+
+		<div class=pico8_el onclick="Module.pico8ToggleSound();">
+		<img alt="Toggle Sound" height=12 src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAXklEQVR4Ae2doQ4AIQxD4YLH8v9fh+ULhjpxxSwLg2uyapr1JRu1iV5Z+1BGl4+xNpX38SYo2uRvYiT5LwEmt+ocgXVLrhPEgBiw8Q5w7/kueSkK+D2tJO4E/I3GrwkqQCBabEj/4QAAABB0RVh0TG9kZVBORwAyMDExMDIyMeNZtsEAAAAASUVORK5CYII="/>
+		</div>
+
+		<a class=pico8_el target="_new" href="http://www.lexaloffle.com/bbs/?cat=7&sub=2" >
+		<img  alt="More Carts" height=12 src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAlElEQVR4Ae2dMQ5FQBCGh6jcwAkkateg3DiAa+iQUGqVKi95FQfAJRQOoHeBUf8JyQqKjZ1uMzuz2e/LTE3KhyF7kSlgLOykas23f6D+A9Yp84aAOYU15pcJnfji0Il2ID8HzC4y38ZrnfIBGxeRoR3c3EWrACdsV5BOsx7OSRnrOXh4F5HzA6bevwUn8wlz7eCDsQM99B3ks0s/4QAAABB0RVh0TG9kZVBORwAyMDExMDIyMeNZtsEAAAAASUVORK5CYII="/>
+		</a>
+
+	</div>
+	</center>
+
+	</div>
+
+</body></html>
+
+<script type="text/javascript">
+
+	var autoresize=false; // enables autoresize. duh.
+	var autoplay=true; // enables autoplay when possible.
+
+	var canvas = document.getElementById("canvas");
+	var plate = document.getElementById("plate");
+
+	// show Emscripten environment where the canvas is
+	// arguments are passed to PICO-8
+
+	var Module = {};
+	Module.canvas = canvas;
+
+	/*
+		// When pico8_buttons is defined, PICO-8 takes each int to be a live bitfield
+		// representing the state of each player's buttons
+
+		var pico8_buttons = [0, 0, 0, 0, 0, 0, 0, 0]; // max 8 players
+		pico8_buttons[0] = 2 | 16; // example:player 0, RIGHT and Z held down
+
+		// when pico8_gpio is defined, reading and writing to gpio pins will
+		// read and write to these values
+		var pico8_gpio = new Array(128);
+	*/
+
+	// key blocker. prevent cursor keys from scrolling page while playing cart.
+
+	function onKeyDown_blocker(event) {
+		event = event || window.event;
+		var o = document.activeElement;
+		if (!o || o == document.body || o.tagName == "canvas" || o.tagName == "CANVAS")
+		{
+			if ([9, 32, 37, 38, 39, 40].indexOf(event.keyCode) > -1)
+			{
+				if (event.preventDefault) event.preventDefault();
+			}
+		}
+	}
+
+	document.addEventListener('keydown', onKeyDown_blocker, false);
+
+	//------------------------- RESIZE
+
+	function resizeCanvas()
+	{
+		var csize=512;
+		var width=window.innerWidth,height=window.innerHeight;
+		var fs=(document.fullscreenElement || document.mozFullScreenElement || document.webkitIsFullScreen || document.msFullscreenElement);
+		if (autoresize || fs)
+		{
+			if (!fs) height-=32; //keep room for buttons
+			csize=Math.max(128,Math.min(Math.floor(width/128)*128,Math.floor(height/128)*128));
+		}
+
+		plate.style.visibility="visible";//graceful resizing on load
+		plate.style.width=csize; // otherwise larger buttons but black side bars with autoresize (stylish?)
+		canvas.style.width = csize;
+		canvas.style.height = csize;
+		window.focus();
+	}
+
+	window.addEventListener('load', resizeCanvas, false);
+	window.addEventListener('resize', resizeCanvas, false);
+	window.addEventListener('orientationchange', resizeCanvas, false);
+	window.addEventListener('fullscreenchange', resizeCanvas, false);
+	window.addEventListener('webkitfullscreenchange', resizeCanvas, false);//for itch.app
+
+	//------------------------- FULLSCREEN
+
+	function toggleFullscreen()
+	{
+		var frame = document.getElementById("frame");//firefox won't resize a fullscreen canvas, so let's fullscreen its frame instead
+
+		if (document.fullscreenElement || document.mozFullScreenElement || document.webkitIsFullScreen || document.msFullscreenElement)
+		{//exit fs
+			frame.cancelFullscreen = frame.cancelFullscreen || frame.mozCancelFullScreen || frame.webkitCancelFullScreen;
+			frame.cancelFullscreen();
+		}
+		else
+		{//enter fs
+			frame.requestFullscreen = frame.requestFullscreen || frame.mozRequestFullScreen || frame.webkitRequestFullScreen;
+			frame.requestFullscreen();
+		}
+	}
+
+	// ==========================================================================================
+	// krajzeg's gamepad support:https://github.com/krajzeg/pico8gamepad/
+	// ==========================================================================================
+	// ====== [CONFIGURATION] - tailor to your specific needs
+
+	// How many PICO-8 players to support?
+	// - if set to 1, all connected controllers will control PICO-8 player 1
+	// - if set to 2, controller #0 will control player 1, controller #2 - player 2, controller #3 - player 1, and so on
+	// - higher numbers will distribute the controls among the players in the same way
+	var supportedPlayers = 2;
+
+	// These flags control whether or not different types of buttons should
+	// be mapped to PICO-8 O and X buttons.
+	var mapFaceButtons = true;
+	var mapShoulderButtons = true;
+	var mapTriggerButtons = false;
+	var mapStickButtons = false;
+
+	// How far you have to pull an analog stick before it register as a PICO-8 d-pad direction
+	var stickDeadzone = 0.4;
+
+	// ====== [IMPLEMENTATION]
+
+	// Array through which we'll communicate with PICO-8.
+	var pico8_buttons = [0,0,0,0,0,0,0,0];
+
+	// Start polling gamepads (if supported by browser)
+	if (navigator.getGamepads)
+		requestAnimationFrame(updateGamepads);
+
+	// Workhorse function, updates pico8_buttons once per frame.
+	function updateGamepads() {
+	  var gamepads = navigator.getGamepads ? navigator.getGamepads() :[];
+	  // Reset the array.
+	  for (var p = 0; p < supportedPlayers; p++)
+		pico8_buttons[p] = 0;
+	  // Gather input from all known gamepads.
+	  for (var i = 0; i < gamepads.length; i++) {
+		var gp = gamepads[i];
+		if (!gp || !gp.connected) continue;
+
+		// which player is this assigned to?
+		var player = i % supportedPlayers;
+
+		var bitmask = 0;
+		// directions (from axes or d-pad "buttons")
+		bitmask |= (axis(gp,0) < -stickDeadzone || axis(gp,2) < -stickDeadzone || btn(gp,14)) ? 1 :0;  // left
+		bitmask |= (axis(gp,0) > +stickDeadzone || axis(gp,2) > +stickDeadzone || btn(gp,15)) ? 2 :0; // right
+		bitmask |= (axis(gp,1) < -stickDeadzone || axis(gp,3) < -stickDeadzone || btn(gp,12)) ? 4 :0;  // up
+		bitmask |= (axis(gp,1) > +stickDeadzone || axis(gp,3) > +stickDeadzone || btn(gp,13)) ? 8 :0; // down
+		// O and X buttons
+		var pressedO =
+			(mapFaceButtons && (btn(gp,0) || btn(gp,2))) ||
+			(mapShoulderButtons && btn(gp,5)) ||
+			(mapTriggerButtons && btn(gp,7)) ||
+			(mapStickButtons && btn(gp,11));
+		var pressedX =
+			(mapFaceButtons && (btn(gp,1) || btn(gp,3))) ||
+			(mapShoulderButtons && btn(gp,4)) ||
+			(mapTriggerButtons && btn(gp,6)) ||
+			(mapStickButtons && btn(gp,10));
+		bitmask |= pressedO ? 16 :0;
+		bitmask |= pressedX ? 32 :0;
+		// update array for the player (keeping any info from previous controllers)
+		pico8_buttons[player] |= bitmask;
+		// pause button is a bit different - PICO-8 only respects the 6th bit on the first player's input
+		// we allow all controllers to influence it, regardless of number of players
+		pico8_buttons[0] |= (btn(gp,8) || btn(gp,9)) ? 64 :0;
+	  }
+
+	  requestAnimationFrame(updateGamepads);
+	}
+
+	// Helpers for accessing gamepad
+	function axis(gp,n) { return gp.axes[n] || 0.0; }
+	function btn(gp,b) { return gp.buttons[b] ? gp.buttons[b].pressed :false; }
+
+	// ==========================================================================================
+	// chrome autoplay policy may2018
+	// ==========================================================================================
+
+	var cartLoaded=false;
+
+	function loadCart()
+	{
+		if (cartLoaded) return;
+		document.getElementById("start").style.visibility="hidden";
+		document.getElementById("frame").style.visibility="visible";
+
+		var script = document.createElement('script');
+		script.type='text/javascript';
+		script.async=true;
+		script.src="##js_file##";
+
+		var loadFunction = function ()
+		{
+			cartLoaded=true;
+			document.getElementById("menubar").style.visibility="visible";
+			resizeCanvas();
+		}
+		script.onload = loadFunction;
+		script.onreadystatechange = loadFunction;
+
+		var s = document.getElementsByTagName('script')[0];
+		s.parentNode.insertBefore(script,s);
+	};
+
+	if (autoplay)
+	{
+		var context = new AudioContext();
+		context.onstatechange = function ()
+		{
+			if (context.state=='running')
+			{
+				loadCart();
+				context.close();
+			}
+		};
+	}
+
+</script>
