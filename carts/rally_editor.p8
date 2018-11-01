@@ -532,6 +532,7 @@ for i=0,15 do
 end
 
 function log(s)
+ printh(s)
 	rectfill(0,120,127,127,15)
 	print(s,2,121,0)
 	flip()
@@ -576,25 +577,25 @@ function export_map()
 	end
 	
 	-- q binary layout
-	-- 0x0f00: dither pattern
-	-- 0x00ff: q code
-	-- 0x0.00ff: lo color
-	-- 0x0.ff00: hi color
-	local set_q_colors=function(q,lo,hi,n)
-		return bor(q,bor(shl(n,8),bor(shr(lo,16),shr(hi,8))))
+	-- 0x000f: q code
+	-- 0b0.000111: lo color
+	-- 0b0.111: hi
+	local set_q_colors=function(q,lo,hi)
+		return bor(q,bor(shr(hi,3),shr(lo,6)))
 	end
 	
 	local qmap={}
 	
 	-- create multiple layers
+	-- color range: 0-7
 	local layers={
-		{dist=4,hi=2,lo=1},
-		{dist=3.5,hi=3}}
+		{dist=4,hi=1,lo=0},
+		{dist=3.5,hi=2}}
 
 	for l=1,#layers do
 		local layer=layers[l]
+		log("generating qmap:"..l.."/"..#layers)
 		for j=0,63 do
-			log("generating qmap:"..j.."/63")
 			for i=0,63 do
 				local q=marching_code(i,j,layer.dist)				
 				local idx=2*i+2*128*j
@@ -644,42 +645,51 @@ function export_map()
 	]]
 	
 	local dump=""
-	local n,count,s,start_idx=0,0,""
+	local run_values={}
 	local commit=function()
-		if count>0 then
-			-- start pos
-			-- count
-			-- codes
-			s=int:tostr(start_idx)..byte:tostr(count)..s
-			dump=dump..s
-			count,s,start_idx=0,""
-			n+=1
-		end
-	end
-	for j=0,127 do
-		log("exporting:"..j.."/127")
-		for i=0,127 do
-			local idx=i+128*j
-			local q=qmap[idx]		
-			local hi,lo=get_q_colors(q)
-			if hi!=1 or lo!=1 then
-				-- q
-				s=s..nible:tostr(q)
-				-- hi lo
-				s=s..nible:tostr(shl(hi,2)+lo)
-				count+=1
-				if not start_idx then
-					start_idx=idx
-				end
+		if #run_values>0 then
+			-- bit layout:
+			-- rle
+			-- length x7
+			-- or:
+			-- q
+			-- hi/lo
+			-- hi/lo
+			local s=""
+			if #run_values>=2 then
+				-- rle mode
+				-- set rle bit
+				log("run size:"..#run_values.."("..byte:tostr(bor(0x80,#run_values))..")")
+				s=s..byte:tostr(bor(0x80,#run_values))
+				run_values={run_values[1]}
 			else
-				commit()
+				log("value:"..run_values[1])
 			end
+			-- values
+			for i=1,#run_values do
+				s=s..byte:tostr(run_values[i])
+			end
+			dump=dump..s
+			run_values={}			
 		end
-		-- trailing data?
-		commit()
 	end
+	for idx=0,128*128-1 do
+		--if(idx%128==0) log("exporting:"..flr(idx/128).."/127")
+		local q=qmap[idx] or 0
+		-- hi/lo colors
+		local c=shl(band(q,0x0.f),6) or 0
+		-- new run?
+		q=(q==1 or q==4) and 0x40 or 0
+		q=bor(q,c)
+		if run_values[1]!=q or #run_values>=127 then
+			commit()
+		end
+		add(run_values,q)
+	end
+	-- trailing data?
+	commit()
 	-- number of items + track
-	dump=int:tostr(n)..dump..track:tostr()
+	dump=dump..track:tostr()
 	-- clipboard
 	printh(dump,"@clip")
 	log("copied to clipboard")
