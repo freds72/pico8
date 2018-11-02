@@ -1445,12 +1445,7 @@ function trifill(x0,y0,x1,y1,x2,y2,col)
   p01_trapeze_w(y1,col,y2,y2,x1,x2)
  end
 end
-function trifill2(x0,y0,x1,y1,x2,y2,col)
- color(col)
- line(x0,y0,x1,y1)
- line(x1,y1,x2,y2)
- line(x0,y0,x2,y2)
-end
+
 -->8
 -- unpack models
 local mem=0x1000
@@ -1545,25 +1540,9 @@ end
 local function v4_clone(a,xy)
 	return {a[xy],a[3],a[4],a[5]}
 end
-local function trapeze_strip_y(x0,x1,y,u,du,v,dv,w,dw)
-	for x=x0,x1 do
-		local c=sget(u/w,v/w)
- 	if(c!=11)pset(x,y,c)
- 	u+=du
- 	v+=dv
- 	w+=dw
- end 
-end
-local function trapeze_strip_x(y0,y1,x,u,du,v,dv,w,dw)
-	for y=y0,y1 do
-		local c=sget(u/w,v/w)
- 	if(c!=11)pset(x,y,c)
- 	u+=du
- 	v+=dv
- 	w+=dw
- end 
-end
-function trapezefill(l,dl,r,dr,start,finish,fn,dir)
+-- y-major or x-major pset functions
+local psets={pset,function (x,y,c) pset(y,x,c) end}
+function trapezefill(l,dl,r,dr,start,finish,dir)
 	local l,r,dl,dr=v4_clone(l,dir),v4_clone(r,dir),v4_clone(dl,dir),v4_clone(dr,dir)
 	local dt=1/(finish-start)
 	for k=1,4 do
@@ -1580,6 +1559,7 @@ function trapezefill(l,dl,r,dr,start,finish,fn,dir)
 	end
 
 	-- rasterization
+	local pset=psets[dir]
 	for j=start,min(finish,127) do
 		--rectfill(l[1],y0,r[1],y0,11)
 		local len=r[1]-l[1]
@@ -1588,7 +1568,13 @@ function trapezefill(l,dl,r,dr,start,finish,fn,dir)
 			local u0,v0=w0*l[3],w0*l[4]
 			local du,dv=(w1*r[3]-u0)*dx,(w1*r[4]-v0)*dx
 			local dw=(w1-w0)*dx
-			fn(l[1],r[1],j,u0,du,v0,dv,w0,dw)
+			for i=l[1],r[1] do
+				local c=sget(u0/w0,v0/w0)
+				 if(c!=11)pset(i,j,c)
+				 u0+=du
+				 v0+=dv
+				 w0+=dw
+			 end
 		end
 
 		for k=1,4 do
@@ -1615,10 +1601,10 @@ function tritex(v0,v1,v2)
 		-- upper trapeze
 		-- x w u v
 		trapezefill(v0,v1,v0,v02,
-			y0,y1,trapeze_strip_y,1)
+			y0,y1,1)
 		-- lower trapeze
 		trapezefill(v1,v2,v02,v2,
-			y1,y2,trapeze_strip_y,1)
+			y1,y2,1)
 	else
 		if(x1<x0)v0,v1,x0,x1,y0,y1=v1,v0,x1,x0,y1,y0
 		if(x2<x0)v0,v2,x0,x2,y0,y2=v2,v0,x2,x0,y2,y0
@@ -1634,10 +1620,10 @@ function tritex(v0,v1,v2)
 		-- upper trapeze
 		-- x w u v
 		trapezefill(v0,v1,v0,v02,
-			x0,x1,trapeze_strip_x,2)
+			x0,x1,2)
 		-- lower trapeze
 		trapezefill(v1,v2,v02,v2,
-			x1,x2,trapeze_strip_x,2)
+			x1,x2,2)
 	end 
 end
 __gfx__

@@ -293,12 +293,12 @@ function draw_model(model,m,x,y,z,w)
 		local p0,uv0=p[f.vi[1]],f.uv[1]
 		p0[4],p0[5]=uv0[1],uv0[2]
 		for i=2,#f.vi-1 do
-	 	local p1,p2=p[f.vi[i]],p[f.vi[i+1]]
-	 	local uv1,uv2=f.uv[i],f.uv[i+1]
+	 		local p1,p2=p[f.vi[i]],p[f.vi[i+1]]
+	 		local uv1,uv2=f.uv[i],f.uv[i+1]
 			p1[4],p1[5]=uv1[1],uv1[2]
 			p2[4],p2[5]=uv2[1],uv2[2]
-	 	tritex(p0,p1,p2)
-	 	--trifill(p0[1],p0[2],p1[1],p1[2],p2[1],p2[2],11)
+	 		tritex(p0,p1,p2)
+	 		--trifill(p0[1],p0[2],p1[1],p1[2],p2[1],p2[2],11)
 		end
 	end
 end
@@ -569,116 +569,91 @@ function unpack_models()
 end
 
 -->8
--- trifilltex
-local function trapeze_strip_y(x0,x1,y,u,du,v,dv,w,dw)
-	for x=x0,x1 do
-		local c=sget(u/w,v/w)
- 	if(c!=11)pset(x,y,c)
- 	u+=du
- 	v+=dv
- 	w+=dw
- end 
+local function v4_clone(a,xy)
+ -- x/y
+ -- u/v/w
+	return {a[xy],a[3],a[4],a[5]}
 end
-local function trapeze_strip_x(y0,y1,x,u,du,v,dv,w,dw)
-	for y=y0,y1 do
-		local c=sget(u/w,v/w)
- 	if(c!=11)pset(x,y,c)
- 	u+=du
- 	v+=dv
- 	w+=dw
- end 
-end
-function trapezefill(l,dl,r,dr,start,finish,fn)
- local dt=1/(finish-start)
- for k,v in pairs(l) do
- 	dl[k],dr[k]=(dl[k]-v)*dt,(dr[k]-r[k])*dt
- end
+-- y-major or x-major pset functions
+local psets={pset,function (x,y,c) pset(y,x,c) end}
+function trapezefill(l,dl,r,dr,start,finish,dir)
+	local l,r,dl,dr=v4_clone(l,dir),v4_clone(r,dir),v4_clone(dl,dir),v4_clone(dr,dir)
+	local dt=1/(finish-start)
+	for k,v in pairs(dl) do
+		dl[k],dr[k]=(v-l[k])*dt,(dr[k]-r[k])*dt
+	end
 
- -- cliping
- if start<0 then
- 	for k,v in pairs(dl) do
- 		l[k]-=start*v
- 		r[k]-=start*dr[k]
- 	end
- 	start=0
- end
+	-- cliping
+	if start<0 then
+		for k,v in pairs(dl) do
+			l[k]-=start*v
+			r[k]-=start*dr[k]
+		end
+		start=0
+	end
 
 	-- rasterization
+	local pset=psets[dir]
 	for j=start,min(finish,127) do
-		--rectfill(l[1],y0,r[1],y0,11)
+		--rectfill(l[1],j,r[1],j,11)
 		local len=r[1]-l[1]
 		if len>0 then
- 		local dx,w0,w1=1/len,l[2],r[2]
- 		local u0,v0=w0*l[3],w0*l[4]
- 		local du,dv=(w1*r[3]-u0)*dx,(w1*r[4]-v0)*dx
+			local dx,w0,w1=1/len,l[2],r[2]
+			local u0,v0=w0*l[3],w0*l[4]
+			local du,dv=(w1*r[3]-u0)*dx,(w1*r[4]-v0)*dx
 			local dw=(w1-w0)*dx
-   fn(l[1],r[1],j,u0,du,v0,dv,w0,dw)
+			for i=l[1],r[1] do
+				local c=sget(u0/w0,v0/w0)
+				if(c!=11) pset(i,j,c)
+				u0+=du
+				v0+=dv
+				w0+=dw
+			end
+  end 
+		for k,v in pairs(dl) do
+			l[k]+=v
+			r[k]+=dr[k]
 		end
-	 
-  for k,v in pairs(dl) do
- 		l[k]+=v
- 		r[k]+=dr[k]
- 	end
- end
+	end
 end
 function tritex(v0,v1,v2)
 	local x0,x1,x2=v0[1],v1[1],v2[1]
- local y0,y1,y2=v0[2],v1[2],v2[2]
- if(y1<y0)v0,v1,x0,x1,y0,y1=v1,v0,x1,x0,y1,y0
- if(y2<y0)v0,v2,x0,x2,y0,y2=v2,v0,x2,x0,y2,y0
- if(y2<y1)v1,v2,x1,x2,y1,y2=v2,v1,x2,x1,y2,y1
+	local y0,y1,y2=v0[2],v1[2],v2[2]
+	if(y1<y0)v0,v1,x0,x1,y0,y1=v1,v0,x1,x0,y1,y0
+	if(y2<y0)v0,v2,x0,x2,y0,y2=v2,v0,x2,x0,y2,y0
+	if(y2<y1)v1,v2,x1,x2,y1,y2=v2,v1,x2,x1,y2,y1
 
 	if max(x2,max(x1,x0))-min(x2,min(x1,x0)) > y2-y0 then
-  -- mid point
-  local v02,mt={},1/(y2-y0)*(y1-y0)
-  for k,v in pairs(v0) do
-  	v02[k]=v+(v2[k]-v)*mt
-  end
-  if(x1>v02[1])v1,v02=v02,v1
-  
-  -- upper trapeze
-  -- x w u v
-  trapezefill(
-  	{v0[1],v0[3],v0[4],v0[5]},
-  	{v1[1],v1[3],v1[4],v1[5]},
-  	{v0[1],v0[3],v0[4],v0[5]},
-  	{v02[1],v02[3],v02[4],v02[5]},
-   y0,y1,trapeze_strip_y)
-  -- lower trapeze
-  trapezefill(
-  	{v1[1],v1[3],v1[4],v1[5]},
-  	{v2[1],v2[3],v2[4],v2[5]},
-  	{v02[1],v02[3],v02[4],v02[5]},
-  	{v2[1],v2[3],v2[4],v2[5]},
-   y1,y2,trapeze_strip_y)
- else
-  if(x1<x0)v0,v1,x0,x1,y0,y1=v1,v0,x1,x0,y1,y0
-	 if(x2<x0)v0,v2,x0,x2,y0,y2=v2,v0,x2,x0,y2,y0
-	 if(x2<x1)v1,v2,x1,x2,y1,y2=v2,v1,x2,x1,y2,y1
-  
-  -- mid point
-  local v02,mt={},1/(x2-x0)*(x1-x0)
-  for k,v in pairs(v0) do
-  	v02[k]=v+(v2[k]-v)*mt
-  end
-  if(y1>v02[2])v1,v02=v02,v1
-  
-  -- upper trapeze
-  -- x w u v
-  trapezefill(
-  	{v0[2],v0[3],v0[4],v0[5]},
-  	{v1[2],v1[3],v1[4],v1[5]},
-  	{v0[2],v0[3],v0[4],v0[5]},
-  	{v02[2],v02[3],v02[4],v02[5]},
-   x0,x1,trapeze_strip_x)
-  -- lower trapeze
-  trapezefill(
-  	{v1[2],v1[3],v1[4],v1[5]},
-  	{v2[2],v2[3],v2[4],v2[5]},
-  	{v02[2],v02[3],v02[4],v02[5]},
-  	{v2[2],v2[3],v2[4],v2[5]},
-   x1,x2,trapeze_strip_x)
- end 
+		-- mid point
+		local v02,mt={},1/(y2-y0)*(y1-y0)
+		for k,v in pairs(v0) do
+			v02[k]=v+(v2[k]-v)*mt
+		end
+		if(x1>v02[1])v1,v02=v02,v1
+
+		-- upper trapeze
+		-- x w u v
+		trapezefill(v0,v1,v0,v02,y0,y1,1)
+		-- lower trapeze
+		trapezefill(v1,v2,v02,v2,y1,y2,1)
+	else
+		if(x1<x0)v0,v1,x0,x1,y0,y1=v1,v0,x1,x0,y1,y0
+		if(x2<x0)v0,v2,x0,x2,y0,y2=v2,v0,x2,x0,y2,y0
+		if(x2<x1)v1,v2,x1,x2,y1,y2=v2,v1,x2,x1,y2,y1
+
+		-- mid point
+		local v02,mt={},1/(x2-x0)*(x1-x0)
+		for k,v in pairs(v0) do
+			v02[k]=v+(v2[k]-v)*mt
+		end
+		if(y1>v02[2])v1,v02=v02,v1
+
+		-- upper trapeze
+		-- x w u v
+		trapezefill(v0,v1,v0,v02,x0,x1,2)
+		-- lower trapeze
+		trapezefill(v1,v2,v02,v2,x1,x2,2)
+	end 
 end
 __gfx__
 bb88856599777777777777777777777777777777777777788756566bb00000000000000000000000000000000000000000000000000000000000000000000000
@@ -751,7 +726,7 @@ bbbbb55555bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb55555bbbbb00000000000000000000000
 0838f640d0e001f04011001171917191000837b940d02040e0401100a000a071117108354940e0408001409091000272020291891749408060f0014012711200
 9100917108094940d0f06020409091029172020002861749d0060808080806080a380a080808080a0608080a0808080608080a0808b9f6e9c80808994926c808
 b040207021f14110d0d0a132108056f674b9f674b9b97456b97456f6fbb9f6fbb9b9fb56b9fb60401040805000563858406070302000b9385840508070600008
-fb584010506020000838f64040307080000838b9402030401000087458600608080a080808080a080608080a08080806
+fb584010506020000838f64040307080000838b9402030401000087458600608080a080808080a080608080a0808080600000000000000000000000000000000
 __sfx__
 00020000085500d650086500955009550086500955008550086500955008650085500865008550076500855008550076500855007650085500865008650075500765007650076500755008650096500855009550
 010f00002c060350503b0403e0403365029060216501e0501665015040116400d0400b6300a030076300803007630060300463004030036300263002640016400164001640016300163001630016300163001620
