@@ -949,27 +949,24 @@ function make_cam(f)
 		dist=shl(8,ground_shift),
 		-- camera rotation
 		c=1,s=0,
-		track=function(self,pos,pitch,yaw)
+		track=function(self,pos,angle)
 			self.pos=v_clone(pos)
 			self.lookat=v_clone(pos)
-			self.c_pitch,self.s_pitch=cos(pitch),-sin(pitch)
-			self.c_yaw,self.s_yaw=cos(yaw),-sin(yaw)
-
-			local x,y,z=self.dist*self.c_yaw,0,self.dist*self.s_yaw
-			z,y=self.c_pitch*z+self.s_pitch*y,-self.s_pitch*z+self.c_pitch*y
-			v_add(self.pos,{x,y,z})
+			self.c,self.s=cos(angle),-sin(angle)
+			v_add(self.pos,{0,self.dist*self.s,self.dist*self.c})
 		end,
 		project=function(self,x,y,z)
 			x-=self.lookat[1]
-			y-=self.lookat[2]
+			local tmpy=y
+			-- fake 3d
+			y=-self.lookat[2]
 			z-=self.lookat[3]
-			x,z=self.c_yaw*x+self.s_yaw*z,-self.s_yaw*x+self.c_yaw*z
-			z,y=self.c_pitch*z+self.s_pitch*y,-self.s_pitch*z+self.c_pitch*y
+			z,y=self.c*z+self.s*y,-self.s*z+self.c*y
 
-  	local xe,ye,ze=x,y,z-self.dist
+  			local xe,ye,ze=x,y,z-self.dist
 
-		 local w=-self.focal/ze
-  	return 64+xe*w,64-ye*w,ze,w
+		 	local w=-self.focal/ze
+  			return 64+xe*w,64-(tmpy+ye)*w,ze,w
 		end
 	}
 	return c
@@ -1091,17 +1088,6 @@ function get_altitude_and_n(v,with_n)
 	return lerp(h0,h1,dz),n
 end
 
-function draw_tex_quad(a,b,sx,sy)
-	local t,invdx,wa,wb=0,1/(b[2]-a[2]),a[4],b[4]
-	for y=a[2],b[2] do
-		local x,w=lerp(a[1],b[1],t),lerp(wa,wb,t)
-		-- persp correction
-		local u=t*wb/w
-		sspr(sx,sy+16*u,16,1,x,y,shl(w,ground_shift),1)
-		t+=invdx
-	end
-end
-
 -- draw actors on strip j
 function draw_actors(j)
 	local bucket=zbuf[band(j-1,0x7f)]
@@ -1135,97 +1121,122 @@ function update_ground()
 end
 
 function draw_ground(self)
- 	local colors={11,4,9}
+	local colors={11,4,9}
 	local shade=function(lvl,c)
+		c=colors[c+1]
 		return bor(shl(sget(max(lvl-1)+16,c),4),sget(lvl+16,c))
 	end
-	-- grid width extend
-	local imin,imax=-6,6
+
+	local imin,imax=-7,7
 	local cx,cz=cam.lookat[1],cam.lookat[3]
 	-- cell x/z ratio
 	local dx,dz=cx%ground_scale,cz%ground_scale
 	-- cell coordinates
 	local nx,ny=flr(shr(cx,ground_shift)),flr(shr(cz,ground_shift))
 	
-	-- project grid
+	-- project anchor points
 	local p={}
 	-- grid depth extent
 	for j=-7,5 do
-		local row={}
-		local nj=ny+j
-		for i=imin,imax do
-			local ni=nx+i
-			local h,q=get_height(ni,nj),get_raw_qcode(ni,nj)
-		 	-- compute grid points centered on lookat pos
-			local xx,zz=-dx+cx+shl(i,ground_shift),-dz+cz+shl(j,ground_shift)
-			local x,y,z,w=cam:project(xx,h,zz)
-			add(row,{flr(x),flr(y),z,w,x=xx,y=h,z=zz,q=q,ni=ni})
-		end
-		add(p,row)
+	 -- project leftmost grid points
+		local x,y,z,w=cam:project(-dx+cx+shl(imin,ground_shift),0,-dz+cz+shl(j,ground_shift))
+		add(p,{x,y,z,w,ny+j})
 	end
+	
 	-- move to 0-1 range
 	dx/=ground_scale
 	dz/=ground_scale
 	
-	local r0=p[1]
-	local nj=ny-9
+	local v0=p[1]
+	local w0,nj=v0[4],v0[5]
+	local dw0=shl(w0,ground_shift)
 	for j=2,#p do
-		local r1=p[j]
-		local v0,v1,q0=r0[1],r1[1],r0[1].q
-		for i=2,#r1 do
-			local v3,v2,q3=r0[i],r1[i],r0[i].q
-
-			local q_code=band(q0,0x40)
-			local c_hi,c_lo=shr(band(0b00111000,q0),3),band(0b111,q0)
+		-- offset to grid space
+		local ni=nx+imin
+		local i,di=imin,1
 		
-			-- local c_hi,c_lo=get_q_colors(q0)
-			c_hi,c_lo=colors[c_hi+1],colors[c_lo+1]
-			
-			--local strip=(nj%4<2) and 0 or 1
-			--strip+=((ni%4<2) and 0 or 1)
-			--c_hi,c_lo=shade(1,c_hi),shade(1,c_lo)
-
-			--fillp(dither_pat2[strip+1])
-						
-			-- left/right clipping
-			local x0,y0=v0[1],v0[2]
-			local x1,y1=v1[1],v1[2]
-			local x3,y3=v3[1],v3[2]
-			local x2,y2=v2[1],v2[2]
-
-			if i==2 then
-				x0,y0=lerp(v0[1],v3[1],dx),lerp(v0[2],v3[2],dx)
-				x1,y1=lerp(v1[1],v2[1],dx),lerp(v1[2],v2[2],dx)
-			elseif i==#r1 then
-				x3,y3=lerp(v0[1],v3[1],dx),lerp(v0[2],v3[2],dx)
-				x2,y2=lerp(v1[1],v2[1],dx),lerp(v1[2],v2[2],dx)
-			end
-			
-			-- depth cliping
-			if j==2 then
-				x0,y0=lerp(x0,x1,dz),lerp(y0,y1,dz)
-				x3,y3=lerp(x3,x2,dz),lerp(y3,y2,dz)
-			elseif j==#p then
-				x1,y1=lerp(x0,x1,dz),lerp(y0,y1,dz)
-				x2,y2=lerp(x3,x2,dz),lerp(y3,y2,dz)
-			end
-						
-			if q_code>0 then
-				trifill(x0,y0,x2,y2,x1,y1,c_hi)		
-				trifill(x0,y0,x2,y2,x3,y3,c_lo) 				
+		local v1=p[j]
+		local w1=v1[4]
+		local dw1=shl(w1,ground_shift)
+		local x0,x1=v0[1],v1[1]
+		
+		-- todo: unit for w?
+		local h0,h1=get_height(ni,nj),get_height(ni,nj+1)
+		local y0,y1=flr(v0[2]-w0*h0),flr(v1[2]-w1*h1)
+		local q0=get_raw_qcode(ni,nj)
+		while i<=imax do
+			local q3=get_raw_qcode(ni+1,nj)
+			-- detail tile?
+			if i==imin or i>=imax-1 or ni%2==1 or q0!=q3 then
+				di=1
 			else
-				trifill(x1,y1,x3,y3,x0,y0,c_lo)
-				trifill(x1,y1,x3,y3,x2,y2,c_hi)
+				di=2
+				q3=get_raw_qcode(ni+2,nj)
 			end
-			v0,v1,q0=v3,v2,q3
+			local x2,x3=x1+di*dw1,x0+di*dw0
+			local h2,h3=get_height(ni+di,nj+1),get_height(ni+di,nj)
+			local y2,y3=flr(v1[2]-w1*h2),flr(v0[2]-w0*h3)
+
+			-- in screen tile?
+			if x3>0 then
+				-- left/right cliping
+				if i==imin or (i==imin-1 and di==2) then
+					x0,y0=lerp(x0,x3,dx),lerp(y0,y3,dx)
+					x1,y1=lerp(x1,x2,dx),lerp(y1,y2,dx)
+				elseif i==imax then
+					x3,y3=lerp(x0,x3,dx),lerp(y0,y3,dx)
+					x2,y2=lerp(x1,x2,dx),lerp(y1,y2,dx)
+				end
+
+				-- backup values
+				local xx0,yy0,xx3,yy3=x0,y0,x3,y3
+				local xx1,yy1,xx2,yy2=x1,y1,x2,y2
+				-- depth cliping
+				if j==2 then
+					x0,y0=lerp(x0,x1,dz),lerp(y0,y1,dz)
+					x3,y3=lerp(x3,x2,dz),lerp(y3,y2,dz)
+				elseif j==#p then
+					x1,y1=lerp(x0,x1,dz),lerp(y0,y1,dz)
+					x2,y2=lerp(x3,x2,dz),lerp(y3,y2,dz)
+				end
+				
+				local c_hi,c_lo,c_dither=shr(band(0b00111000,q0),3),band(0b111,q0)
+
+				local strip=(nj%4<2) and 0 or 1
+				strip+=((ni%4<2) and 0 or 1)
+				c_hi,c_lo=shade(1,c_hi),shade(1,c_lo)
+
+				fillp(dither_pat2[strip+1])
+
+				if band(q0,0x40)>0 then
+					trifill(x0,y0,x2,y2,x1,y1,c_hi)
+					trifill(x0,y0,x2,y2,x3,y3,c_lo)
+				else
+					trifill(x1,y1,x3,y3,x0,y0,c_hi)
+					trifill(x1,y1,x3,y3,x2,y2,c_lo)
+				end
+				
+				-- restore values (for clipping)
+				x0,y0,x3,y3=xx0,yy0,xx3,yy3
+				x1,y1,x2,y2=xx1,yy1,xx2,yy2
+			end
+					
+			-- no need to go further, tile is not visible
+			if(x0>127) break
+			x0,y0,x1,y1=x3,y3,x2,y2
+			h0,h1=h3,h2
+			q0=q3
+
+			ni+=di
+			i+=di
 		end
- 
+		
 		fillp()
 		draw_actors(nj)
-		r0=r1
+		
+		v0,w0,dw0=v1,w1,dw1
 		nj+=1
 	end
-	
 	-- last strip
 	draw_actors(nj)
 end
@@ -1256,13 +1267,11 @@ function _update()
 		if not plyr.disabled then
 			-- update cam
 			local lookat=v_clone(plyr.pos)
-			local fwd=m_fwd(plyr.m)
-			v_add(lookat,fwd,3)
+			v_add(lookat,m_fwd(plyr.m),3)
 			-- keep altitude
 			lookat[2]=plyr.pos[2]+2
 			cam.dist=mid(sqrt(v_dot(plyr.v,plyr.v)),8,15)
-			
-			cam:track(lookat,0.12,-atan2(fwd[1],fwd[3])+0.25)
+			cam:track(lookat,0.15)
 		end
 	end
 	
@@ -1436,7 +1445,12 @@ function trifill(x0,y0,x1,y1,x2,y2,col)
   p01_trapeze_w(y1,col,y2,y2,x1,x2)
  end
 end
-
+function trifill2(x0,y0,x1,y1,x2,y2,col)
+ color(col)
+ line(x0,y0,x1,y1)
+ line(x1,y1,x2,y2)
+ line(x0,y0,x2,y2)
+end
 -->8
 -- unpack models
 local mem=0x1000
@@ -1521,7 +1535,7 @@ function unpack_map(track)
 	end
 	-- track
 	for k=1,unpack_int() do
-		add(track,{pos={2*unpack_int(),0,2*unpack_int()}})
+		add(track,{pos={shl(unpack_int(),ground_shift+1),0,shl(unpack_int(),ground_shift+1)}})
 	end	
 end
 
