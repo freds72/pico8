@@ -4,7 +4,7 @@ __lua__
 -- globals
 local time_t,time_dt=0,1/30
 local actors,ground_actors,parts,v_light,cam,plyr,active_ground_actors={},{},{},{0,1,0}
-local track
+local track,ghost
 
 local physic_actors={}
 -- physic thresoholds
@@ -615,7 +615,6 @@ _g.control_plyr=function(self)
 	end
 end
 
-local ghost={}
 _g.update_plyr=function(self)
 	local up=m_up(self.m)
 	-- time decay
@@ -632,14 +631,39 @@ _g.update_plyr=function(self)
 	end
 	self.traction_ratio=self.traction/20
 	
-	-- record pos and orientation
-	if time_t%4==0 then
-		serialize(self.pos,ghost)
-		serialize(self.q,ghost)
-	end
-	
 	-- hit ground actors?
-	
+	-- todo
+
+	return true
+end
+
+_g.init_ghost=function(self)
+	local k,best,best_t=1,{},32000
+	self.replay_best=function()
+		local n=#best
+		if(n==0) return
+		k=deserialize(best,k,self.pos)
+		k=deserialize(best,k,self.q)
+		self.m=m_from_q(self.q)
+		-- loop
+		if(k>n) k=1
+	end
+	-- listen to track event
+	track.on_new_lap=function()
+		if best_t<track.lap_t then
+			k,best,best_t=1,self.hist,track.lap_t
+			self.hist={}
+		end
+	end
+end
+_g.update_ghost=function(self)
+	if time_t%4==0 then
+		-- capture current track
+		serialize(plyr.pos,self.hist)
+		serialize(plyr.q,self.hist)
+		-- replay best track
+		self:replay_best()
+	end
 	return true
 end
 
@@ -657,21 +681,23 @@ _g.draw_spr_actor=function(self)
 	pal()
 end
 
-local all_actors=json_parse'{"plyr":{"model":"205gti","hardness":0.02,"mass":32,"turn":0,"traction":0,"traction_ratio":0,"control":"control_plyr","update":"update_plyr","draw_shadow":"draw_plyr_shadow"},"tree":{"update":"nop","draw":"draw_spr_actor","rnd":{"frame":[37,96,66,98]}}}'
+local all_actors=json_parse'{"plyr":{"model":"205gti","rigid_model":"205gti_bbox","hardness":0.02,"mass":32,"turn":0,"traction":0,"traction_ratio":0,"control":"control_plyr","update":"update_plyr","draw_shadow":"draw_plyr_shadow"},"ghost":{"model":"205gti","init":"init_ghost","update":"update_ghost","outline":true},"tree":{"update":"nop","draw":"draw_spr_actor","rnd":{"frame":[37,96,66,98]}}}'
 
 function draw_actor(self)
-	draw_model(self.model,self.m,self.pos)
+	draw_model(self.model,self.m,self.pos,self.outline)
 end
 
 function make_actor(src,p)
 	-- instance
 	local a=clone(all_actors[src],{
 		pos=v_clone(p),
-		q=q or make_q(v_up,0.25)
+		q=q or make_q(v_up,0)
 	})
 	a.model,a.draw=all_models[a.model],a.draw or draw_actor
 	-- init orientation
 	a.m=m_from_q(a.q)
+	-- constructor?
+	if(a.init) a:init()
 	return add(actors,a)
 end
 
@@ -769,14 +795,14 @@ end
 
 -- rigid body extension for a given actor
 -- note:actor must have a 3d model
-function make_rigidbody(a,bbox)
+function make_rigidbody(a)
 	local rb={
 	 -- debug
 		forces={},
 		force=v_zero(),
 		torque=v_zero(),
 		-- bounding box
-		bbox=bbox,
+		bbox=all_models[a.rigid_model],
 		i_inv=make_m(),
 		v=v_zero(),
 		omega=v_zero(),
@@ -901,14 +927,14 @@ function make_track(laps,segments)
 	local t={
 		i=0, -- active index
 		t=0, -- total time
+		lap_t=0,
 		chrono={}, -- intermediate times
-		laps=laps,
 		on_new_lap=nop, -- lap callback
 		get_startpos=function(self)
 			return segments[1].pos
 		end,
 		is_over=function(self)
-			return flr(self.i/self.length)>self.laps
+			return flr(self.i/self.length)>laps
 		end,
 		update=function(self)
 			local p=segments[self.i%self.length+1]
@@ -918,6 +944,7 @@ function make_track(laps,segments)
 					self.i=0
 					self.chrono={}
 					self:on_new_lap()
+					self.lap_t=0
 				end
 				if true then -- p.chrono then
 					-- diff time
@@ -925,6 +952,7 @@ function make_track(laps,segments)
 				end
 			end
 			self.t+=1
+			self.lap_t=0
 		end,
 		-- debug draw
 		draw=function(self)
@@ -1304,26 +1332,11 @@ function draw_hud()
 	camera()
 end
 
-local ghost_k=1
-local ghost_p,ghost_m=v_zero()
-
 function _draw()
 	cls(0)
 
 	zbuf_sort()
 	draw_ground()
-
- if #ghost>2*60 then
-	 if time_t%4==0 then
-	  local q={0,0,0,0}
-	 	ghost_k=deserialize(ghost,ghost_k,ghost_p)
- 		ghost_k=deserialize(ghost,ghost_k,q)
-		 ghost_m=m_from_q(q)
- 	end
- 	if ghost_m then
- 		draw_model(all_models["205gti"],ghost_m,ghost_p,true)
- 	end
- end
  
 	track:draw()
 	 
@@ -1421,7 +1434,9 @@ function _init()
 	local pos=v_clone(track:get_startpos())
 	v_add(pos,v_up,4)
 
-	plyr=make_rigidbody(make_actor("plyr",pos),all_models["205gti_bbox"])
+	plyr=make_rigidbody(make_actor("plyr",pos))
+	
+	ghost=make_actor("ghost")
 	
 end
 
