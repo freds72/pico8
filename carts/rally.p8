@@ -436,7 +436,7 @@ function get_modelsize(model)
 end
 
 -- models & rendering
-local all_models=json_parse'{"205gti":{}}'
+local all_models=json_parse'{}'
 local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]'
 local dither_pat2=json_parse'[0xffff,0xa5a5,0x0000]'
 
@@ -637,8 +637,13 @@ _g.update_plyr=function(self)
 	return true
 end
 
-_g.init_ghost=function(self)
-	local k,best,best_t=1,{},32000
+_g.init_ghost=function(self) 
+	local k,best,best_t,hist=1,{},32000,{}
+	self.serialize_plyr=function()
+		-- capture current pos
+		serialize(plyr.pos,hist)
+		serialize(plyr.q,hist)
+	end
 	self.replay_best=function()
 		local n=#best
 		if(n==0) return
@@ -650,17 +655,17 @@ _g.init_ghost=function(self)
 	end
 	-- listen to track event
 	track.on_new_lap=function()
-		if best_t<track.lap_t then
-			k,best,best_t=1,self.hist,track.lap_t
-			self.hist={}
-		end
+	 -- new best?
+		if track.lap_t<best_t then
+			best,best_t,hist=hist,track.lap_t,{}
+  end
+		-- restart replay
+		k=1
 	end
 end
 _g.update_ghost=function(self)
-	if time_t%4==0 then
-		-- capture current track
-		serialize(plyr.pos,self.hist)
-		serialize(plyr.q,self.hist)
+	if time_t%2==0 then
+		self:serialize_plyr()
 		-- replay best track
 		self:replay_best()
 	end
@@ -877,7 +882,7 @@ function make_rigidbody(a)
 	}
 	
 	-- compute inertia tensor
-	local size=v_sqr(get_modelsize(bbox))
+	local size=v_sqr(get_modelsize(rb.bbox))
 	local ibody=make_m(size[2]+size[3],size[1]+size[3],size[1]+size[2])
 	m_scale(ibody,a.mass/12)
 	
@@ -1436,7 +1441,7 @@ function _init()
 
 	plyr=make_rigidbody(make_actor("plyr",pos))
 	
-	ghost=make_actor("ghost")
+	ghost=make_actor("ghost",v_zero())
 	
 end
 
