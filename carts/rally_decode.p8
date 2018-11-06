@@ -39,12 +39,25 @@ function _init()
 		return i<0x4000
 	end)
 	i=0
+	local tmp_hmap={}
 	unpack_rle(function(v)
-		hmap[i],hmap[i+1]=shr(band(0xf0,v),4),band(0xf,v)
+		tmp_hmap[i],tmp_hmap[i+1]=shr(band(0xf0,v),4),band(0xf,v)
 		i+=2
 		return i<0x1000
 	end)
- 
+ 	-- linear lerp to 128x128
+	for j=0,62 do
+		for i=0,62 do
+			local idx=i+64*j
+			local h0,h1,h3=tmp_hmap[idx],tmp_hmap[idx+64],tmp_hmap[idx+1]
+			idx=2*i+256*j
+			hmap[idx]=h0
+			hmap[idx+1]=(h0+h3)/2
+			hmap[idx+128]=(h0+h1)/2
+			hmap[idx+129]=(h1+h3)/2
+		end
+	end
+
 	for k=1,read_nibles(2) do
 		add(track,{read_nibles(2),read_nibles(2)})
 	end
@@ -85,17 +98,17 @@ function _draw()
 		jmin+=1
  end
  pal()
+ ]]
 
- --[[
- for j=0,63 do
- 	for i=0,63 do
- 		local idx=i+64*j
+ for j=0,127 do
+ 	for i=0,127 do
+ 		local idx=i+128*j
  		local h=hmap[idx]
  		pset(i,j,sget(24+h))
  	end
  end
- ]]
- print(stat(1),2,2,7)
+ 
+ -- print(stat(1),2,2,7)
 end
 __gfx__
 00000000eeeeeee11eeeeeee015d6fa7000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
