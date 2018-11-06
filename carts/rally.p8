@@ -436,7 +436,7 @@ function get_modelsize(model)
 end
 
 -- models & rendering
-local all_models=json_parse'{}'
+local all_models={}
 local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]'
 local dither_pat2=json_parse'[0xffff,0xa5a5,0x0000]'
 
@@ -616,20 +616,13 @@ _g.control_plyr=function(self)
 end
 
 _g.update_plyr=function(self)
-	local up=m_up(self.m)
+	
+	self.traction+=self:up_ratio()
+	self.traction_ratio=self.traction/20
+	
 	-- time decay
 	self.traction*=0.8
 	self.turn*=0.7
-	
-	for i=1,4 do
-		local v=self.bbox.v[i]
-		if v.contact_t and time_t-v.contact_t<5 then
-			-- contact quality
-			local r=max(v_dot(up,v.n))
-			self.traction+=r
-		end
-	end
-	self.traction_ratio=self.traction/20
 	
 	-- hit ground actors?
 	-- todo
@@ -658,7 +651,7 @@ _g.init_ghost=function(self)
 	 -- new best?
 		if track.lap_t<best_t then
 			best,best_t,hist=hist,track.lap_t,{}
-  end
+		end
 		-- restart replay
 		k=1
 	end
@@ -710,46 +703,31 @@ end
 function make_ground_actor(src,i,j)
 	local x,z=shl(i+rnd(),ground_shift),shl(j+rnd(),ground_shift)
 	local a=clone(all_actors[src],{
-		pos={x,0,z}
+		pos={x,0,z},
+		q=make_q(v_up,0)
 	})
-	a.model=all_models[a.model]
-	a.draw=a.draw or draw_actor
 	-- adjust pos
 	a.pos[2]=get_altitude_and_n(a.pos)
-	-- any angle defined in instance?
-	local q=make_q(v_up,a.angle or 0)
-	local m=m_from_q(q)
-	a.m=m
+	a.m=m_from_q(a.q)
 	-- register
 	ground_actors[i+j*128]=a
 	return a
 end
 
 -- registers a ground collision
+-- body
+-- normal
+-- body contact point (world position)
+-- penetration
 function make_ground_contact(a,p,n,d)
 	local padot=a:pt_velocity(p)
 	local vrel=v_dot(n,padot)
 	-- resting condition?
 	if(d<k_small and vrel>-k_small_v) return
-			
+	local nimpulse=0
 	local c={
-		-- body
-		a=a,
-		-- normal
-		n=n,
-		-- body contact point
-		-- world position
-		p=p,
-		-- penetration
-		d=d,
-		-- relative velocity
-		v=vrel,
-		-- 
-		nimpulse=0,
 		pre_solve=function(self,dt)
-			local a,n=self.a,self.n
-			
-			local ra=make_v(a.pos,self.p)
+			local ra=make_v(a.pos,p)
 			local racn=make_v_cross(ra,n)
 
 			local nm=a.mass_inv
@@ -757,7 +735,7 @@ function make_ground_contact(a,p,n,d)
 			self.nm=1/nm
 			
 			-- baumgarte
-			local bias=-k_bias*max(self.d+k_slop)/dt
+			local bias=-k_bias*max(d+k_slop)/dt
 
 			-- restitution bias
 			local va=v_clone(a.v)
@@ -771,20 +749,20 @@ function make_ground_contact(a,p,n,d)
 			self.ra=ra
 		end,
 		solve=function(self)
-			local a,dv,n=self.a,v_clone(self.a.v),v_clone(self.n)
+			local dv,n=v_clone(a.v),v_clone(n)
 			v_add(dv,make_v_cross(a.omega,self.ra))
 
 			local vn=v_dot(dv,n)
 			local lambda=-self.nm*(vn+self.bias)
   	
-			local tempn=self.nimpulse
-			self.nimpulse=max(tempn+lambda)
-			lambda=self.nimpulse-tempn
+			local tempn=nimpulse
+			nimpulse=max(tempn+lambda)
+			lambda=nimpulse-tempn
 			
 			-- impulse too small
 			if(lambda<k_small) return
   	-- correct linear velocity
-			v_scale(n,lambda)			
+			v_scale(n,lambda)
 			v_add(a.v,n,a.mass_inv)
 			-- correct angular velocity
 			v_add(
@@ -801,13 +779,21 @@ end
 -- rigid body extension for a given actor
 -- note:actor must have a 3d model
 function make_rigidbody(a)
+	-- debug
+	local forces={}
+	local force,torque=v_zero(),v_zero()
+	-- bounding box
+	local bbox=all_models[a.rigid_model]
+-- compute inertia tensor
+	local size=v_sqr(get_modelsize(bbox))
+	local ibody=make_m(size[2]+size[3],size[1]+size[3],size[1]+size[2])
+	m_scale(ibody,a.mass/12)
+	
+	-- invert 
+	local ibody_inv=m_inv(ibody)
+	-- 
+	local g={0,-12*a.mass,0}
 	local rb={
-	 -- debug
-		forces={},
-		force=v_zero(),
-		torque=v_zero(),
-		-- bounding box
-		bbox=all_models[a.rigid_model],
 		i_inv=make_m(),
 		v=v_zero(),
 		omega=v_zero(),
@@ -821,10 +807,10 @@ function make_rigidbody(a)
 			-- register a force
 		add_force=function(self,f,p)
 			-- debug
-			add(self.forces,{force=f,pos=p})
+			add(forces,{force=f,pos=p})
 			
-			v_add(self.force,f,self.mass)
-			v_add(self.torque,make_v_cross(make_v(self.pos,p),f))
+			v_add(force,f,self.mass)
+			v_add(torque,make_v_cross(make_v(self.pos,p),f))
 		end,
 		add_impulse=function(self,f,p)
 		 
@@ -834,16 +820,16 @@ function make_rigidbody(a)
 		-- apply forces & torque for iteration
 		prepare=function(self,dt)
 			-- add gravity
-			v_add(self.force,{0,-12*self.mass,0})
+			v_add(force,g)
 		
 			-- inverse inertia tensor
-			self.i_inv=m_x_m(m_x_m(self.m,self.ibody_inv),m_transpose(self.m))
+			self.i_inv=m_x_m(m_x_m(self.m,ibody_inv),m_transpose(self.m))
 	
 			-- velocity
-			v_add(self.v,self.force,self.mass_inv*dt)
+			v_add(self.v,force,self.mass_inv*dt)
 	
 			-- angular velocity
-			v_add(self.omega,m_x_v(self.i_inv,self.torque),dt)
+			v_add(self.omega,m_x_v(self.i_inv,torque),dt)
 			
 			-- friction
 			v_scale(self.v,1/(1+dt*0.4))
@@ -854,11 +840,11 @@ function make_rigidbody(a)
 			q_dydt(self.q,self.omega,dt)
 			self.m=m_from_q(self.q)
 			-- clear forces
-			self.force,self.torque=v_zero(),v_zero()
+			force,torque=v_zero(),v_zero()
 		end,
 		update_contacts=function(self,contacts)
 			local i=0
-			for _,v in pairs(self.bbox.v) do
+			for _,v in pairs(bbox.v) do
 				-- to world space
 				local p=m_x_v(self.m,v)
 				v_add(p,self.pos)
@@ -878,16 +864,20 @@ function make_rigidbody(a)
 					end
 				end
 			end
+		end,
+		-- is rigid body on ground?
+		up_ratio=function(self)
+			local r,up=0,m_up(self.m)
+			for i=1,4 do
+				local v=bbox.v[i]
+				if v.contact_t and time_t-v.contact_t<5 then
+					-- contact quality
+					r+=max(v_dot(up,v.n))
+				end
+			end
+			return r
 		end
 	}
-	
-	-- compute inertia tensor
-	local size=v_sqr(get_modelsize(rb.bbox))
-	local ibody=make_m(size[2]+size[3],size[1]+size[3],size[1]+size[2])
-	m_scale(ibody,a.mass/12)
-	
-	-- invert 
-	rb.ibody_inv=m_inv(ibody)
 	
 	-- register rigid bodies
 	return add(physic_actors,clone(rb,a))
@@ -975,19 +965,18 @@ function make_track(laps,segments)
 end
 
 -- camera
-function make_cam(f)
+function make_cam(focal)
+	-- camera rotation
+	local cc,ss=1,0
 	local c={
 		pos={0,6*hscale,0},
 		lookat={0,0,-7*16},
-		focal=f,
 		dist=shl(8,ground_shift),
-		-- camera rotation
-		c=1,s=0,
 		track=function(self,pos,angle)
 			self.pos=v_clone(pos)
 			self.lookat=v_clone(pos)
-			self.c,self.s=cos(angle),-sin(angle)
-			v_add(self.pos,{0,self.dist*self.s,self.dist*self.c})
+			cc,ss=cos(angle),-sin(angle)
+			v_add(self.pos,{0,self.dist*ss,self.dist*cc})
 		end,
 		project=function(self,x,y,z)
 			x-=self.lookat[1]
@@ -995,11 +984,11 @@ function make_cam(f)
 			-- fake 3d
 			y=-self.lookat[2]
 			z-=self.lookat[3]
-			z,y=self.c*z+self.s*y,-self.s*z+self.c*y
+			z,y=cc*z+ss*y,-ss*z+cc*y
 
   	local xe,ye,ze=x,y,z-self.dist
 
-		 local w=-self.focal/ze
+		local w=-focal/ze
   	return 64+xe*w,64-(tmpy+ye)*w,ze,w
 		end
 	}
@@ -1039,37 +1028,20 @@ _g.draw_part=function(self)
 	
 	-- simple part
 	if self.kind==0 then
-	 --[[
-		local s=flr(3*self.frame)
-		local s=flr(3*self.frame)
-		local c0,c1=sget(s,2),sget(max(s-1),2)
-		fillp(lerparray(dither_pat,1-self.frame)+0x0.f)
-		circfill(x,y,w*self.r,bor(shl(c1,4),c0))
-		fillp()
-		]]
 		local s=self.frames[flr(self.frame*(#self.frames-1)+0.5)]
 		if s then
 			palt(0,false)
 			palt(14,true)
 			spr(s,x-4,y-4)
-			pal()	
+			pal()
 		end
-		
-		--[[
-		w*=1
-		
-		palt(0,false)
-		palt(14,true)
-		sspr(56,0,8,8,x-w/2,y-w/2,w,w)
-		pal()		
-		]]
 	end
 end
 
 all_parts=json_parse'{"smoke":{"frames":[64,80,81,65],"r":1,"rnd":{"dly":[8,20],"g_scale":[-0.03,-0.05]},"frame":0,"dv":0.9,"dr":0,"kind":0}}'
 
 function make_part(part,p,v)
-	local pt=add(parts,clone(all_parts[part],{pos=v_clone(p),v=v and v_clone(v) or v_zero(),draw=_g.draw_part,c=c}))
+	local pt=add(parts,clone(all_parts[part],{pos=v_clone(p),v=v and v_clone(v) or v_zero(),draw=_g.draw_part}))
 	pt.t,pt.update=time_t+pt.dly,pt.update or _g.update_part
 	pt.df=1/pt.dly
 	if(pt.sfx) sfx_v(pt.sfx,p)
@@ -1077,19 +1049,25 @@ function make_part(part,p,v)
 end
 
 -- map helpers (marching codes, height map, normal map cache)
-local qmap,hmap,ncache={},{},{}
+local qmap,hmap={},{}
 function safe_index(i,j)
 	return bor(band(i,0x7f),shl(band(j,0x7f),7))
+end
+function safe_64x64(i,j)
+	return bor(band(i,0x3f),shl(band(j,0x3f),6))
 end
 function get_raw_qcode(i,j)
 	return qmap[safe_index(i,j)] or 0
 end
 function get_height(i,j)
-	return 0
+	-- return 0
+	i,j=shr(i,1),shr(j,1)
+	local di,dj=i%1,j%1
+	
+	local h=hmap[safe_64x64(i,j)]
+	local h0,h1=lerp(h,hmap[safe_64x64(i+1,j)],dj),lerp(h,hmap[safe_64x64(i+1,j+1)],di)
+	return lerp(h0,h1,dj)/4
 	--return hmap[flr(i/2)+64*flr(j/2)]/4 or 0
-end
-function get_q_colors(q)
-	return shr(band(0b00111000,q),3)+1,band(0b111,q)+1
 end
 
 -- return altitude & normal (optional)
@@ -1370,11 +1348,8 @@ function _draw()
 	end
  ]]
 
- --[[ 
 	rectfill(0,0,127,8,8)
 	print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)
-	print("pow:"..plyr.traction_ratio.."%",2,19,7)
- ]]
  
 	-- print(plyr.traction,2,18,7)	
 	
