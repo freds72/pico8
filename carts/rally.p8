@@ -1386,18 +1386,14 @@ function _init()
 	for j=0,62 do
 		for i=0,62 do
 			local idx=i+64*j
-			local h0,h1,h3=tmp_hmap[idx],tmp_hmap[idx+64],tmp_hmap[idx+1]
-			idx=2*i+2*128*j
+			local h0,h1,h2,h3=tmp_hmap[idx],tmp_hmap[idx+64],tmp_hmap[idx+65],tmp_hmap[idx+1]
+			idx=2*i+256*j
 			hmap[idx]=h0
 			hmap[idx+1]=(h0+h3)/2
 			hmap[idx+128]=(h0+h1)/2
-			hmap[idx+129]=(h1+h3)/2
+			hmap[idx+129]=(h0+h1+h2+h3)/4
 		end
 	end
-
-	-- track segments
-	local segments={}
-	unpack_track(segments)
 
 	local max_tree=1000
 	for j=0,63 do
@@ -1415,7 +1411,7 @@ function _init()
 
 	cam=make_cam(96)
 	
-	track=make_track(3,segments)
+	track=make_track(3,unpack_track())
 	local pos=v_clone(track:get_startpos())
 	v_add(pos,v_up,4)
 
@@ -1549,12 +1545,16 @@ function unpack_rle(decode)
 		end
 	end
 end
--- track
-function unpack_track(track)
+-- unpack int array
+function unpack_track()
+	local track={}
 	for k=1,unpack_int() do
 	 -- +1 shift to center track marker
-		add(track,{pos={shl(unpack_int()+1,ground_shift+1),0,shl(unpack_int()+1,ground_shift+1)}})
-	end	
+	 local pos={shl(unpack_int()+1,ground_shift+1),0,shl(unpack_int()+1,ground_shift+1)}
+		pos[2]=get_altitude_and_n(pos)
+		add(track,{pos=pos})
+	end
+	return track
 end
 
 -->8
