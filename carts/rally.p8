@@ -459,9 +459,9 @@ function draw_model(model,m,pos,outline)
 			-- project vertices
 			for _,vi in pairs(f.vi) do
 				if not p[vi] then
-					local v=model.v[vi]
-					local x,y,z,w=v[1],v[2],v[3]
-					x,y,z,w=cam:project(m[1]*x+m[4]*y+m[7]*z+pos[1],m[2]*x+m[5]*y+m[8]*z+pos[2],m[3]*x+m[6]*y+m[9]*z+pos[3])
+					local v=m_x_v(m,model.v[vi])
+					v_add(v,pos)
+					local x,y,z,w=cam:project(v[1],v[2],v[3])
 					p[vi]={x,y,z,w}
 				end
 			end
@@ -500,6 +500,7 @@ function draw_model(model,m,pos,outline)
 end
 
 function draw_model_shadow(model,m,pos)
+	fillp(0xa5a5.f)
 	-- v_light dir in object space
 	local l=v_clone(v_light)
 	m_inv_x_v(m,l)
@@ -529,6 +530,7 @@ function draw_model_shadow(model,m,pos)
 			end
 		end
 	end
+	fillp()
 end
 
 function add_tireforce(self,v,offset,scale,isrear)
@@ -714,66 +716,60 @@ function make_ground_actor(src,i,j)
 	return a
 end
 
--- registers a ground collision
+-- creates a collision solver for:
 -- body
 -- normal
 -- body contact point (world position)
 -- penetration
-function make_ground_contact(a,p,n,d)
+function make_contact_solver(a,p,n,d)
 	local padot=a:pt_velocity(p)
 	local vrel=v_dot(n,padot)
 	-- resting condition?
 	if(d<k_small and vrel>-k_small_v) return
 	local nimpulse=0
-	local c={
-		pre_solve=function(self,dt)
-			local ra=make_v(a.pos,p)
-			local racn=make_v_cross(ra,n)
+	local ra=make_v(a.pos,p)
+	local racn=make_v_cross(ra,n)
 
-			local nm=a.mass_inv
-			nm+=v_dot(racn,m_x_v(a.i_inv,racn))
-			self.nm=1/nm
-			
-			-- baumgarte
-			local bias=-k_bias*max(d+k_slop)/dt
+	local nm=a.mass_inv
+	nm+=v_dot(racn,m_x_v(a.i_inv,racn))
+	nm=1/nm
+	
+	-- baumgarte
+	local bias=-k_bias*max(d+k_slop)/time_dt
 
-			-- restitution bias
-			local va=v_clone(a.v)
-			v_add(va,make_v_cross(a.omega,ra))
-			local dv=-v_dot(va,n)
-			-- todo:find out unit??
-			if dv<-1 then
-				bias-=a.hardness*dv
-			end
-			self.bias=bias
-			self.ra=ra
-		end,
-		solve=function(self)
-			local dv,n=v_clone(a.v),v_clone(n)
-			v_add(dv,make_v_cross(a.omega,self.ra))
+	-- restitution bias
+	local va=v_clone(a.v)
+	v_add(va,make_v_cross(a.omega,ra))
+	local dv=-v_dot(va,n)
+	-- todo:find out unit??
+	if dv<-1 then
+		bias-=a.hardness*dv
+	end
+	
+	-- contact solver
+	return function()
+		local dv,n=v_clone(a.v),v_clone(n)
+		v_add(dv,make_v_cross(a.omega,ra))
 
-			local vn=v_dot(dv,n)
-			local lambda=-self.nm*(vn+self.bias)
-  	
-			local tempn=nimpulse
-			nimpulse=max(tempn+lambda)
-			lambda=nimpulse-tempn
-			
-			-- impulse too small
-			if(lambda<k_small) return
-  	-- correct linear velocity
-			v_scale(n,lambda)
-			v_add(a.v,n,a.mass_inv)
-			-- correct angular velocity
-			v_add(
-				a.omega,
-				m_x_v(
-					a.i_inv,
-					make_v_cross(self.ra,n)
-				))
-		end
-	}
-	return c
+		local lambda=-nm*(v_dot(dv,n)+bias)
+	
+		local tempn,nimpulse=nimpulse,max(nimpulse+lambda)
+		lambda=nimpulse-tempn
+		
+		-- impulse too small?
+		if(lambda<k_small) return false
+	-- correct linear velocity
+		v_scale(n,lambda)
+		v_add(a.v,n,a.mass_inv)
+		-- correct angular velocity
+		v_add(
+			a.omega,
+			m_x_v(
+				a.i_inv,
+				make_v_cross(ra,n)
+			))
+		return true
+	end
 end
 
 -- rigid body extension for a given actor
@@ -854,7 +850,7 @@ function make_rigidbody(a)
 					depth=v_dot(n,{0,depth,0})
 					-- deep enough?
 					if depth>-k_small then
-						local ct=make_ground_contact(self,p,n,depth)
+						local ct=make_contact_solver(self,p,n,depth)
 						if ct then
 							add(contacts,ct)
 							-- record contact time
@@ -903,11 +899,10 @@ function world:update()
 	end
 	-- solve contacts
 	for _,c in pairs(self.contacts) do
-		c:pre_solve(dt)
 		-- multiple iterations
 		-- required to fix deep contacts
 		for i=1,5 do
-			c:solve()
+			if(c()==false) break
 		end
 	end
 	
