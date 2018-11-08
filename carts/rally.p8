@@ -1027,7 +1027,9 @@ _g.draw_part=function(self)
 		if s then
 			palt(0,false)
 			palt(14,true)
-			spr(s,x-4,y-4)
+			local sx,sy=band(shl(s,3),127),shl(shr(s,4),3)
+			w*=2
+		  	sspr(sx,sy,8,8,x-w/2,y-w/2,w,w)			
 			pal()
 		end
 	end
