@@ -20,6 +20,7 @@ local k_coll_none,k_coll_pen,k_coll_coll,k_coll_rest=0,1,2,4
 -- world units
 local ground_shift,hscale=1,4
 local ground_scale=2^ground_shift
+local ground_left,ground_right,ground_far,ground_near=-7,7,5,-7
 local v_grav={0,-1,0}
 local world={}
 
@@ -132,12 +133,13 @@ function zbuf_sort()
  zbuf={}
 	local ci,cj=flr(shr(cam.lookat[1],ground_shift)),flr(shr(cam.lookat[3],ground_shift))
 	for _,d in pairs(drawables) do
-		-- find cell location		
+		-- find cell location
 		local di,dj=flr(shr(d.pos[1],ground_shift)),flr(shr(d.pos[3],ground_shift))
 		-- todo: incorrect
+		-- within viz grid?
 		if abs(di-ci)<6 and abs(dj-cj)<10 then
 			-- safe index
-			dj=band(dj,0x7f)			
+			dj=band(dj,0x7f)
 			zbuf[dj]=zbuf[dj] or {}
 			add(zbuf[dj],{obj=d,key=d.pos[3]})
 		end
@@ -462,7 +464,8 @@ function draw_model(model,m,pos,outline)
 					local v=m_x_v(m,model.v[vi])
 					v_add(v,pos)
 					local x,y,z,w=cam:project(v[1],v[2],v[3])
-					p[vi]={x,y,z,w}
+					-- avoid rehash
+					p[vi]={x,y,z,w,0,0}
 				end
 			end
 			-- distance to camera (in object space)
@@ -775,8 +778,6 @@ end
 -- rigid body extension for a given actor
 -- note:actor must have a 3d model
 function make_rigidbody(a)
-	-- debug
-	local forces={}
 	local force,torque=v_zero(),v_zero()
 	-- bounding box
 	local bbox=all_models[a.rigid_model]
@@ -802,9 +803,6 @@ function make_rigidbody(a)
 		end,
 			-- register a force
 		add_force=function(self,f,p)
-			-- debug
-			add(forces,{force=f,pos=p})
-			
 			v_add(force,f,self.mass)
 			v_add(torque,make_v_cross(make_v(self.pos,p),f))
 		end,
@@ -1102,9 +1100,9 @@ function update_ground()
 	local pos=plyr and plyr.pos or cam.lookat
 	
 	local i0,j0=flr(shr(pos[1],ground_shift)),flr(shr(pos[3],ground_shift))
-	for i=i0-6,i0+6 do
+	for i=i0+ground_left,i0+ground_right do
 		local cx=band(i,0x7f)
-		for j=j0-7,j0+5 do
+		for j=j0+ground_near,j0+ground_far do
 			local cy=band(j,0x7f)
 			local t=ground_actors[cx+cy*128]
 			if t then
@@ -1123,7 +1121,6 @@ function draw_ground(self)
 		return bor(shl(sget(max(lvl-1)+16,c),4),sget(lvl+16,c))
 	end
 
-	local imin,imax=-7,7
 	local cx,cz=cam.lookat[1],cam.lookat[3]
 	-- cell x/z ratio
 	local dx,dz=cx%ground_scale,cz%ground_scale
@@ -1131,11 +1128,11 @@ function draw_ground(self)
 	local nx,ny=flr(shr(cx,ground_shift)),flr(shr(cz,ground_shift))
 	
 	-- project anchor points
-	local p={}
+	local p,xmin={},shl(ground_left,ground_shift)
 	-- grid depth extent
-	for j=-7,5 do
+	for j=ground_near,ground_far do
 	 -- project leftmost grid points
-		local x,y,z,w=cam:project(-dx+cx+shl(imin,ground_shift),0,-dz+cz+shl(j,ground_shift))
+		local x,y,z,w=cam:project(-dx+cx+xmin,0,-dz+cz+shl(j,ground_shift))
 		add(p,{x,y,z,w,ny+j})
 	end
 	
@@ -1148,8 +1145,8 @@ function draw_ground(self)
 	local dw0=shl(w0,ground_shift)
 	for j=2,#p do
 		-- offset to grid space
-		local ni=nx+imin
-		local i,di=imin,1
+		local ni=nx+ground_left
+		local i,di=ground_left,1
 		
 		local v1=p[j]
 		local w1=v1[4]
@@ -1160,10 +1157,10 @@ function draw_ground(self)
 		local h0,h1=get_height(ni,nj),get_height(ni,nj+1)
 		local y0,y1=flr(v0[2]-w0*h0),flr(v1[2]-w1*h1)
 		local q0=get_raw_qcode(ni,nj)
-		while i<=imax do
+		while i<=ground_right do
 			local q3=get_raw_qcode(ni+1,nj)
 			-- detail tile?
-			if i==imin or i>=imax-1 or ni%2==1 or q0!=q3 then
+			if i==ground_left or i>=ground_right-1 or ni%2==1 or q0!=q3 then
 				di=1
 			else
 				di=2
@@ -1176,10 +1173,10 @@ function draw_ground(self)
 			-- in screen tile?
 			if x3>0 then
 				-- left/right cliping
-				if i==imin or (i==imin-1 and di==2) then
+				if i==ground_left then
 					x0,y0=lerp(x0,x3,dx),lerp(y0,y3,dx)
 					x1,y1=lerp(x1,x2,dx),lerp(y1,y2,dx)
-				elseif i==imax then
+				elseif i==ground_right then
 					x3,y3=lerp(x0,x3,dx),lerp(y0,y3,dx)
 					x2,y2=lerp(x1,x2,dx),lerp(y1,y2,dx)
 				end
@@ -1316,8 +1313,8 @@ function _draw()
 	draw_ground()
  
 	track:draw()
-	 
- draw_hud()
+	
+	draw_hud()
 
 	-- print((30*sqrt(v_dot(plyr.v,plyr.v))/3.6).."km/h",2,18,7)
 	printb("time:"..time_tostr(track.t),32,2,0,7)	
@@ -1343,8 +1340,8 @@ function _draw()
 	end
  ]]
 
-	-- rectfill(0,0,127,8,8)
-	-- print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)
+	rectfill(0,0,127,8,8)
+	print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)
  
 	-- print(plyr.traction,2,18,7)	
 	
@@ -1567,94 +1564,59 @@ end
 -->8
 -- trifilltex
 -- 
-local function v4_clone(a,xy)
-	return {a[xy],a[3],a[4],a[5]}
-end
--- y-major or x-major pset functions
-local psets={pset,function (x,y,c) pset(y,x,c) end}
-function trapezefill(l,dl,r,dr,start,finish,dir)
-	local l,r,dl,dr=v4_clone(l,dir),v4_clone(r,dir),v4_clone(dl,dir),v4_clone(dr,dir)
+function trapezefill(l,dl,r,dr,start,finish)
+	local l,dl={l[1],l[4],l[5],r[1],r[4],r[5]},{dl[1],dl[4],dl[5],dr[1],dr[4],dr[5]}
 	local dt=1/(finish-start)
-	for k=1,4 do
-		dl[k],dr[k]=(dl[k]-l[k])*dt,(dr[k]-r[k])*dt
+	for k,v in pairs(dl) do
+		dl[k]=(v-l[k])*dt
 	end
 
 	-- cliping
 	if start<0 then
-		for k=1,4 do
-			l[k]-=start*dl[k]
-			r[k]-=start*dr[k]
+		for k,v in pairs(dl) do
+			l[k]-=start*v
 		end
 		start=0
 	end
 
 	-- rasterization
-	local pset=psets[dir]
 	for j=start,min(finish,127) do
-		--rectfill(l[1],y0,r[1],y0,11)
-		local len=r[1]-l[1]
+		--rectfill(l[1],j,r[1],j,11)
+		local len=l[4]-l[1]
 		if len>0 then
-			local dx,w0,w1=1/len,l[2],r[2]
-			local u0,v0=w0*l[3],w0*l[4]
-			local du,dv=(w1*r[3]-u0)*dx,(w1*r[4]-v0)*dx
-			local dw=(w1-w0)*dx
-			for i=l[1],r[1] do
-				local c=sget(u0/w0,v0/w0)
-				 if(c!=11)pset(i,j,c)
-				 u0+=du
-				 v0+=dv
-				 w0+=dw
-			 end
-		end
-
-		for k=1,4 do
-			l[k]+=dl[k]
-			r[k]+=dr[k]
+			local u0,v0=l[2],l[3]
+			local du,dv=(l[5]-u0)/len,(l[6]-v0)/len
+			for i=l[1],l[4] do
+				local c=sget(u0,v0)
+				if(c!=11) pset(i,j,c)
+				u0+=du
+				v0+=dv
+			end
+  end 
+		for k,v in pairs(dl) do
+			l[k]+=v
 		end
 	end
 end
 function tritex(v0,v1,v2)
 	local x0,x1,x2=v0[1],v1[1],v2[1]
 	local y0,y1,y2=v0[2],v1[2],v2[2]
-	if(y1<y0)v0,v1,x0,x1,y0,y1=v1,v0,x1,x0,y1,y0
-	if(y2<y0)v0,v2,x0,x2,y0,y2=v2,v0,x2,x0,y2,y0
-	if(y2<y1)v1,v2,x1,x2,y1,y2=v2,v1,x2,x1,y2,y1
+if(y1<y0)v0,v1,x0,x1,y0,y1=v1,v0,x1,x0,y1,y0
+if(y2<y0)v0,v2,x0,x2,y0,y2=v2,v0,x2,x0,y2,y0
+if(y2<y1)v1,v2,x1,x2,y1,y2=v2,v1,x2,x1,y2,y1
 
-	if max(x2,max(x1,x0))-min(x2,min(x1,x0)) > y2-y0 then
-		-- mid point
-		local v02,mt={},1/(y2-y0)*(y1-y0)
-		for k,v in pairs(v0) do
-			v02[k]=v+(v2[k]-v)*mt
-		end
-		if(x1>v02[1])v1,v02=v02,v1
+	-- mid point
+	local v02,mt={},1/(y2-y0)*(y1-y0)
+	for k,v in pairs(v0) do
+		v02[k]=v+(v2[k]-v)*mt
+	end
+	if(x1>v02[1])v1,v02=v02,v1
 
-		-- upper trapeze
-		-- x w u v
-		trapezefill(v0,v1,v0,v02,
-			y0,y1,1)
-		-- lower trapeze
-		trapezefill(v1,v2,v02,v2,
-			y1,y2,1)
-	else
-		if(x1<x0)v0,v1,x0,x1,y0,y1=v1,v0,x1,x0,y1,y0
-		if(x2<x0)v0,v2,x0,x2,y0,y2=v2,v0,x2,x0,y2,y0
-		if(x2<x1)v1,v2,x1,x2,y1,y2=v2,v1,x2,x1,y2,y1
-
-		-- mid point
-		local v02,mt={},1/(x2-x0)*(x1-x0)
-		for k,v in pairs(v0) do
-			v02[k]=v+(v2[k]-v)*mt
-		end
-		if(y1>v02[2])v1,v02=v02,v1
-
-		-- upper trapeze
-		-- x w u v
-		trapezefill(v0,v1,v0,v02,
-			x0,x1,2)
-		-- lower trapeze
-		trapezefill(v1,v2,v02,v2,
-			x1,x2,2)
-	end 
+	-- upper trapeze
+	-- x u v
+	trapezefill(v0,v1,v0,v02,y0,y1)
+	-- lower trapeze
+	trapezefill(v1,v2,v02,v2,y1,y2)
 end
 __gfx__
 1ca9b34500015100000000007700770077007700eeeeeeeeeee77777bb88856599777777777777777777777777777777777777788756566bb000000000000000

@@ -234,7 +234,6 @@ end
 local all_models={
 		["205gti"]={c=1}
 	}
-local dither_pat={0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000}
 
 function draw_actor(self,x,y,z,w)
 	-- distance culling
@@ -273,7 +272,8 @@ function draw_model(model,m,x,y,z,w)
 					local v=model.v[vi]
 					local x,y,z=cam_m[1]*v[1]+cam_m[5]*v[2]+cam_m[9]*v[3]+cam_m[13],cam_m[2]*v[1]+cam_m[6]*v[2]+cam_m[10]*v[3]+cam_m[14],cam_m[3]*v[1]+cam_m[7]*v[2]+cam_m[11]*v[3]+cam_m[15]
 				 local w=64/z
-					p[vi]={64+x*w,64-y*w,w}
+				 -- avoid rehash
+					p[vi]={64+x*w,64-y*w,w,0,0}
 				end
 			end
 			-- distance to camera (in object space)
@@ -569,91 +569,61 @@ function unpack_models()
 end
 
 -->8
-local function v4_clone(a,xy)
- -- x/y
- -- u/v/w
-	return {a[xy],a[3],a[4],a[5]}
-end
--- y-major or x-major pset functions
-local psets={pset,function (x,y,c) pset(y,x,c) end}
-function trapezefill(l,dl,r,dr,start,finish,dir)
-	local l,r,dl,dr=v4_clone(l,dir),v4_clone(r,dir),v4_clone(dl,dir),v4_clone(dr,dir)
+-- tritex
+function trapezefill(l,dl,r,dr,start,finish)
+	local l,dl={l[1],l[4],l[5],r[1],r[4],r[5]},{dl[1],dl[4],dl[5],dr[1],dr[4],dr[5]}
 	local dt=1/(finish-start)
 	for k,v in pairs(dl) do
-		dl[k],dr[k]=(v-l[k])*dt,(dr[k]-r[k])*dt
+		dl[k]=(v-l[k])*dt
 	end
 
 	-- cliping
 	if start<0 then
 		for k,v in pairs(dl) do
 			l[k]-=start*v
-			r[k]-=start*dr[k]
 		end
 		start=0
 	end
 
 	-- rasterization
-	local pset=psets[dir]
 	for j=start,min(finish,127) do
 		--rectfill(l[1],j,r[1],j,11)
-		local len=r[1]-l[1]
+		local len=l[4]-l[1]
 		if len>0 then
-			local dx,w0,w1=1/len,l[2],r[2]
-			local u0,v0=w0*l[3],w0*l[4]
-			local du,dv=(w1*r[3]-u0)*dx,(w1*r[4]-v0)*dx
-			local dw=(w1-w0)*dx
-			for i=l[1],r[1] do
-				local c=sget(u0/w0,v0/w0)
+			local u0,v0=l[2],l[3]
+			local du,dv=(l[5]-u0)/len,(l[6]-v0)/len
+			for i=l[1],l[4] do
+				local c=sget(u0,v0)
 				if(c!=11) pset(i,j,c)
 				u0+=du
 				v0+=dv
-				w0+=dw
 			end
   end 
 		for k,v in pairs(dl) do
 			l[k]+=v
-			r[k]+=dr[k]
 		end
 	end
 end
 function tritex(v0,v1,v2)
 	local x0,x1,x2=v0[1],v1[1],v2[1]
 	local y0,y1,y2=v0[2],v1[2],v2[2]
-	if(y1<y0)v0,v1,x0,x1,y0,y1=v1,v0,x1,x0,y1,y0
-	if(y2<y0)v0,v2,x0,x2,y0,y2=v2,v0,x2,x0,y2,y0
-	if(y2<y1)v1,v2,x1,x2,y1,y2=v2,v1,x2,x1,y2,y1
+if(y1<y0)v0,v1,x0,x1,y0,y1=v1,v0,x1,x0,y1,y0
+if(y2<y0)v0,v2,x0,x2,y0,y2=v2,v0,x2,x0,y2,y0
+if(y2<y1)v1,v2,x1,x2,y1,y2=v2,v1,x2,x1,y2,y1
 
-	if max(x2,max(x1,x0))-min(x2,min(x1,x0)) > y2-y0 then
-		-- mid point
-		local v02,mt={},1/(y2-y0)*(y1-y0)
-		for k,v in pairs(v0) do
-			v02[k]=v+(v2[k]-v)*mt
-		end
-		if(x1>v02[1])v1,v02=v02,v1
+	-- mid point
+	local v02,mt={},1/(y2-y0)*(y1-y0)
+	for k,v in pairs(v0) do
+		v02[k]=v+(v2[k]-v)*mt
+	end
+	if(x1>v02[1])v1,v02=v02,v1
 
-		-- upper trapeze
-		-- x w u v
-		trapezefill(v0,v1,v0,v02,y0,y1,1)
-		-- lower trapeze
-		trapezefill(v1,v2,v02,v2,y1,y2,1)
-	else
-		if(x1<x0)v0,v1,x0,x1,y0,y1=v1,v0,x1,x0,y1,y0
-		if(x2<x0)v0,v2,x0,x2,y0,y2=v2,v0,x2,x0,y2,y0
-		if(x2<x1)v1,v2,x1,x2,y1,y2=v2,v1,x2,x1,y2,y1
+	-- upper trapeze
+	-- x u v
+	trapezefill(v0,v1,v0,v02,y0,y1)
+	-- lower trapeze
+	trapezefill(v1,v2,v02,v2,y1,y2)
 
-		-- mid point
-		local v02,mt={},1/(x2-x0)*(x1-x0)
-		for k,v in pairs(v0) do
-			v02[k]=v+(v2[k]-v)*mt
-		end
-		if(y1>v02[2])v1,v02=v02,v1
-
-		-- upper trapeze
-		-- x w u v
-		trapezefill(v0,v1,v0,v02,x0,x1,2)
-		-- lower trapeze
-		trapezefill(v1,v2,v02,v2,x1,x2,2)
-	end 
 end
 __gfx__
 bb88856599777777777777777777777777777777777777788756566bb00000000000000000000000000000000000000000000000000000000000000000000000
