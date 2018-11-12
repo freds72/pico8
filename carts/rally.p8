@@ -449,7 +449,7 @@ function draw_model(model,m,pos,outline)
 				if not p[vi] then
 					local v=m_x_v(m,model.v[vi])
 					v_add(v,pos)
-					local x,y,z,w=cam:project(v[1],v[2],v[3])
+					local x,y,z,w=cam:project(v)
 					-- avoid rehash
 					p[vi]={x,y,z,w,0,0}
 				end
@@ -506,7 +506,7 @@ function draw_model_shadow(model,m,pos)
 					local v=m_x_v(m,model.v[vi])
 					v_add(v,pos)
 					v[2]=get_altitude_and_n(v)
-					local x,y,z,w=cam:project(v[1],v[2],v[3])
+					local x,y,z,w=cam:project(v)
 					p[vi]={x,y,z,w}
 				end
 			end
@@ -709,7 +709,7 @@ end
 _g.draw_spr_actor=function(self)
 	palt(0,false)
 	palt(14,true)
-	local x,y,z,w=cam:project(self.pos[1],self.pos[2],self.pos[3])
+	local x,y,z,w=cam:project(self.pos)
 	w*=3
 	local sx,sy=band(self.frame*8,127),8*flr(self.frame/16)
 	sspr(sx,sy,16,16,x-w/2,y-w,w,w)
@@ -1002,9 +1002,9 @@ function make_track(segments)
 		draw=function(self)
 			for i=1,#segments do
 		 	local v=segments[i]
-				local x,y,z,w=cam:project(v.pos[1]+4*cos(time()),get_altitude_and_n(v.pos),v.pos[3]-4*sin(time()))
+				local x,y,z,w=cam:project({v.pos[1]+4*cos(time()),get_altitude_and_n(v.pos),v.pos[3]-4*sin(time())})
 	 		pset(x,y,8)
-				x,y,z,w=cam:project(v.pos[1],get_altitude_and_n(v.pos),v.pos[3])
+				x,y,z,w=cam:project({v.pos[1],get_altitude_and_n(v.pos),v.pos[3]})
 				spr(i<=checkpoint and 32 or 48,x-4,y-4)
 				
 				if laps>1 and i==checkpoint and v.blink_t>0 then
@@ -1020,7 +1020,7 @@ end
 function make_cam(focal)
 	-- camera rotation
 	local cc,ss=1,0
-	local c={
+	return {
 		pos={0,6*hscale,0},
 		lookat={0,0,-7*16},
 		dist=shl(8,ground_shift),
@@ -1030,21 +1030,16 @@ function make_cam(focal)
 			cc,ss=cos(angle),-sin(angle)
 			v_add(self.pos,{0,self.dist*ss,self.dist*cc})
 		end,
-		project=function(self,x,y,z)
-			x-=self.lookat[1]
-			local tmpy=y
-			-- fake 3d
-			y=-self.lookat[2]
-			z-=self.lookat[3]
+		project=function(self,v)
+			local x,y,z=v[1]-self.lookat[1],-self.lookat[2],v[3]-self.lookat[3]
 			z,y=cc*z+ss*y,-ss*z+cc*y
 
-  	local xe,ye,ze=x,y,z-self.dist
+		local xe,ye,ze=x,y,z-self.dist
 
 		local w=-focal/ze
-  	return 64+xe*w,64-(tmpy+ye)*w,ze,w
+  	return 64+xe*w,64-(v[2]+ye)*w,ze,w
 		end
 	}
-	return c
 end
 
 -- particles
@@ -1074,7 +1069,7 @@ _g.update_part=function(self)
 end
 
 _g.draw_part=function(self)
-	local x,y,z,w=cam:project(self.pos[1],self.pos[2],self.pos[3])
+	local x,y,z,w=cam:project(self.pos)
 	-- behind camera
 	if(z>=0) return
 	
@@ -1189,11 +1184,11 @@ function draw_ground(self)
 	local nx,ny=flr(shr(cx,ground_shift)),flr(shr(cz,ground_shift))
 	
 	-- project anchor points
-	local p,xmin={},shl(ground_left,ground_shift)
+	local p,xmin={},shl(ground_left,ground_shift)-dx+cx
 	-- grid depth extent
 	for j=ground_near,ground_far do
 	 -- project leftmost grid points
-		local x,y,z,w=cam:project(-dx+cx+xmin,0,-dz+cz+shl(j,ground_shift))
+		local x,y,z,w=cam:project({xmin,0,-dz+cz+shl(j,ground_shift)})
 		add(p,{x,y,z,w,ny+j})
 	end
 	
@@ -1346,41 +1341,27 @@ function time_tostr(t)
 	return s
 end
 
-function boldify(fn)
-	for i=-1,1 do
-		for j=-1,1 do
-			camera(i,j)
-			fn(true)
-		end
-	end
-	camera()
-	fn(false)
+function printb(s,x,y,c)
+	local len=4*#s+2
+	rectfill(x,y,x+len,y+6,c)
+	print(s,x+1,y+1,0)
+	-- shade
+	line(x,y+7,x+len,y+7,1)
 end
 
 function draw_hud()
-	boldify(function(is_bold)
-		circ(15,111,16,is_bold and 5 or 6)
-		local rpm=1-plyr.rpm/plyr.max_rpm[2]
-		rpm*=0.75
-		color(is_bold and 2 or 8)
-		line(15,111,15+10*cos(rpm),111+10*sin(rpm))
-		circfill(15,111,3)
-	end)
-	printb("gear:"..(plyr.gear==1 and "lo" or "hi"),99,121,7,5)
+	circ(15,111,16,7)
+	local rpm=1-plyr.rpm/plyr.max_rpm[2]
+	rpm*=0.75
+	color(8)
+	line(15,111,15+10*cos(rpm),111+10*sin(rpm))
+	circfill(15,111,3)
+	
+	print("gear:"..(plyr.gear==1 and "lo" or "hi"),99,121,7,5)
 
  local angle,dist=track:get_dir(plyr.pos)
-	boldify(function(is_bold)
-		pal(7,is_bold and 5 or 7)
-		spr(116+angle,60,2)
-	 pal()
-	end)
+	spr(116+angle,60,2)
 	print(flr(dist).."m",64-6,11,7)
-end
-
-function printb(s,x,y,c,coutline)
-	boldify(function(is_bold)
-		print(s,x,y,is_bold and coutline or c)
-	end)
 end
 
 function _draw()
@@ -1394,11 +1375,10 @@ function _draw()
 	draw_hud()
 
 	-- print((30*sqrt(v_dot(plyr.v,plyr.v))/3.6).."km/h",2,18,7)
-	printb("lap time",2,2,8,2)
-	print(time_tostr(track.lap_t),2,10,7,5)
-
-	printb("best time",90,2,10,9)
-	print(time_tostr(track.best_t),90,10,7,5)
+	printb("lap time",2,2,8)
+	printb(time_tostr(track.lap_t),2,8,6)
+	printb("best time",127,2,10)
+	printb(time_tostr(track.best_t),127,8,6)
  
  --print("front:"..(360*plyr.slip_angles[1]),2,18,7)
  --print("rear:"..(360*plyr.slip_angles[2]),2,24,7)
