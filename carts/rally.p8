@@ -1341,23 +1341,34 @@ function time_tostr(t)
 	return s
 end
 
-function printb(s,x,y,c)
-	local len=4*#s+2
+-- print box
+function printb(s,x,y,c,rev)
+	local len=4*#s+1
+ if(rev) x-=len	
 	rectfill(x,y,x+len,y+6,c)
 	print(s,x+1,y+1,0)
 	-- shade
 	line(x,y+7,x+len,y+7,1)
 end
 
-function draw_hud()
+function draw_gauge()
 	circ(15,111,16,7)
 	local rpm=1-plyr.rpm/plyr.max_rpm[2]
 	rpm*=0.75
 	color(8)
 	line(15,111,15+10*cos(rpm),111+10*sin(rpm))
 	circfill(15,111,3)
+end
+
+function draw_hud()
+	camera(0,-1)
+	memset(0x5f00,0x1,16)
+	draw_gauge()
+	camera()
+	pal()
+	draw_gauge()
 	
-	print("gear:"..(plyr.gear==1 and "lo" or "hi"),99,121,7,5)
+	printb("gear:"..(plyr.gear==1 and "lo" or "hi"),96,119,12)
 
  local angle,dist=track:get_dir(plyr.pos)
 	spr(116+angle,60,2)
@@ -1376,9 +1387,9 @@ function _draw()
 
 	-- print((30*sqrt(v_dot(plyr.v,plyr.v))/3.6).."km/h",2,18,7)
 	printb("lap time",2,2,8)
-	printb(time_tostr(track.lap_t),2,8,6)
-	printb("best time",127,2,10)
-	printb(time_tostr(track.best_t),127,8,6)
+	printb(time_tostr(track.lap_t),3,8,6)
+	printb("best time",127,2,10,-1)
+	printb(time_tostr(track.best_t),126,8,6,-1)
  
  --print("front:"..(360*plyr.slip_angles[1]),2,18,7)
  --print("rear:"..(360*plyr.slip_angles[2]),2,24,7)
@@ -1696,7 +1707,7 @@ __gfx__
 00000000115dd6001d000000000000000000000075e5e5e5e5e5e5e5eb05656518766666777777777711666665777788111177656756556bb000000000000000
 000000001122ee002e00000077777777777777777e5e5e5e5e5e5e5e5b5055658876666677777777771166666577778111aa77656756666bb000000000000000
 0000000022eeff00ef00000077777777777777777775e5e5e5e5e5e5eb05556585788666777777777711666665777781aacc77656756556bb000000000000000
-00000000eeeeeeeeeeeeeeee2222222222220000eeee5e5e5e5e5e5e5b50556565788866777777777711666665777781acc777656756666bb000000000000000
+00000000eeeeeeeeeeeeeeee2222222222220000eeeeeeeeeeeeeeee5b50556565788866777777777711666665777781acc777656756666bb000000000000000
 00000000eeeeeeeeeeeeeeee2888888888820000eeeeeeeeeeeeeeeebb05556565780866777777777711666665777781ac7766656756556bb000000000000000
 009bb000eeeeeeeeeeeeeeee28eeeeeeee820000eeeeeeeeeeeeeeeebb05556565787866777777777711666667777781a7667765a756776bb000000000000000
 004bbbb0eeeeeeeeeeeeeeee28e3e3e3ee820000eeeeeeeeeeeeeeeeb8888565657888667777777777116666677777777777776aa756776bb000000000000000
