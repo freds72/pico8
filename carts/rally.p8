@@ -7,15 +7,13 @@ local actors,ground_actors,parts,v_light,cam,plyr,active_ground_actors={},{},{},
 local track,ghost
 
 local physic_actors={}
--- physic thresoholds
+-- physic thresholds
 local k_small=0.001
 local k_small_v=0.01
 local k_depth=0.05
 -- baumgarte
 local k_bias=0.2
 local k_slop=0.05
-
-local k_coll_none,k_coll_pen,k_coll_coll,k_coll_rest=0,1,2,4
 
 -- world units
 local ground_shift,hscale=1,4
@@ -242,12 +240,6 @@ function v_normz(v)
 		v[3]/=d
 	end
 	return d
-end
-function v_clamp(v,l)
-	local d=v_dot(v,v)
-	if d>l*l then
-		v_scale(v,l/sqrt(d))
-	end
 end
 function v_scale(v,scale)
 	v[1]*=scale
@@ -638,7 +630,6 @@ _g.update_plyr=function(self)
 	self.traction*=0.8
 	self.turn*=0.7
 
- -- normalized length
 	-- sound
 	local speed=plyr.rpm*(0.8+0.2*rnd())
 	local sspd = speed*2
@@ -890,6 +881,19 @@ function make_rigidbody(a)
 				end
 			end
 			return r
+		end,
+		-- return if p is colliding with rigidbody bbox
+		is_colliding=function(p)
+			-- to bbox space
+			p=make_v(self.pos,p)
+			m_inv_x_v(self.m,p)
+			for _,f in pairs(bbox.f) do
+				local v=make_v(bbox.v[f.vi[1]],p)
+				if v_dot(v,bbox.n[f.ni])>0 then
+					return false
+				end
+			end
+			return true
 		end
 	}
 	
@@ -906,14 +910,11 @@ function world:check_coll()
 end
 
 function world:update()
-	local dt=1/30
-	
 	-- collect contacts
 	self:check_coll()
-
 	-- 
 	for _,a in pairs(physic_actors) do
-		a:prepare(dt)
+		a:prepare(time_dt)
 	end
 	-- solve contacts
 	for _,c in pairs(self.contacts) do
@@ -926,7 +927,7 @@ function world:update()
 	
 	-- move bodies
 	for _,a in pairs(physic_actors) do
-		a:integrate(dt)
+		a:integrate(time_dt)
 	end
 end
 
@@ -961,14 +962,14 @@ function make_track(segments)
 			return flr(checkpoint/#segments)>laps
 		end,
 		update=function(self)
- 		checkpoint_t+=1
+			checkpoint_t+=1
 			self.lap_t+=1
 			local p=segments[checkpoint%#segments+1]
 			p.blink_t-=1
 			if sqr_dist(plyr.pos,p.pos)<64 then
 				checkpoint+=1
 				if checkpoint%#segments==0 then
-					checkpoint=0					
+					checkpoint=0
 					laps+=1		
 					self.best_t=min(self.lap_t,self.best_t)
 					self:on_new_lap()
@@ -983,21 +984,6 @@ function make_track(segments)
 						p.blink_t=10
 					end
 					checkpoint_t=0
-				end
-			end
-		end,
-		-- debug draw
-		draw=function(self)
-			for i=1,#segments do
-		 	local v=segments[i]
-				local x,y,z,w=cam:project({v.pos[1]+4*cos(time()),get_altitude_and_n(v.pos),v.pos[3]-4*sin(time())})
-	 		pset(x,y,8)
-				x,y,z,w=cam:project({v.pos[1],get_altitude_and_n(v.pos),v.pos[3]})
-				spr(i<=checkpoint and 32 or 48,x-4,y-4)
-				
-				if laps>1 and i==checkpoint and v.blink_t>0 then
-					local s=time_tostr(v.dt)
-					print("-"..s,x-3*#s,y-2*v.blink_t,10)
 				end
 			end
 		end
@@ -1061,21 +1047,22 @@ _g.draw_part=function(self)
 	-- behind camera
 	if(z>=0) return
 	
-	-- simple part
+	-- all parts are sprites
+	palt(0,false)
+	palt(14,true)
+	local n,s=#self.frames
 	if self.kind==0 then
-		local s=self.frames[flr(self.frame*(#self.frames-1)+0.5)]
-		if s then
-			palt(0,false)
-			palt(14,true)
-			local sx,sy=band(shl(s,3),127),shl(shr(s,4),3)
-			w*=2
-		  	sspr(sx,sy,8,8,x-w/2,y-w/2,w,w)			
-			pal()
-		end
+		s=self.frames[flr(self.frame*(n-1))+1]
+	elseif self.kind==1 then
+		s=self.frames[flr((self.frame*(n-1))%n)+1]
 	end
+	local sx,sy=band(shl(s,3),127),shl(shr(s,4),3)
+	w*=2
+	sspr(sx,sy,8,8,x-w/2,y-w/2,w,w)
+	pal()
 end
 
-all_parts=json_parse'{"smoke":{"frames":[64,80,81,65],"r":1,"rnd":{"dly":[8,20],"g_scale":[-0.03,-0.05]},"frame":0,"dv":0.9,"dr":0,"kind":0}}'
+all_parts=json_parse'{"smoke":{"frames":[64,80,81,65],"r":1,"rnd":{"dly":[8,20],"g_scale":[-0.03,-0.05]},"frame":0,"dv":0.9,"dr":0,"kind":0},"cone":{"frames":[4,5,6,7],"r":0.2,"rnd":{"dly":[70,90]},"frame":0,"dv":0.9,"dr":0,"kind":1}}'
 
 function make_part(part,p,v)
 	local pt=add(parts,clone(all_parts[part],{pos=v_clone(p),v=v and v_clone(v) or v_zero(),draw=_g.draw_part}))
@@ -1315,9 +1302,8 @@ end
 
 local padding_mask="00"
 function padding(n)
- n=min(n,99)
- local s=tostr(flr(n))
-	return sub(padding_mask,1,2-#s)..s
+	n=tostr(flr(min(n,99)))
+	return sub(padding_mask,1,2-#n)..n
 end
 
 function time_tostr(t)
@@ -1332,7 +1318,8 @@ end
 -- print box
 function printb(s,x,y,c,rev)
 	local len=4*#s+1
- if(rev) x-=len	
+	-- righ justified?
+	if(rev) x-=len
 	rectfill(x,y,x+len,y+6,c)
 	print(s,x+1,y+1,0)
 	-- shade
@@ -1372,12 +1359,9 @@ function _draw()
 
 	zbuf_sort()
 	draw_ground()
- 
-	track:draw()
 	
 	draw_hud()
 
-	-- print((30*sqrt(v_dot(plyr.v,plyr.v))/3.6).."km/h",2,18,7)
 	printb("lap time",2,2,7)
 	printb(time_tostr(track.lap_t),3,8,6)
 	printb("best time",127,2,10,-1)
@@ -1393,42 +1377,18 @@ function _draw()
  	pset(i,64-32*t)
  	pset(i,64-32*out_elastic(t))
  end
-  
-	--[[	
-	for _,a in pairs(physic_actors) do
-		a.bbox:draw(a.m,a.pos)
-	end
-	]]
-
 
 	--rectfill(0,0,127,8,8)
 	--print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)
  
  --print(plyr.acc,2,18,7)
  
-	-- print(plyr.traction,2,18,7)	
-	
-	-- debug
-	--[[
-	if plyr then
-		draw_vector(plyr.m,plyr.pos,plyr.v,11)
-	 
-	 local i=2
-	 for _,k in pairs(plyr.forces) do
-			draw_vector(plyr.m,k.pos,k.force,i)
-			i+=1
-		end	
-		-- debug
-		plyr.forces={}
-	end
-	]]
 end
-
--- main
 
 function _init()
  sfx(0,3,0)
 	-- q binary layout
+	-- 0b01000000: rle bit
 	-- 0b01000000: q code
 	-- 0b00111000: hi color
 	-- 0b00000111: lo color
