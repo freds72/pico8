@@ -422,12 +422,8 @@ local dither_pat2=json_parse'[0xffff,0xa5a5,0x0000]'
 
 function draw_model(model,m,pos,outline)
 	-- cam pos in object space
-	local cam_pos=v_clone(cam.pos)
-	v_add(cam_pos,pos,-1)
+	local cam_pos=make_v(pos,cam.pos)
 	m_inv_x_v(m,cam_pos)
-	-- v_light dir in object space
-	local l=v_clone(v_light)
-	m_inv_x_v(m,l)
 	
 	-- faces
 	local faces,p={},{}
@@ -548,7 +544,7 @@ function add_tireforce(self,v,offset,scale,isrear)
 		if abs(ratio)>max_traction then
 			slide=true
 			-- clamp
-			ratio=mid(ratio,-max_traction,max_traction)
+			-- ratio=mid(ratio,-max_traction,max_traction)
 		end
 		ratio*=plyr.mass
   
@@ -641,8 +637,7 @@ _g.update_plyr=function(self)
 	poke(0x3202, sspd*8)
 
 	-- hit ground actors?
-	-- todo
-
+	
 	return true
 end
 
@@ -723,7 +718,7 @@ function make_ground_actor(src,i,j)
 		q=make_q(v_up,0)
 	})
 	-- adjust pos
-	a.pos[2]=get_altitude_and_n(a.pos)
+	a.pos[2]=get_altitude_and_n(a.pos)+0.5
 	a.m=m_from_q(a.q)
 	-- register
 	ground_actors[i+j*128]=a
@@ -883,13 +878,15 @@ function make_rigidbody(a)
 			return r
 		end,
 		-- return if p is colliding with rigidbody bbox
-		is_colliding=function(p)
-			-- to bbox space
+		is_colliding=function(self,p)
+			-- to self space
 			p=make_v(self.pos,p)
 			m_inv_x_v(self.m,p)
-			for _,f in pairs(bbox.f) do
-				local v=make_v(bbox.v[f.vi[1]],p)
-				if v_dot(v,bbox.n[f.ni])>0 then
+			for i=1,#bbox.f do
+				local n=bbox.n[i]
+				-- front facing?
+				local d=v_dot(n,p)
+				if d>=bbox.cp[i] then
 					return false
 				end
 			end
@@ -1129,8 +1126,9 @@ end
 
 function update_ground()
 	local pos=plyr and plyr.pos or cam.lookat
-	
 	local i0,j0=flr(shr(pos[1],ground_shift)),flr(shr(pos[3],ground_shift))
+	-- clear active list
+	active_ground_actors={}
 	for i=i0+ground_left,i0+ground_right do
 		local cx=band(i,0x7f)
 		for j=j0+ground_near,j0+ground_far do
@@ -1369,7 +1367,15 @@ function _draw()
  
  --print("front:"..(360*plyr.slip_angles[1]),2,18,7)
  --print("rear:"..(360*plyr.slip_angles[2]),2,24,7)
+ 
+ 	for _,a in pairs(active_ground_actors) do
+		if plyr:is_colliding(a.pos) then
+			local x,y,z=cam:project(a.pos)
+			print("hit",x-8,y-12,8)
+		end
+	end
 
+--[[
 	local slip=plyr.slip_angles[1]
  for i=0,127 do
   local t=i/127
@@ -1377,9 +1383,9 @@ function _draw()
  	pset(i,64-32*t)
  	pset(i,64-32*out_elastic(t))
  end
-
-	--rectfill(0,0,127,8,8)
-	--print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)
+]]
+	rectfill(0,0,127,8,8)
+	print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)
  
  --print(plyr.acc,2,18,7)
  
