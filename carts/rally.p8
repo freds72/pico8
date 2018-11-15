@@ -568,16 +568,12 @@ function add_tireforce(self,v,offset,scale,isrear)
 	end
 end
 
--- out quadratic
-function rpm_curve(dt)
-	return -2*dt+2
-end
-
 _g.control_plyr=function(self)
 	local turn,z=0,0
 	if(btn(0)) turn=1
 	if(btn(1)) turn=-1
-
+	self.turn+=turn
+	
  --[[
 	if(btn(2)) z=-1
 	if(btn(3)) z=1
@@ -585,7 +581,13 @@ _g.control_plyr=function(self)
 	plyr.pos[3]+=z/4
  ]]
  
-	self.turn+=turn
+	-- accelerate
+	if btn(2) then
+		-- magic number=out quadratic(1/30)
+		self.rpm=min(self.rpm+0.1933,self.max_rpm)
+	else
+		self.rpm=max(self.rpm-0.3)
+	end
 	
 	if v_dot(self.v,self.v)>k_small then
 		-- steering angle
@@ -593,13 +595,6 @@ _g.control_plyr=function(self)
 		add_tireforce(self,{-sin(angle),0,cos(angle)},1)
 		-- rear wheels
 		add_tireforce(self,v_right,-1.2,nil,true)
-	end
-
-	-- accelerate
-	if btn(2) then
-		self.rpm=min(self.rpm+0.1*rpm_curve(time_dt),self.max_rpm)
-	else
-		self.rpm=max(self.rpm-0.3)
 	end
 	add_tireforce(self,v_fwd,-1,self.rpm)
 
@@ -640,7 +635,7 @@ _g.update_plyr=function(self)
 	for _,a in pairs(active_ground_actors) do
 		local v=plyr:is_colliding(a.pos)
 		if v then
-		 -- make it flight a bit!
+		 -- make it fly a bit!
 		 v[2]+=2+rnd(3)
 			make_part("cone",a.pos,v)
 			-- kill actor
@@ -668,10 +663,10 @@ _g.init_ghost=function(self)
 		if(k>n) k=1
 	end
 	-- listen to track event
-	track.on_new_lap=function()
+	track.on_new_lap=function(t)
 	 -- new best?
-		if track.lap_t<best_t then
-			best,best_t,hist=hist,track.lap_t,{}		 
+		if t<best_t then
+			best,best_t,hist=hist,t,{}
 		end
 		-- restart replay
 		k=1
@@ -725,12 +720,10 @@ function make_ground_actor(src,i,j)
 	local x,z,idx=shl(i+rnd(),ground_shift),shl(j+rnd(),ground_shift),safe_index(i,j)
 	local a=clone(all_actors[src],{
 		pos={x,0,z},
-		q=make_q(v_up,0),		
 		idx=idx
 	})
 	-- adjust pos
 	a.pos[2]=get_altitude_and_n(a.pos)+0.5
-	a.m=m_from_q(a.q)
 	-- register
 	ground_actors[idx]=a
 	return a
@@ -965,54 +958,68 @@ function make_track(segments)
 	add(segments,segments[#segments])
 	-- reset segment time
 	foreach(segments,function(v)
-		v.best_t,v.dt,v.blink_t=32000,0,-1
+		v.best_t=32000
 	end)
 	-- active index
 	local checkpoint,checkpoint_t=0,0
-	local laps=1
-	return {	
-	 -- best lap time
-	 best_t=32000,
-	 -- lap_time
-		lap_t=0,
-	 -- lap callback
-		on_new_lap=nop,
-		get_startpos=function(self)
-			return segments[1].pos
-		end,
-		get_dir=function(self,pos)
-			local v=make_v(pos,segments[checkpoint%#segments+1].pos)
+	local laps,lap_t,best_t=1,0,32000
+	-- best chrono (between segments)
+	local chrono_t,chrono_dt=-1
+	
+	-- helper function
+	local get_dir=function(pos)
+		local v=make_v(pos,segments[checkpoint%#segments+1].pos)
 		 local angle=atan2(v[1],v[3])
 		 angle=(angle+1)%1
 		 return flr(8*angle),sqrt(v_dot(v,v))
+		end
+	return {
+	 -- lap callback
+		on_new_lap=nop,
+		-- get latest chrono
+		get_startpos=function(self)
+			return segments[1].pos
 		end,
 		is_over=function(self)
 			return flr(checkpoint/#segments)>laps
 		end,
 		update=function(self)
+			chrono_t-=1
 			checkpoint_t+=1
-			self.lap_t+=1
+			lap_t+=1
 			local p=segments[checkpoint%#segments+1]
-			p.blink_t-=1
 			if sqr_dist(plyr.pos,p.pos)<64 then
 				checkpoint+=1
 				if checkpoint%#segments==0 then
 					checkpoint=0
-					laps+=1		
-					self.best_t=min(self.lap_t,self.best_t)
-					self:on_new_lap()
-					self.lap_t=0
+					laps+=1
+					best_t=min(lap_t,best_t)
+					self:on_new_lap(lap_t)
+					lap_t=0
 				else
 				 -- don't reset timer for start checkpoint
 					if checkpoint_t<p.best_t then
 						-- record delta time
-						p.dt=p.best_t-checkpoint_t
+						chrono_dt,chrono_t=p.best_t-checkpoint_t,30
 						-- record segment duration
 						p.best_t=checkpoint_t
-						p.blink_t=10
 					end
 					checkpoint_t=0
 				end
+			end
+		end,
+		draw=function(self)
+			local angle,dist=get_dir(plyr.pos)
+			spr(116+angle,60,2)
+			print(flr(dist).."m",64-6,11,7)
+			
+			printb("lap time",2,2,7)
+			printb(time_tostr(lap_t),3,8,6)
+			printb("best time",127,2,10,-1)
+			printb(time_tostr(best_t),126,8,6,-1)
+ 
+			if chrono_t>0 then
+				printb("-"..time_tostr(chrono_dt),2+32*smoothstep(1-chrono_t/30),25,11)
 			end
 		end
 	}
@@ -1378,9 +1385,7 @@ function draw_hud()
 	pal()
 	draw_gauge()
 	
- 	local angle,dist=track:get_dir(plyr.pos)
-	spr(116+angle,60,2)
-	print(flr(dist).."m",64-6,11,7)
+	track:draw()
 end
 
 function _draw()
@@ -1391,11 +1396,6 @@ function _draw()
 	
 	draw_hud()
 
-	printb("lap time",2,2,7)
-	printb(time_tostr(track.lap_t),3,8,6)
-	printb("best time",127,2,10,-1)
-	printb(time_tostr(track.best_t),126,8,6,-1)
- 
  --print("front:"..(360*plyr.slip_angles[1]),2,18,7)
  --print("rear:"..(360*plyr.slip_angles[2]),2,24,7)
  
