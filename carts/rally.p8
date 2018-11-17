@@ -510,65 +510,87 @@ function draw_model_shadow(model,m,pos)
 	fillp()
 end
 
+function acos(x)
+	return atan2(x,-sqrt(1-x*x))
+end
+
 function bezier(t,b,c)
  local ts,tc=t*t,t*t*t
-	return b+c*(33*tc*ts-106*ts*ts+126*tc-67*ts+15*t)
+ return b+c*(-3.1*tc*ts+2.85*ts*ts+9.9*tc-17.1*ts+8.45*t)
 end
 
-local out_elastic=function(t)
-	return bezier(t,0,1)
+local out_cubic=function(t)
+	return bezier(mid(t,0,1),0,1)*0.7
 end
 
-function add_tireforce(self,v,offset,scale,isrear)
- -- force to world
-	v=m_x_v(self.m,v)
+function add_tireforce(self,offset,right,brake,rpm)
+ 	-- force to world
+	right=m_x_v(self.m,right)
+	local fwd=m_fwd(self.m)
 	
-		-- application point (world space)
+	-- application point (world space)
 	local pos=v_clone(self.pos)
 	v_add(pos,m_fwd(self.m),offset)
 
-	local ratio,slide=scale,false
-	if not ratio then
-		-- point velocity
-		local relv=self:pt_velocity(pos)
-		-- perfect impulse
-		ratio=-v_dot(v,relv)
-		ratio*=self.traction_ratio
-		ratio*=plyr.mass
-  		-- impulse factors
-				
-		-- sliding?
-		local fwd=m_fwd(self.m)
-		local max_traction=isrear and (9+9*(1-self.rpm/self.max_rpm)) or 18
-		if abs(ratio)>max_traction then
-			slide=true
-			-- clamp
-			ratio=mid(ratio,-max_traction,max_traction)
-		end
-  
-		v_scale(v,ratio)
-		self:add_impulse(v,pos)
-	else
- 	-- wheels on ground?
- 	ratio*=self.traction_ratio
- 	v_scale(v,ratio)
- 	
- 	-- apply 
- 	self:add_force(v,pos)
+	-- point velocity
+	local relv=self:pt_velocity(pos)
+	local relv_len=v_dot(relv,relv)
+	-- slip angle
+	local sa=0
+	if relv_len>k_small then
+		-- 
+		sa=-v_dot(right,relv)
+		-- limiting factor (normalized unit)
+		sa*=out_cubic(abs(sa)/sqrt(relv_len))
+	end
+
+	-- long. slip
+	relv_len=v_dot(fwd,relv)
+	local sr=0
+	if abs(relv_len)>k_small then
+		relv_len=sqrt(relv_len)
+		sr=brake*(rpm or relv_len)/relv_len-1
+ else
+ 	sr=brake*(rpm or 1)-1
  end
+	self.slip_angles[rpm and 2 or 1]=sr
+ sr=out_cubic(abs(sr))
+
+ --[[
+	sr*=8
+ local scale=sa*sa+sr*sr
+ if scale>0.8 then
+ 	sr/=4
+ 	sa/=2
+ end
+ ]]
+ 
+	-- combine ratios
+	v_scale(fwd,sr)
+ printh("slip angle:"..flr(100*sa).."slip ratio:"..flr(100*sr))
+ 
+	-- impulse factors
+	sa*=self.traction_ratio*plyr.mass
+	if abs(sa)>k_small then
+		v_scale(right,sa)
+		self:add_impulse(right,pos)
+	end
+	
+	sr*=self.traction_ratio
+	if abs(sr)>k_small then
+		v_scale(fwd,sr)
+ 	self:add_force(fwd,pos)
+	end
  
 	-- smoke only for rear wheels
+	--[[
 	if isrear and slide then
 	 pos=v_clone(pos)
 	 v_add(pos,m_right(self.m),rnd(2)-1)
 		--add(pos,v_up)
 		make_part("smoke",pos)
 	end
-end
-
--- out quadratic
-function rpm_curve(dt)
-	return -2*dt+2
+	]]
 end
 
 _g.control_plyr=function(self)
@@ -584,28 +606,27 @@ _g.control_plyr=function(self)
  ]]
  
 	self.turn+=turn
-	
-	if v_dot(self.v,self.v)>k_small then
-		-- steering angle
-		local angle=0.25+0.05*self.turn/2.33
-		add_tireforce(self,{-sin(angle),0,cos(angle)},1)
-		-- rear wheels
-		add_tireforce(self,v_right,-1.2,nil,true)
-	end
-
 	-- accelerate
 	if btn(2) then
-		self.rpm=min(self.rpm+0.1*rpm_curve(time_dt),self.max_rpm)
+		self.rpm=min(self.rpm+1.933,self.max_rpm)
 	else
 		self.rpm=max(self.rpm-0.3)
 	end
-	add_tireforce(self,v_fwd,-1,0.8*self.rpm)
-
-	-- brake
+	-- brake (full lock:0)
 	if btn(3) then
-		add_tireforce(self,v_fwd,-1,-8)
+		self.brake=max(self.brake-0.1)		
+	else
+		self.brake=1
 	end
-	
+
+	-- steering angle
+	local angle=0.25+0.05*self.turn/2.33
+
+	-- front wheels
+	add_tireforce(self,1,{-sin(angle),0,cos(angle)},self.brake)
+	-- rear wheels
+	add_tireforce(self,-1.2,v_right,self.brake,self.rpm)
+
 	if btn(4) then
 		local pos=v_clone(self.pos)
 		v_add(pos,m_up(self.m),3)
@@ -698,7 +719,7 @@ _g.draw_spr_actor=function(self)
 	pal()
 end
 
-local all_actors=json_parse'{"plyr":{"model":"205gti","rigid_model":"205gti_bbox","hardness":0.02,"mass":32,"rpm":0,"max_rpm":16,"turn":0,"traction":0,"traction_ratio":0,"control":"control_plyr","update":"update_plyr","draw_shadow":"draw_plyr_shadow"},"ghost":{"model":"205gti","init":"init_ghost","update":"update_ghost","outline":true},"tree":{"update":"nop","draw":"draw_spr_actor","rnd":{"frame":[37,96,66,98]}}}'
+local all_actors=json_parse'{"plyr":{"model":"205gti","rigid_model":"205gti_bbox","hardness":0.02,"mass":32,"brake":1,"rpm":0,"max_rpm":64,"turn":0,"traction":0,"traction_ratio":0,"control":"control_plyr","update":"update_plyr","draw_shadow":"draw_plyr_shadow"},"ghost":{"model":"205gti","init":"init_ghost","update":"update_ghost","outline":true},"tree":{"update":"nop","draw":"draw_spr_actor","rnd":{"frame":[37,96,66,98]}}}'
 
 function draw_actor(self)
 	draw_model(self.model,self.m,self.pos,self.outline)
@@ -1356,6 +1377,9 @@ end
 
 function draw_gauge()
 	circ(15,111,16,7)
+	clip(15,98,32,16)
+	circ(15,111,16,8)
+	clip()
 	local i,di,c=0.75,-0.1,7
 	while i>0 do
 		pset(15+13.5*cos(i),111+13.5*sin(i),c)
@@ -1395,20 +1419,17 @@ function _draw()
 	printb("best time",127,2,10,-1)
 	printb(time_tostr(track.best_t),126,8,6,-1)
  
- --print("front:"..(360*plyr.slip_angles[1]),2,18,7)
- --print("rear:"..(360*plyr.slip_angles[2]),2,24,7)
+ print("front:"..plyr.slip_angles[1],2,18,7)
+ print("rear:"..plyr.slip_angles[2],2,24,7)
  
---[[
-	local slip=plyr.slip_angles[1]
+ local front_sa=plyr.slip_angles[2]
  for i=0,127 do
   local t=i/127
-  color(t<slip and 2 or 14)
- 	pset(i,64-32*t)
- 	pset(i,64-32*out_elastic(t))
+  color(t<front_sa and 2 or 14)
+ 	pset(i,64-64*out_cubic(t))
  end
-]]
-	rectfill(0,0,127,8,8)
-	print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)
+	--rectfill(0,0,127,8,8)
+	--print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)
  
  --print(plyr.acc,2,18,7)
  
