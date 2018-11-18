@@ -177,6 +177,11 @@ function smoothstep(t)
 	t=mid(t,0,1)
 	return t*t*(3-2*t)
 end
+function clamp(u,v,scale)
+	local d=sqrt(u*u+v*v)
+	if (d>0) u=u*min(d,scale)/d v=v*min(d,scale)/d
+	return u,v
+end
 function rndrng(ab)
 	return flr(rndlerp(ab[1],ab[2]))
 end
@@ -516,15 +521,15 @@ end
 
 function bezier(t,b,c)
  local ts,tc=t*t,t*t*t
- return b+c*(-3.1*tc*ts+2.85*ts*ts+9.9*tc-17.1*ts+7.45*t)
+ return b+c*(-3.1*tc*ts+2.85*ts*ts+9.9*tc-17.1*ts+7.85*t)
 end
 
 local out_cubic=function(t)
-	return bezier(mid(t,0,1),0,1)*0.7
+	return bezier(mid(t,0,1),0,1)*0.9
 end
 
 function add_tireforce(self,offset,right,brake,rpm)
- 	-- force to world
+	-- force to world
 	right=m_x_v(self.m,right)
 	local fwd=m_fwd(self.m)
 	
@@ -541,9 +546,8 @@ function add_tireforce(self,offset,right,brake,rpm)
 		-- 
 		sa=-v_dot(right,relv)
 		-- limiting factor (normalized unit)
-		sa*=out_cubic(abs(sa)/sqrt(relv_len))
+		sa*=out_cubic(abs(0.02*sa)/sqrt(relv_len))
 	end
-	plyr.slip_angles[rpm and 2 or 1]=sa
 
 	-- long. slip
 	relv_len=v_dot(fwd,relv)
@@ -554,19 +558,20 @@ function add_tireforce(self,offset,right,brake,rpm)
  else
  	sr=(brake*relv_len-relv_len)/abs(relv_len)
  end
- --sr*=out_cubic(abs(sr*2))
- sr=mid(sr,-0.2,0.2)
- 
- --sr=mid(sr,-0.5,0.5)
- --[[
- local slide=false
- if abs(sr)>2 then
- 	sr=8*mid(sr,-2,2)
- 	slide=true
- end
- ]]
- 
-		
+ sr*=out_cubic(abs(sr))
+ --sr=mid(sr,-0.25,0.25)
+
+	-- limit overall enveloppe
+	--[[
+	local scale=sa*sa+sr*sr
+	if scale>2 then
+		sa*=0.8
+		sr*=0.7
+	end
+	]]
+	plyr.slip_angles[rpm and 2 or 1]=sa
+	plyr.slip_ratio[rpm and 2 or 1]=sr
+ 	
  printh("slip angle:"..flr(100*sa).."slip ratio:"..flr(100*sr))
  
 	-- impulse factors
@@ -576,7 +581,7 @@ function add_tireforce(self,offset,right,brake,rpm)
 		self:add_impulse(right,pos)
 	end
 	
-	sr*=64*self.traction_ratio
+	sr*=12*self.traction_ratio
 	if abs(sr)>k_small then
 		v_scale(fwd,sr)
  	self:add_force(fwd,pos)
@@ -604,17 +609,18 @@ _g.control_plyr=function(self)
  ]]
  
 	self.turn+=turn
+	-- brake (full lock:0)
+	if btn(3) then
+		self.brake=max(self.brake-0.1)		
+		self.rpm=max(self.rpm-0.9)
+	else
+		self.brake=1
+	end
 	-- accelerate
 	if btn(2) then
 		self.rpm=min(self.rpm+1.933,self.max_rpm)
 	else
 		self.rpm=max(self.rpm-0.3)
-	end
-	-- brake (full lock:0)
-	if btn(3) then
-		self.brake=max(self.brake-0.1)		
-	else
-		self.brake=1
 	end
 
 	-- steering angle
@@ -1375,9 +1381,6 @@ end
 
 function draw_gauge()
 	circ(15,111,16,7)
-	clip(15,98,32,16)
-	circ(15,111,16,8)
-	clip()
 	local i,di,c=0.75,-0.1,7
 	while i>0 do
 		pset(15+13.5*cos(i),111+13.5*sin(i),c)
@@ -1426,8 +1429,8 @@ function _draw()
   color(t<front_sa and 2 or 14)
  	pset(i,64-64*out_cubic(t))
  end
-	--rectfill(0,0,127,8,8)
-	--print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)
+	rectfill(0,0,127,8,8)
+ print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)
  
  --print(plyr.acc,2,18,7)
  
@@ -1492,6 +1495,7 @@ function _init()
   
 	plyr=make_rigidbody(make_actor("plyr",{pos[1],pos[2]+4,pos[3]},0.5))
 	plyr.slip_angles={0,0}
+	plyr.slip_ratio={0,0}
 	
 	ghost=make_actor("ghost",v_zero())
 	
