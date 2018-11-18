@@ -516,7 +516,7 @@ end
 
 function bezier(t,b,c)
  local ts,tc=t*t,t*t*t
- return b+c*(-3.1*tc*ts+2.85*ts*ts+9.9*tc-17.1*ts+8.45*t)
+ return b+c*(-3.1*tc*ts+2.85*ts*ts+9.9*tc-17.1*ts+7.45*t)
 end
 
 local out_cubic=function(t)
@@ -543,30 +543,30 @@ function add_tireforce(self,offset,right,brake,rpm)
 		-- limiting factor (normalized unit)
 		sa*=out_cubic(abs(sa)/sqrt(relv_len))
 	end
+	plyr.slip_angles[rpm and 2 or 1]=sa
 
 	-- long. slip
 	relv_len=v_dot(fwd,relv)
 	local sr=0
-	if abs(relv_len)>k_small then
-		relv_len=sqrt(relv_len)
-		sr=brake*(rpm or relv_len)/relv_len-1
+	if rpm then
+		-- convert rpm to rps
+		sr=(brake*rpm-relv_len)/abs(relv_len)
  else
- 	sr=brake*(rpm or 1)-1
+ 	sr=(brake*relv_len-relv_len)/abs(relv_len)
  end
-	self.slip_angles[rpm and 2 or 1]=sr
- sr=out_cubic(abs(sr))
-
+ --sr*=out_cubic(abs(sr*2))
+ sr=mid(sr,-0.2,0.2)
+ 
+ --sr=mid(sr,-0.5,0.5)
  --[[
-	sr*=8
- local scale=sa*sa+sr*sr
- if scale>0.8 then
- 	sr/=4
- 	sa/=2
+ local slide=false
+ if abs(sr)>2 then
+ 	sr=8*mid(sr,-2,2)
+ 	slide=true
  end
  ]]
  
-	-- combine ratios
-	v_scale(fwd,sr)
+		
  printh("slip angle:"..flr(100*sa).."slip ratio:"..flr(100*sr))
  
 	-- impulse factors
@@ -576,21 +576,19 @@ function add_tireforce(self,offset,right,brake,rpm)
 		self:add_impulse(right,pos)
 	end
 	
-	sr*=self.traction_ratio
+	sr*=64*self.traction_ratio
 	if abs(sr)>k_small then
 		v_scale(fwd,sr)
  	self:add_force(fwd,pos)
 	end
  
-	-- smoke only for rear wheels
-	--[[
-	if isrear and slide then
+	-- smoke only for rear wheels	
+	if rpm and slide then
 	 pos=v_clone(pos)
 	 v_add(pos,m_right(self.m),rnd(2)-1)
 		--add(pos,v_up)
 		make_part("smoke",pos)
 	end
-	]]
 end
 
 _g.control_plyr=function(self)
@@ -719,7 +717,7 @@ _g.draw_spr_actor=function(self)
 	pal()
 end
 
-local all_actors=json_parse'{"plyr":{"model":"205gti","rigid_model":"205gti_bbox","hardness":0.02,"mass":32,"brake":1,"rpm":0,"max_rpm":64,"turn":0,"traction":0,"traction_ratio":0,"control":"control_plyr","update":"update_plyr","draw_shadow":"draw_plyr_shadow"},"ghost":{"model":"205gti","init":"init_ghost","update":"update_ghost","outline":true},"tree":{"update":"nop","draw":"draw_spr_actor","rnd":{"frame":[37,96,66,98]}}}'
+local all_actors=json_parse'{"plyr":{"model":"205gti","rigid_model":"205gti_bbox","hardness":0.02,"mass":32,"brake":1,"rpm":0,"max_rpm":64,"turn":0,"traction":0,"traction_ratio":0,"control":"control_plyr","update":"update_plyr","draw_shadow":"draw_plyr_shadow"},"ghost":{"model":"205gti","init":"init_ghost","update":"update_ghost","outline":true},"tree":{"update":"nop","draw":"draw_spr_actor","rnd":{"frame":[35,37,96,66,98]}}}'
 
 function draw_actor(self)
 	draw_model(self.model,self.m,self.pos,self.outline)
@@ -1422,7 +1420,7 @@ function _draw()
  print("front:"..plyr.slip_angles[1],2,18,7)
  print("rear:"..plyr.slip_angles[2],2,24,7)
  
- local front_sa=plyr.slip_angles[2]
+ local front_sa=abs(plyr.slip_angles[2])
  for i=0,127 do
   local t=i/127
   color(t<front_sa and 2 or 14)
@@ -1709,22 +1707,22 @@ __gfx__
 00000000115dd6001d000000000000000000000075e5e5e5e5e5e5e5eb05656518766666777777777711666665777788111177656756556bb000000000000000
 000000001122ee002e00000077777777777777777e5e5e5e5e5e5e5e5b5055658876666677777777771166666577778111aa77656756666bb000000000000000
 0000000022eeff00ef00000077777777777777777775e5e5e5e5e5e5eb05556585788666777777777711666665777781aacc77656756556bb000000000000000
-00000000eeeeeeeeeeeeeeee0770000000000000eeeeeeeeeeeeeeee5b50556565788866777777777711666665777781acc777656756666bb000000000000000
-00000000eeeeeeeeeeeeeeee7777000000000000eeeeeeeeeeeeeeeebb05556565780866777777777711666665777781ac7766656756556bb000000000000000
-009bb000eeeeeeeeeeeeeeee7777000000000000eeeeeeeeeeeeeeeebb05556565787866777777777711666667777781a7667765a756776bb000000000000000
-004bbbb0eeeeeeeeeeeeeeee0770000000000000eeeeeeeeeeeeeeeeb8888565657888667777777777116666677777777777776aa756776bb000000000000000
-004bbb00eeeeeeeeeeeeeeee0000000000000000eeeeeeeeeeeeeeeeb8888565657886667777777777116666677777666666667aa756776bb000000000000000
-00400000eeeeeeeeeeeeeeee0000000000000000eeeeeeeeeeeeeeeeb888856599766666777777777711666667666677777777788756666bb000000000000000
-00400000eeeeeeeeeeeeeeee0000000000000000eeeeeeeeeeeeeeeebb88856599777777777777777777777777777777777777788756566bb000000000000000
-00111110eeeeeeeeeeeeeeee0000000000000000eeeeeeeeeeeeeeeebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb000000000000000
-00000000eeeeee0000eeeeee0000000000000000eeeeeee2eeeeeeeebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb000000000000000
-00000000eeee0077770eeeee0000000000000000eeeeee282eeeeeeebbbbbbbb7777777777777777777777777bbbbbbbbbbbbbbbbbbbbbbbb000000000000000
-00988000eee0667777700eee0000000000000000eeeee27872eeeeeebbbbbbb777777666666676666666666667bbbbbbbbbbbbbbbbbbbbbbb000000000000000
-00488880ee066666666660ee0000000000000000eeeee28782eeeeeebbbbbb777887666666667666666666666676bbbbbbbbbbbbbbbbbbbbb000000000000000
-00488800ee0666665555550e0000000000000000eeee2688862eeeeebbbbb7778aa86666666676677777666666676bbbbbbbbbbbbbbbbbbbb000000000000000
-00400000ee1055550000001e0000000000000000eeee2877782eeeeebbbb77778aa866666666766766666666666676bbbbbbbbbbbbbbbbbbb000000000000000
-00400000eee10000111111ee0000000000000000eeee1288821eeeeebbb777777887666666667667777766666666676bbbbbbbbbbbbbbbbbb000000000000000
-00111110eeee11111eeeeeee0000000000000000eeeee11111eeeeeebb77777777776666666676666666666666666776bbbbbbbbbbbbbbbbb000000000000000
+00000000eeeeeeeeeeeeeeeeeeeee777777eeeeeeeeeeeeeeeeeeeee5b50556565788866777777777711666665777781acc777656756666bb000000000000000
+00000000eeeeeeeeeeeeeeeeeeeee777777eeeeeeeeeeeeeeeeeeeeebb05556565780866777777777711666665777781ac7766656756556bb000000000000000
+009bb000eeeeeeeeeeeeeeeeeeeee777777eeeeeeeeeeeeeeeeeeeeebb05556565787866777777777711666667777781a7667765a756776bb000000000000000
+004bbbb0eeeeeeeeeeeeeeeeeeeee665566eeeeeeeeeeeeeeeeeeeeeb8888565657888667777777777116666677777777777776aa756776bb000000000000000
+004bbb00eeeeeeeeeeeeeeeeeeeee665566eeeeeeeeeeeeeeeeeeeeeb8888565657886667777777777116666677777666666667aa756776bb000000000000000
+00400000eeeeeeeeeeeeeeeeeeeee556655eeeeeeeeeeeeeeeeeeeeeb888856599766666777777777711666667666677777777788756666bb000000000000000
+00400000eeeeeeeeeeeeeeeeeeeee556655eeeeeeeeeeeeeeeeeeeeebb88856599777777777777777777777777777777777777788756566bb000000000000000
+00111110eeeeeeeeeeeeeeeeeeeee665566eeeeeeeeeeeeeeeeeeeeebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb000000000000000
+00000000eeeeee0000eeeeeeeeeee665566eeeeeeeeeeee2eeeeeeeebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb000000000000000
+00000000eeee0077770eeeeeeeeee556655eeeeeeeeeee282eeeeeeebbbbbbbb7777777777777777777777777bbbbbbbbbbbbbbbbbbbbbbbb000000000000000
+00988000eee0667777700eeeeeeee556655eeeeeeeeee27872eeeeeebbbbbbb777777666666676666666666667bbbbbbbbbbbbbbbbbbbbbbb000000000000000
+00488880ee066666666660eeeeeee665566eeeeeeeeee28782eeeeeebbbbbb777887666666667666666666666676bbbbbbbbbbbbbbbbbbbbb000000000000000
+00488800ee0666665555550eeeee16655661eeeeeeee2688862eeeeebbbbb7778aa86666666676677777666666676bbbbbbbbbbbbbbbbbbbb000000000000000
+00400000ee1055550000001eeeee15566551eeeeeeee2877782eeeeebbbb77778aa866666666766766666666666676bbbbbbbbbbbbbbbbbbb000000000000000
+00400000eee10000111111eeeeee15566551eeeeeeee1288821eeeeebbb777777887666666667667777766666666676bbbbbbbbbbbbbbbbbb000000000000000
+00111110eeee11111eeeeeeeeeee11111111eeeeeeeee11111eeeeeebb77777777776666666676666666666666666776bbbbbbbbbbbbbbbbb000000000000000
 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000b77777777777777777777777777777777777777777777777777bbbbbb000000000000000
 ee9994eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000777888888888888888777777777777777777888888888888888777bbb000000000000000
 e999994eee99eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000778888111111111111177775575555555577711111111111888877777000000000000000
