@@ -515,10 +515,6 @@ function draw_model_shadow(model,m,pos)
 	fillp()
 end
 
-function acos(x)
-	return atan2(x,-sqrt(1-x*x))
-end
-
 function bezier(t,b,c)
  local ts,tc=t*t,t*t*t
  return b+c*(-3.1*tc*ts+2.85*ts*ts+9.9*tc-17.1*ts+7.85*t)
@@ -551,13 +547,11 @@ function add_tireforce(self,offset,right,brake,rpm)
 
 	-- long. slip
 	relv_len=v_dot(fwd,relv)
-	local sr=0
-	if rpm then
 		-- convert rpm to rps
-		sr=(brake*rpm-relv_len)/abs(relv_len)
- else
- 	sr=(brake*relv_len-relv_len)/abs(relv_len)
- end
+	local sr=(brake*(rpm or relv_len)-relv_len)
+	if abs(relv_len)>k_small then
+		sr/=abs(relv_len)
+	end
  sr*=out_cubic(abs(sr))
  --sr=mid(sr,-0.25,0.25)
 
@@ -571,9 +565,7 @@ function add_tireforce(self,offset,right,brake,rpm)
 	]]
 	plyr.slip_angles[rpm and 2 or 1]=sa
 	plyr.slip_ratio[rpm and 2 or 1]=sr
- 	
- printh("slip angle:"..flr(100*sa).."slip ratio:"..flr(100*sr))
- 
+
 	-- impulse factors
 	sa*=self.traction_ratio*plyr.mass
 	if abs(sa)>k_small then
@@ -611,7 +603,7 @@ _g.control_plyr=function(self)
 	self.turn+=turn
 	-- brake (full lock:0)
 	if btn(3) then
-		self.brake=max(self.brake-0.1)		
+		self.brake=max(self.brake-0.1)
 		self.rpm=max(self.rpm-0.9)
 	else
 		self.brake=1
@@ -663,14 +655,13 @@ _g.update_plyr=function(self)
 	for _,a in pairs(active_ground_actors) do
 		local v=plyr:is_colliding(a.pos)
 		if v then
-		 -- make it flight a bit!
-		 v[2]+=2+rnd(3)
+			-- make it flight a bit!
+			v[2]+=2+rnd(3)
 			make_part("cone",a.pos,v)
 			-- kill actor
 			ground_actors[a.idx]=nil
 		end
 	end
- 
 	return true
 end
 
@@ -713,17 +704,7 @@ _g.draw_plyr_shadow=function(self)
 	draw_model_shadow(self.model,self.m,self.pos)
 end
 
-_g.draw_spr_actor=function(self)
-	palt(0,false)
-	palt(14,true)
-	local x,y,z,w=cam:project(self.pos)
-	w*=3
-	local sx,sy=band(self.frame*8,127),8*flr(self.frame/16)
-	sspr(sx,sy,16,16,x-w/2,y-w,w,w)
-	pal()
-end
-
-local all_actors=json_parse'{"plyr":{"model":"205gti","rigid_model":"205gti_bbox","hardness":0.02,"mass":32,"brake":1,"rpm":0,"max_rpm":64,"turn":0,"traction":0,"traction_ratio":0,"control":"control_plyr","update":"update_plyr","draw_shadow":"draw_plyr_shadow"},"ghost":{"model":"205gti","init":"init_ghost","update":"update_ghost","outline":true},"tree":{"update":"nop","draw":"draw_spr_actor","rnd":{"frame":[35,37,96,66,98]}}}'
+local all_actors=json_parse'{"plyr":{"model":"205gti","rigid_model":"205gti_bbox","hardness":0.02,"mass":32,"brake":1,"rpm":0,"max_rpm":64,"turn":0,"traction":0,"traction_ratio":0,"control":"control_plyr","update":"update_plyr","draw_shadow":"draw_plyr_shadow"},"ghost":{"model":"205gti","init":"init_ghost","update":"update_ghost","outline":true},"actor35":{"spr":37,"w":32},"actor37":{"spr":37,"w":32}}'
 
 function draw_actor(self)
 	draw_model(self.model,self.m,self.pos,self.outline)
@@ -746,13 +727,12 @@ end
 -- note: limited to a single actor per tile
 function make_ground_actor(i,j,spr)
 	local x,z,idx=shl(i+rnd(),ground_shift),shl(j+rnd(),ground_shift),safe_index(i,j)
-	local a={
+	local a=clone(all_actors["actor"..idx],{
 		pos={x,get_altitude_and_n({x,0,z})+0.5,z},
-		frame=spr,
-		update=nop,
-		draw=_g.draw_spr_actor,
-		idx=idx
-	}
+		idx=idx,
+		sx=band(spr*8,127),
+		sy=8*flr(spr/16)
+	})
 	-- register
 	ground_actors[idx]=a
 	return a
@@ -1170,11 +1150,23 @@ function draw_actors(j)
 	if bucket then
 		for _,d in pairs(bucket) do
 			d=d.obj
-			
 			-- draw shadow
 			if (d.draw_shadow) d:draw_shadow()
-			d:draw()
 		end
+		palt(0,false)
+		palt(14,true)
+		for _,d in pairs(bucket) do
+			d=d.obj
+			if d.draw then
+				d:draw()
+			else
+				-- ground actor
+				local x,y,z,w=cam:project(d.pos)
+				w*=3
+				sspr(d.sx,d.sy,d.w,d.w,x-w/2,y-w,w,w)
+			end
+		end
+		pal()
 	end
 end
 
@@ -1189,7 +1181,6 @@ function update_ground()
 			local cy=band(j,0x7f)
 			local t=ground_actors[cx+shl(cy,7)]
 			if t then
-				t:update(i,j)
 				add(active_ground_actors,t)
 				add(drawables,t)
 			end
