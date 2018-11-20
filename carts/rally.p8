@@ -24,89 +24,7 @@ local world={}
 
 local good_side,bad_side,any_side,no_side=0x1,0x2,0x0,0x3
 
--- register json context here
-local _tok={
- ['true']=true,
- ['false']=false}
 function nop() return true end
-local _g={
-	good_side=good_side,
-	bad_side=bad_side,
-	any_side=any_side,
-	nop=nop}
-
--- json parser
--- from: https://gist.github.com/tylerneylon/59f4bcf316be525b30ab
-local table_delims={['{']="}",['[']="]"}
-local function match(s,tokens)
-	for i=1,#tokens do
-		if(s==sub(tokens,i,i)) return true
-	end
-	return false
-end
-local function skip_delim(str, pos, delim, err_if_missing)
- if sub(str,pos,pos)!=delim then
-  if(err_if_missing) assert'delimiter missing'
-  return pos,false
- end
- return pos+1,true
-end
-local function parse_str_val(str, pos, val)
-	val=val or ''
-	if pos>#str then
-		assert'end of input found while parsing string.'
-	end
-	local c=sub(str,pos,pos)
-	if(c=='"') return _g[val] or val,pos+1
-	return parse_str_val(str,pos+1,val..c)
-end
-local function parse_num_val(str,pos,val)
-	val=val or ''
-	if pos>#str then
-		assert'end of input found while parsing string.'
-	end
-	local c=sub(str,pos,pos)
-	-- support base 10, 16 and 2 numbers
-	if(not match(c,"-xb0123456789abcdef.")) return tonum(val),pos
-	return parse_num_val(str,pos+1,val..c)
-end
--- public values and functions.
-
-function json_parse(str, pos, end_delim)
-	pos=pos or 1
-	if(pos>#str) assert'reached unexpected end of input.'
-	local first=sub(str,pos,pos)
-	if match(first,"{[") then
-		local obj,key,delim_found={},true,true
-		pos+=1
-		while true do
-			key,pos=json_parse(str, pos, table_delims[first])
-			if(key==nil) return obj,pos
-			if not delim_found then assert'comma missing between table items.' end
-			if first=="{" then
-				pos=skip_delim(str,pos,':',true)  -- true -> error if missing.
-				obj[key],pos=json_parse(str,pos)
-			else
-				add(obj,key)
-			end
-			pos,delim_found=skip_delim(str, pos, ',')
-	end
-	elseif first=='"' then
-		-- parse a string (or a reference to a global object)
-		return parse_str_val(str,pos+1)
-	elseif match(first,"-0123456789") then
-		-- parse a number.
-		return parse_num_val(str, pos)
-	elseif first==end_delim then  -- end of an object or array.
-		return nil,pos+1
-	else  -- parse true, false
-		for lit_str,lit_val in pairs(_tok) do
-			local lit_end=pos+#lit_str-1
-			if sub(str,pos,lit_end)==lit_str then return lit_val,lit_end+1 end
-		end
-		assert'invalid json token'
-	end
-end
 
 -- zbuffer (kind of)
 local drawables,zbuf
@@ -417,8 +335,7 @@ end
 
 -- models & rendering
 local all_models={}
-local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]'
-local dither_pat2=json_parse'[0xffff,0xa5a5,0x0000]'
+local dither_pat2={0xffff,0xa5a5,0x0000}
 
 function draw_model(model,m,pos,outline)
 	-- cam pos in object space
@@ -519,193 +436,6 @@ local out_cubic=function(t)
 	return bezier(mid(t,0,1),0,1)*0.9
 end
 
-function add_tireforce(self,offset,right,brake,rpm)
-	-- force to world
-	right=m_x_v(self.m,right)
-	local fwd=m_fwd(self.m)
-	
-	-- application point (world space)
-	local pos=v_clone(self.pos)
-	v_add(pos,m_fwd(self.m),offset)
-
-	-- point velocity
-	local relv=self:pt_velocity(pos)
-	local relv_len=v_dot(relv,relv)
-	-- slip angle
-	local sa=0
-	if relv_len>k_small then
-		-- 
-		sa=-v_dot(right,relv)
-		-- limiting factor (normalized unit)
-		sa*=out_cubic(abs(sa)/sqrt(relv_len))
-	end
-
-	-- long. slip
-	relv_len=v_dot(fwd,relv)
-		-- convert rpm to rps
-	local sr=(brake*(rpm or relv_len)-relv_len)
-	if abs(relv_len)>k_small then
-		sr/=abs(relv_len)
-	end
- sr*=out_cubic(abs(sr))
- 
- --sr=mid(sr,-0.25,0.25)
-
-	-- limit overall enveloppe
-	--[[
-	local scale=sa*sa+sr*sr
-	if scale>2 then
-		sa*=0.8
-		sr*=0.7
-	end
-	]]
-	plyr.slip_angles[rpm and 2 or 1]=sa
-	plyr.slip_ratio[rpm and 2 or 1]=sr
-
-	-- impulse factors
-	sa*=self.traction_ratio*plyr.mass
-	if abs(sa)>k_small then
-		v_scale(right,sa)
-		self:add_impulse(right,pos)
-	end
-	
-	sr*=12*self.traction_ratio
-	if abs(sr)>k_small then
-		v_scale(fwd,sr)
- 	self:add_force(fwd,pos)
-	end
- 
-	-- smoke only for rear wheels	
-	if rpm and slide then
-	 pos=v_clone(pos)
-	 v_add(pos,m_right(self.m),rnd(2)-1)
-		--add(pos,v_up)
-		make_part("smoke",pos)
-	end
-end
-
-_g.control_plyr=function(self)
-	local turn,z=0,0
-	if(btn(0)) turn=1
-	if(btn(1)) turn=-1
-
- --[[
-	if(btn(2)) z=-1
-	if(btn(3)) z=1
-	plyr.pos[1]-=turn/4
-	plyr.pos[3]+=z/4
- ]]
- 
-	self.turn+=turn
-	-- brake (full lock:0)
-	if btn(3) then
-		self.brake=max(self.brake-0.1)
-		self.rpm=max(self.rpm-0.9)
-	else
-		self.brake=1
-	end
-	-- accelerate
-	if btn(2) then
-		self.rpm=min(self.rpm+1.933,self.max_rpm)
-	else
-		self.rpm=max(self.rpm-0.3)
-	end
-
-	-- steering angle
-	local angle=0.25+0.05*self.turn/2.33
-
-	-- front wheels
-	add_tireforce(self,1,{-sin(angle),0,cos(angle)},self.brake)
-	-- rear wheels
-	add_tireforce(self,-1.2,v_right,self.brake,self.rpm)
-
-	if btn(4) then
-		local pos=v_clone(self.pos)
-		v_add(pos,m_up(self.m),3)
-		local force=v_clone(v_up)
-		v_scale(force,12)
-		self:add_force(force,pos)
-	end
-end
-
-_g.update_plyr=function(self)
-	
-	self.traction+=self:up_ratio()
-	self.traction_ratio=self.traction/20
-	
-	-- time decay
-	self.traction*=0.8
-	self.turn*=0.7
-
-	-- sound
-	local speed=plyr.rpm*(0.8+0.2*rnd())
-	local sspd = speed*2
-	if (sspd>=1) sspd=speed*1.2
-	if (sspd>=1) sspd=speed*0.7
-	if (sspd>=1) sspd=speed*0.49
-	sspd=sspd-flr(sspd)+speed/6
-	poke(0x3200, sspd*2)
-	poke(0x3202, sspd*8)
-
-	-- hit ground actors?
-	for _,a in pairs(active_ground_actors) do
-		local v=plyr:is_colliding(a.pos)
-		if v then
-			-- make it fly a bit!
-			v[2]+=2+rnd(3)
-			make_part(a.hit_part,a.pos,v)
-			-- kill actor
-			ground_actors[a.idx]=nil
-		end
-	end
-	return true
-end
-
-_g.init_ghost=function(self) 
-	local k,best,best_t,hist=1,{},32000,{}
-	self.serialize_plyr=function()
-		-- capture current pos
-		serialize(plyr.pos,hist)
-		serialize(plyr.q,hist)
-	end
-	self.replay_best=function()
-		local n=#best
-		if(n==0) return
-		k=deserialize(best,k,self.pos)
-		k=deserialize(best,k,self.q)
-		self.m=m_from_q(self.q)
-		-- loop
-		if(k>n) k=1
-	end
-	-- listen to track event
-	track.on_new_lap=function()
-	 -- new best?
-		if track.lap_t<best_t then
-			best,best_t,hist=hist,track.lap_t,{}
-		end
-		-- restart replay
-		k=1
-	end
-end
-_g.update_ghost=function(self)
-	if time_t%2==0 then
-		self:serialize_plyr()
-		-- replay best track
-		self:replay_best()
-	end
-	return true
-end
-
-_g.draw_plyr_shadow=function(self)
-	draw_model_shadow(self.model,self.m,self.pos)
-end
-
-local all_actors=json_parse'{"plyr":{"model":"205gti","rigid_model":"205gti_bbox","hardness":0.02,"mass":32,"brake":1,"rpm":0,"max_rpm":64,"turn":0,"traction":0,"traction_ratio":0,"control":"control_plyr","update":"update_plyr","draw_shadow":"draw_plyr_shadow"},"ghost":{"model":"205gti","init":"init_ghost","update":"update_ghost","outline":true},"actor1":{"spr":35,"w":16,"hit_part":"chkpt"},"actor2":{"spr":53,"w":8,"hit_part":"cone"}}'
-
-function draw_actor(self)
-	draw_model(self.model,self.m,self.pos,self.outline)
-end
-
 function draw_spr_actor(self)
 	palt(0,false)
 	palt(14,true)
@@ -717,17 +447,211 @@ function draw_spr_actor(self)
 	palt()
 end
 
-function make_actor(src,p,angle)
-	-- instance
-	local a=clone(all_actors[src],{
+function make_plyr(p,angle)
+	local model,q=all_models["205gti"],make_q(v_up,angle or 0)
+	local brake,turn,traction=0,0,0
+
+	local add_tireforce=function(self,offset,right,brake,rpm)
+		-- force to world
+		right=m_x_v(self.m,right)
+		local fwd=m_fwd(self.m)
+		
+		-- application point (world space)
+		local pos=v_clone(self.pos)
+		v_add(pos,m_fwd(self.m),offset)
+
+		-- point velocity
+		local relv=self:pt_velocity(pos)
+		local relv_len=v_dot(relv,relv)
+		-- slip angle
+		local sa=0
+		if relv_len>k_small then
+			-- 
+			sa=-v_dot(right,relv)
+			-- limiting factor (normalized unit)
+			sa*=out_cubic(abs(sa)/sqrt(relv_len))
+		end
+
+		-- long. slip
+		relv_len=v_dot(fwd,relv)
+			-- convert rpm to rps
+		local sr=(brake*(rpm or relv_len)-relv_len)
+		if abs(relv_len)>k_small then
+			sr/=abs(relv_len)
+		end
+		sr*=out_cubic(abs(sr))
+	
+		--sr=mid(sr,-0.25,0.25)
+
+		-- limit overall enveloppe
+		--[[
+		local scale=sa*sa+sr*sr
+		if scale>2 then
+			sa*=0.8
+			sr*=0.7
+		end
+		]]
+		plyr.slip_angles[rpm and 2 or 1]=sa
+		plyr.slip_ratio[rpm and 2 or 1]=sr
+
+		-- impulse factors
+		sa*=self.traction_ratio*plyr.mass
+		if abs(sa)>k_small then
+			v_scale(right,sa)
+			self:add_impulse(right,pos)
+		end
+		
+		sr*=12*self.traction_ratio
+		if abs(sr)>k_small then
+			v_scale(fwd,sr)
+			self:add_force(fwd,pos)
+		end
+	
+		-- smoke only for rear wheels	
+		if rpm and slide then
+			pos=v_clone(pos)
+			v_add(pos,m_right(self.m),rnd(2)-1)
+			--add(pos,v_up)
+			make_part("smoke",pos)
+		end
+	end
+
+	local a={
+		mass=32,
+		hardness=0.02,
+		rpm=0,
 		pos=v_clone(p),
-		q=make_q(v_up,angle or 0)
-	})
-	a.model,a.draw=all_models[a.model],a.draw or draw_actor
-	-- init orientation
-	a.m=m_from_q(a.q)
-	-- constructor?
-	if(a.init) a:init()
+		q=q,
+		-- init orientation
+		m=m_from_q(q),
+		draw=function(self)
+			draw_model(model,self.m,self.pos)
+		end,
+		draw_shadow=function(self)
+			draw_model_shadow(model,self.m,self.pos)
+		end,
+		control=function(self)
+			local turn,z=0,0
+			if(btn(0)) turn=1
+			if(btn(1)) turn=-1
+
+		--[[
+			if(btn(2)) z=-1
+			if(btn(3)) z=1
+			plyr.pos[1]-=turn/4
+			plyr.pos[3]+=z/4
+		]]
+		
+			self.turn+=turn
+			-- brake (full lock:0)
+			if btn(3) then
+				self.brake=max(self.brake-0.1)
+				self.rpm=max(self.rpm-0.9)
+			else
+				self.brake=1
+			end
+			-- accelerate
+			if btn(2) then
+				self.rpm=min(self.rpm+1.933,self.max_rpm)
+			else
+				self.rpm=max(self.rpm-0.3)
+			end
+
+			-- steering angle
+			local angle=0.25+0.05*self.turn/2.33
+
+			-- front wheels
+			add_tireforce(self,1,{-sin(angle),0,cos(angle)},self.brake)
+			-- rear wheels
+			add_tireforce(self,-1.2,v_right,self.brake,self.rpm)
+
+			if btn(4) then
+				local pos=v_clone(self.pos)
+				v_add(pos,m_up(self.m),3)
+				local force=v_clone(v_up)
+				v_scale(force,12)
+				self:add_force(force,pos)
+			end
+		end,
+		update=function(self)			
+			traction+=self:up_ratio()
+			self.traction_ratio=traction/20
+			
+			-- time decay
+			self.traction*=0.8
+			self.turn*=0.7
+
+			-- sound
+			local speed=plyr.rpm*(0.8+0.2*rnd())
+			local sspd = speed*2
+			if (sspd>=1) sspd=speed*1.2
+			if (sspd>=1) sspd=speed*0.7
+			if (sspd>=1) sspd=speed*0.49
+			sspd=sspd-flr(sspd)+speed/6
+			poke(0x3200, sspd*2)
+			poke(0x3202, sspd*8)
+
+			-- hit ground actors?
+			for _,a in pairs(active_ground_actors) do
+				local v=plyr:is_colliding(a.pos)
+				if v then
+					-- make it fly a bit!
+					v[2]+=2+rnd(3)
+					make_part(a.hit_part,a.pos,v)
+					-- kill actor
+					ground_actors[a.idx]=nil
+				end
+			end
+			return true
+		end		
+	}
+	return add(actors,make_rigidbody(a,all_models["205gti_bbox"]))
+end
+
+function make_ghost()
+	local model,q=all_models["205gti"],make_q(v_up,0)	
+	local k,best,best_t,hist=1,{},32000,{}
+	local serialize_plyr=function(self)
+		-- capture current pos
+		serialize(plyr.pos,hist)
+		serialize(plyr.q,hist)
+	end
+	local replay_best=function(self)
+		local n=#best
+		if(n==0) return
+		k=deserialize(best,k,self.pos)
+		k=deserialize(best,k,self.q)
+		self.m=m_from_q(self.q)
+		-- loop
+		if(k>n) k=1
+	end
+	-- listen to track event
+	track.on_new_lap=function()
+		-- new best?
+		if track.lap_t<best_t then
+			best,best_t,hist=hist,track.lap_t,{}
+		end
+		-- restart replay
+		k=1
+	end
+	
+	local a={
+		pos=v_clone(p),
+		q=q,
+		-- init orientation
+		m=m_from_q(q),
+		draw=function(self)
+			draw_model(model,self.m,self.pos,true)
+		end,
+		update=function(self)
+			if time_t%2==0 then
+				serialize_plyr(self)
+				-- replay best track
+				replay_best(self)
+			end
+			return true
+		end
+	}
 	return add(actors,a)
 end
 
@@ -800,12 +724,10 @@ function make_contact_solver(a,p,n,d)
 end
 
 -- rigid body extension for a given actor
--- note:actor must have a 3d model
-function make_rigidbody(a)
+-- bounding box
+function make_rigidbody(a,bbox)
 	local force,torque=v_zero(),v_zero()
-	-- bounding box
-	local bbox=all_models[a.rigid_model]
--- compute inertia tensor
+	-- compute inertia tensor
 	local size=v_sqr(get_modelsize(bbox))
 	local ibody=make_m(size[2]+size[3],size[1]+size[3],size[1]+size[2])
 	m_scale(ibody,a.mass/12)
@@ -827,7 +749,7 @@ function make_rigidbody(a)
 		end,
 			-- register a force
 		add_force=function(self,f,p)
-			v_add(force,f,self.mass)
+			v_add(force,f,a.mass)
 			v_add(torque,make_v_cross(make_v(self.pos,p),f))
 		end,
 		add_impulse=function(self,f,p)
@@ -1106,10 +1028,75 @@ _g.draw_part_shadow=function(self)
 	spr(37,x-4,y)
 end
 
-all_parts=json_parse'{"smoke":{"frames":[64,80,81,65],"r":1,"rnd":{"dly":[8,20],"g_scale":[-0.03,-0.05]},"frame":0,"dv":0.9,"dr":0,"kind":0},"chkpt":{"draw_shadow":"draw_part_shadow","frames":[3],"r":0.2,"rnd":{"dly":[30,60]},"frame":0,"dv":0.9,"dr":0,"kind":1},"cone":{"draw_shadow":"draw_part_shadow","frames":[100,101,102,103,104,105,106,107],"r":0.2,"rnd":{"dly":[70,90]},"frame":0,"dv":0.9,"dr":0,"kind":1}}'
+all_parts={
+    smoke={
+        frames={
+            64,
+            80,
+            81,
+            65
+        },
+        r=1,
+        rnd={
+            dly={
+                8,
+                20
+            },
+            g_scale={
+                -0.03,
+                -0.05
+            }
+        },
+        frame= 0,
+        dv=0.9,
+        dr=0,
+        kind= 0
+    },
+    chkpt= {
+        draw_shadow=draw_part_shadow,
+        frames={
+            3
+        },
+        r=0.2,
+        rnd={
+            dly= {
+                30,
+                60
+            }
+        },
+        frame= 0,
+        dv= 0.9,
+        dr= 0,
+        kind= 1
+    },
+    cone= {
+        draw_shadow=draw_part_shadow,
+        frames= {
+            100,
+            101,
+            102,
+            103,
+            104,
+            105,
+            106,
+            107
+        },
+        r=0.2,
+        rnd= {
+            dly= {
+                70,
+                90
+            }
+        },
+        frame= 0,
+        dv= 0.9,
+        dr= 0,
+        kind= 1
+    }
+}
 
 function make_part(part,p,v)
-	local pt=add(parts,clone(all_parts[part],{pos=v_clone(p),v=v and v_clone(v) or v_zero(),draw=_g.draw_part}))
+	local pt=add(parts,clone(all_parts[part],{pos=v_clone(p),v=v and v_clone(v) or v_zero(),draw=draw_part}))
 	pt.t,pt.update=time_t+pt.dly,pt.update or _g.update_part
 	pt.df=1/pt.dly
 	if(pt.sfx) sfx_v(pt.sfx,p)
