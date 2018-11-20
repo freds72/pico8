@@ -264,8 +264,7 @@ function draw_model(model,m,x,y,z,w)
 	for i=1,#model.f do
 		local f,n=model.f[i],model.n[i]
 		-- viz calculation
-		local d=n[1]*cam_pos[1]+n[2]*cam_pos[2]+n[3]*cam_pos[3]
-		if d>=model.cp[i] then
+		if v_dot(n,cam_pos)>=model.cp[i] then
 			-- project vertices
 			for _,vi in pairs(f.vi) do
 				if not p[vi] then
@@ -291,13 +290,14 @@ function draw_model(model,m,x,y,z,w)
 		f=f.face
 		local c=max(v_dot(model.n[f.ni],light.u))
 		local p0,uv0=p[f.vi[1]],f.uv[1]
-		p0[4],p0[5]=uv0[1],uv0[2]
-		for i=2,#f.vi-1 do
-	 		local p1,p2=p[f.vi[i]],p[f.vi[i+1]]
-	 		local uv1,uv2=f.uv[i],f.uv[i+1]
-			p1[4],p1[5]=uv1[1],uv1[2]
-			p2[4],p2[5]=uv2[1],uv2[2]
+		p0[4],p0[5]=uv0.u,uv0.v
+		local p1,uv1=p[f.vi[2]],f.uv[2]
+		p1[4],p1[5]=uv1.u,uv1.v
+		for i=3,#f.vi do
+	 		local p2,uv2=p[f.vi[i]],f.uv[i]
+			p2={p2[1],p2[2],0,uv2.u,uv2.v}
 	 		tritex(p0,p1,p2)
+	 		p1=p2
 	 		--trifill(p0[1],p0[2],p1[1],p1[2],p2[1],p2[2],11)
 		end
 	end
@@ -543,7 +543,7 @@ function unpack_models()
 			end
 			-- uv coords (if any)
 			for i=1,unpack_int() do
-				add(f.uv,{unpack_int(),unpack_int()})
+				add(f.uv,{u=unpack_int(),v=unpack_int()})
 			end
 			-- center point
 			f.center={unpack_float(scale),unpack_float(scale),unpack_float(scale)}

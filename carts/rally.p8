@@ -177,11 +177,6 @@ function smoothstep(t)
 	t=mid(t,0,1)
 	return t*t*(3-2*t)
 end
-function clamp(u,v,scale)
-	local d=sqrt(u*u+v*v)
-	if (d>0) u=u*min(d,scale)/d v=v*min(d,scale)/d
-	return u,v
-end
 function rndrng(ab)
 	return flr(rndlerp(ab[1],ab[2]))
 end
@@ -443,8 +438,8 @@ function draw_model(model,m,pos,outline)
 					local v=m_x_v(m,model.v[vi])
 					v_add(v,pos)
 					local x,y,z,w=cam:project(v)
-					-- avoid rehash
-					p[vi]={x,y,z,w,0,0}
+					-- avoid rehash for u/v
+					p[vi]={x,y,0,0}
 				end
 			end
 			-- distance to camera (in object space)
@@ -464,7 +459,7 @@ function draw_model(model,m,pos,outline)
 	for _,f in pairs(faces) do
 		f=f.face
 		local p0,uv0=p[f.vi[1]],f.uv[1]
-		p0[4],p0[5]=uv0[1],uv0[2]
+		p0[3],p0[4]=uv0[1],uv0[2]
 		for i=2,#f.vi-1 do
 			local p1,p2=p[f.vi[i]],p[f.vi[i+1]]
 			if outline then
@@ -473,8 +468,8 @@ function draw_model(model,m,pos,outline)
 				fillp()
 			else
 				local uv1,uv2=f.uv[i],f.uv[i+1]
-				p1[4],p1[5]=uv1[1],uv1[2]
-				p2[4],p2[5]=uv2[1],uv2[2]
+				p1[3],p1[4]=uv1[1],uv1[2]
+				p2[3],p2[4]=uv2[1],uv2[2]
 				tritex(p0,p1,p2)
 			end
 		end	
@@ -655,9 +650,9 @@ _g.update_plyr=function(self)
 	for _,a in pairs(active_ground_actors) do
 		local v=plyr:is_colliding(a.pos)
 		if v then
-			-- make it flight a bit!
+			-- make it fly a bit!
 			v[2]+=2+rnd(3)
-			make_part("cone",a.pos,v)
+			make_part(a.hit_part,a.pos,v)
 			-- kill actor
 			ground_actors[a.idx]=nil
 		end
@@ -685,7 +680,7 @@ _g.init_ghost=function(self)
 	track.on_new_lap=function()
 	 -- new best?
 		if track.lap_t<best_t then
-			best,best_t,hist=hist,track.lap_t,{}		 
+			best,best_t,hist=hist,track.lap_t,{}
 		end
 		-- restart replay
 		k=1
@@ -704,10 +699,21 @@ _g.draw_plyr_shadow=function(self)
 	draw_model_shadow(self.model,self.m,self.pos)
 end
 
-local all_actors=json_parse'{"plyr":{"model":"205gti","rigid_model":"205gti_bbox","hardness":0.02,"mass":32,"brake":1,"rpm":0,"max_rpm":64,"turn":0,"traction":0,"traction_ratio":0,"control":"control_plyr","update":"update_plyr","draw_shadow":"draw_plyr_shadow"},"ghost":{"model":"205gti","init":"init_ghost","update":"update_ghost","outline":true},"actor35":{"w":16},"actor37":{"w":8}}'
+local all_actors=json_parse'{"plyr":{"model":"205gti","rigid_model":"205gti_bbox","hardness":0.02,"mass":32,"brake":1,"rpm":0,"max_rpm":64,"turn":0,"traction":0,"traction_ratio":0,"control":"control_plyr","update":"update_plyr","draw_shadow":"draw_plyr_shadow"},"ghost":{"model":"205gti","init":"init_ghost","update":"update_ghost","outline":true},"actor1":{"spr":35,"w":16,"hit_part":"chkpt"},"actor2":{"spr":53,"w":8,"hit_part":"cone"}}'
 
 function draw_actor(self)
 	draw_model(self.model,self.m,self.pos,self.outline)
+end
+
+function draw_spr_actor(self)
+	palt(0,false)
+	palt(14,true)
+	local x,y,z,w=cam:project(self.pos)
+	w*=3
+	-- todo: bench
+	local sx,sy=band(self.spr*8,127),8*flr(self.spr/16),
+	sspr(sx,sy,self.w,self.w,x-w/2,y-w,w,w)
+	palt()
 end
 
 function make_actor(src,p,angle)
@@ -725,15 +731,13 @@ function make_actor(src,p,angle)
 end
 
 -- note: limited to a single actor per tile
-function make_ground_actor(i,j,spr)
+function make_ground_actor(i,j,kind)
 	local x,z,idx=shl(i+rnd(),ground_shift),shl(j+rnd(),ground_shift),safe_index(i,j)
-	local a=clone(all_actors["actor37"],{
+	local a=clone(all_actors["actor1"],{
 		pos={x,get_altitude_and_n({x,0,z})+0.5,z},
 		idx=idx,
-		sx=band(spr*8,127),
-		sy=8*flr(spr/16)
+		draw=draw_spr_actor
 	})
-	-- register
 	ground_actors[idx]=a
 	return a
 end
@@ -910,6 +914,7 @@ function make_rigidbody(a)
 		end,
 		-- return if p is colliding with rigidbody bbox
 		is_colliding=function(self,p)
+			if(sqr_dist(self.pos,p)>9) return
 			-- to self space
 			p=make_v(self.pos,p)
 			m_inv_x_v(self.m,p)
@@ -917,9 +922,7 @@ function make_rigidbody(a)
 				local n=bbox.n[i]
 				-- front facing?
 				local d=v_dot(n,p)
-				if d>=bbox.cp[i] then
-					return
-				end
+				if(d>=bbox.cp[i]) return
 			end
 			-- relative velocity
 			p=make_v_cross(self.omega,p)
@@ -1148,25 +1151,16 @@ end
 function draw_actors(j)
 	local bucket=zbuf[band(j-1,0x7f)]
 	if bucket then
+		-- shadow pass
 		for _,d in pairs(bucket) do
 			d=d.obj
 			-- draw shadow
 			if (d.draw_shadow) d:draw_shadow()
 		end
-		palt(0,false)
-		palt(14,true)
 		for _,d in pairs(bucket) do
 			d=d.obj
-			if d.draw then
-				d:draw()
-			else
-				-- ground actor
-				local x,y,z,w=cam:project(d.pos)
-				w*=3
-				sspr(d.sx,d.sy,d.w,d.w,x-w/2,y-w,w,w)
-			end
+			d:draw()
 		end
-		pal()
 	end
 end
 
@@ -1626,7 +1620,8 @@ end
 -- trifilltex
 -- 
 function trapezefill(l,dl,r,dr,start,finish)
-	local l,dl={l[1],l[4],l[5],r[1],r[4],r[5]},{dl[1],dl[4],dl[5],dr[1],dr[4],dr[5]}
+	-- layout:x y u v
+	local l,dl={l[1],l[3],l[4],r[1],r[3],r[4]},{dl[1],dl[3],dl[4],dr[1],dr[3],dr[4]}
 	local dt=1/(finish-start)
 	for k,v in pairs(dl) do
 		dl[k]=(v-l[k])*dt
@@ -1674,7 +1669,6 @@ if(y2<y1)v1,v2,x1,x2,y1,y2=v2,v1,x2,x1,y2,y1
 	if(x1>v02[1])v1,v02=v02,v1
 
 	-- upper trapeze
-	-- x u v
 	trapezefill(v0,v1,v0,v02,y0,y1)
 	-- lower trapeze
 	trapezefill(v1,v2,v02,v2,y1,y2)
