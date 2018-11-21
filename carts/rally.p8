@@ -440,21 +440,22 @@ function draw_spr_actor(self)
 	palt(0,false)
 	palt(14,true)
 	local x,y,z,w=cam:project(self.pos)
-	w*=0.1875*self.w
+	local sw=self.w or 16
+	w*=0.1875*sw
 	-- todo: bench
 	local sx,sy=band(self.spr*8,127),8*flr(self.spr/16)
-	sspr(sx,sy,self.w,self.w,x-w/2,y-w,w,w)
+	sspr(sx,sy,sw,sw,x-w/2,y-w,w,w)
 	palt()
 end
 
 function make_plyr(p,angle)
 	local model,q=all_models["205gti"],make_q(v_up,angle or 0)
-	local brake,turn,traction=0,0,0
+	local brake,turn,traction,rpm,max_rpm=0,0,0,0,32
 
-	local add_tireforce=function(self,offset,right,brake,rpm)
+	local add_tireforce=function(self,offset,right,fwd,brake,rpm)
 		-- force to world
 		right=m_x_v(self.m,right)
-		local fwd=m_fwd(self.m)
+		fwd=m_x_v(self.m,fwd)
 		
 		-- application point (world space)
 		local pos=v_clone(self.pos)
@@ -469,7 +470,7 @@ function make_plyr(p,angle)
 			-- 
 			sa=-v_dot(right,relv)
 			-- limiting factor (normalized unit)
-			sa*=out_cubic(abs(sa)/sqrt(relv_len))
+			sa*=out_cubic(1-abs(sa)/sqrt(relv_len))
 		end
 
 		-- long. slip
@@ -484,13 +485,12 @@ function make_plyr(p,angle)
 		--sr=mid(sr,-0.25,0.25)
 
 		-- limit overall enveloppe
-		--[[
 		local scale=sa*sa+sr*sr
 		if scale>2 then
-			sa*=0.8
-			sr*=0.7
+			scale=1-smoothstep(scale/2)
+			sa*=scale
+			sr*=scale
 		end
-		]]
 		plyr.slip_angles[rpm and 2 or 1]=sa
 		plyr.slip_ratio[rpm and 2 or 1]=sr
 
@@ -519,7 +519,7 @@ function make_plyr(p,angle)
 	local a={
 		mass=32,
 		hardness=0.02,
-		rpm=0,
+		traction_ratio=0,
 		pos=v_clone(p),
 		q=q,
 		-- init orientation
@@ -531,9 +531,9 @@ function make_plyr(p,angle)
 			draw_model_shadow(model,self.m,self.pos)
 		end,
 		control=function(self)
-			local turn,z=0,0
-			if(btn(0)) turn=1
-			if(btn(1)) turn=-1
+			local angle,z=0,0
+			if(btn(0)) angle=1
+			if(btn(1)) angle=-1
 
 		--[[
 			if(btn(2)) z=-1
@@ -542,28 +542,29 @@ function make_plyr(p,angle)
 			plyr.pos[3]+=z/4
 		]]
 		
-			self.turn+=turn
+			turn+=angle
 			-- brake (full lock:0)
 			if btn(3) then
-				self.brake=max(self.brake-0.1)
-				self.rpm=max(self.rpm-0.9)
+				brake=max(brake-0.1)
+				rpm=max(rpm-0.9)
 			else
-				self.brake=1
+				brake=1
 			end
 			-- accelerate
 			if btn(2) then
-				self.rpm=min(self.rpm+1.933,self.max_rpm)
+				rpm=min(rpm+1.933,max_rpm)
 			else
-				self.rpm=max(self.rpm-0.3)
+				rpm=max(rpm-0.3)
 			end
 
 			-- steering angle
-			local angle=0.25+0.05*self.turn/2.33
+			angle=0.25+0.05*turn/2.33
 
 			-- front wheels
-			add_tireforce(self,1,{-sin(angle),0,cos(angle)},self.brake)
+			local c,s=cos(angle),sin(angle)
+			add_tireforce(self,1,{-s,0,c},{c,0,s},brake)
 			-- rear wheels
-			add_tireforce(self,-1.2,v_right,self.brake,self.rpm)
+			add_tireforce(self,-1.2,v_right,v_fwd,brake,rpm)
 
 			if btn(4) then
 				local pos=v_clone(self.pos)
@@ -573,16 +574,18 @@ function make_plyr(p,angle)
 				self:add_force(force,pos)
 			end
 		end,
-		update=function(self)			
+		update=function(self)
 			traction+=self:up_ratio()
 			self.traction_ratio=traction/20
 			
 			-- time decay
-			self.traction*=0.8
-			self.turn*=0.7
+			traction*=0.8
+			turn*=0.7
+			
+			self.rpm_ratio=rpm/max_rpm
 
 			-- sound
-			local speed=plyr.rpm*(0.8+0.2*rnd())
+			local speed=rpm*(0.8+0.2*rnd())
 			local sspd = speed*2
 			if (sspd>=1) sspd=speed*1.2
 			if (sspd>=1) sspd=speed*0.7
@@ -598,33 +601,21 @@ function make_plyr(p,angle)
 					-- make it fly a bit!
 					v[2]+=2+rnd(3)
 					make_part(a.hit_part,a.pos,v)
+					-- penalty time?
+					if(a.hit_t) track:penalty(a.hit_t)
 					-- kill actor
 					ground_actors[a.idx]=nil
 				end
 			end
 			return true
-		end		
+		end
 	}
 	return add(actors,make_rigidbody(a,all_models["205gti_bbox"]))
 end
 
-function make_ghost()
-	local model,q=all_models["205gti"],make_q(v_up,0)	
+function make_ghost(p)
+	local model,q=all_models["205gti"],make_q(v_up,0)
 	local k,best,best_t,hist=1,{},32000,{}
-	local serialize_plyr=function(self)
-		-- capture current pos
-		serialize(plyr.pos,hist)
-		serialize(plyr.q,hist)
-	end
-	local replay_best=function(self)
-		local n=#best
-		if(n==0) return
-		k=deserialize(best,k,self.pos)
-		k=deserialize(best,k,self.q)
-		self.m=m_from_q(self.q)
-		-- loop
-		if(k>n) k=1
-	end
 	-- listen to track event
 	track.on_new_lap=function()
 		-- new best?
@@ -635,7 +626,7 @@ function make_ghost()
 		k=1
 	end
 	
-	local a={
+	return add(actors,{
 		pos=v_clone(p),
 		q=q,
 		-- init orientation
@@ -645,20 +636,34 @@ function make_ghost()
 		end,
 		update=function(self)
 			if time_t%2==0 then
-				serialize_plyr(self)
+				-- capture current pos
+				serialize(plyr.pos,hist)
+				serialize(plyr.q,hist)
 				-- replay best track
-				replay_best(self)
+				local n=#best
+				if(n==0) return
+				k=deserialize(best,k,self.pos)
+				k=deserialize(best,k,self.q)
+				self.m=m_from_q(self.q)
+				-- loop
+				if(k>n) k=1
 			end
 			return true
 		end
-	}
-	return add(actors,a)
+	})
 end
 
 -- note: limited to a single actor per tile
+local all_ground_actors={
+	{spr=35,hit_part="chkpt"},
+	{spr=53,hit_part="cone",w=8},
+	{rnd={spr={35,45,57}},hit_part="angel",hit_t=30}
+	}
 function make_ground_actor(i,j,kind)
+	-- todo:debug
+	kind=1
 	local x,z,idx=shl(i+rnd(),ground_shift),shl(j+rnd(),ground_shift),safe_index(i,j)
-	local a=clone(all_actors["actor2"],{
+	local a=clone(all_ground_actors[kind],{
 		pos={x,get_altitude_and_n({x,0,z})+0.5,z},
 		idx=idx,
 		draw=draw_spr_actor
@@ -918,6 +923,10 @@ function make_track(segments)
 		is_over=function(self)
 			return flr(checkpoint/#segments)>laps
 		end,
+		-- time penalty
+		penalty=function(self,t)
+			lap_t+=t
+		end,
 		update=function(self)
 			checkpoint_t+=1
 			self.lap_t+=1
@@ -974,7 +983,7 @@ function make_cam(focal)
 end
 
 -- particles
-_g.update_part=function(self)
+function update_part(self)
 	if(self.t<time_t or self.r<0) return false
 	-- gravity
 	v_add(self.v,v_grav,self.g_scale)
@@ -990,16 +999,15 @@ _g.update_part=function(self)
 	end
 	
 	-- force damping
-	v_scale(self.v,self.dv)
+	v_scale(self.v,self.dv or 0.9)
 	
-	self.r+=self.dr
 	-- animation frame
 	self.frame+=self.df
 	
 	return true
 end
 
-_g.draw_part=function(self,shadow)
+function draw_part(self,shadow)
 	local x,y,z,w=cam:project(self.pos)
 	-- behind camera
 	if(z>=0) return
@@ -1019,7 +1027,7 @@ _g.draw_part=function(self,shadow)
 	pal()
 end
 
-_g.draw_part_shadow=function(self)
+function draw_part_shadow(self)
 	local x,y,z,w=cam:project({self.pos[1],get_altitude_and_n(self.pos),self.pos[3]})
 	-- behind camera
 	if(z>=0) return
@@ -1036,7 +1044,6 @@ all_parts={
             81,
             65
         },
-        r=1,
         rnd={
             dly={
                 8,
@@ -1047,31 +1054,24 @@ all_parts={
                 -0.05
             }
         },
-        frame= 0,
-        dv=0.9,
-        dr=0,
-        kind= 0
+        kind=0
     },
-    chkpt= {
+    chkpt={
         draw_shadow=draw_part_shadow,
         frames={
             3
         },
-        r=0.2,
         rnd={
-            dly= {
+            dly={
                 30,
                 60
             }
         },
-        frame= 0,
-        dv= 0.9,
-        dr= 0,
-        kind= 1
+        kind=1
     },
-    cone= {
-        draw_shadow=draw_part_shadow,
-        frames= {
+    cone={
+     draw_shadow=draw_part_shadow,
+        frames={
             100,
             101,
             102,
@@ -1081,23 +1081,19 @@ all_parts={
             106,
             107
         },
-        r=0.2,
-        rnd= {
-            dly= {
+        rnd={
+            dly={
                 70,
                 90
             }
         },
-        frame= 0,
-        dv= 0.9,
-        dr= 0,
-        kind= 1
+        kind=1
     }
 }
 
 function make_part(part,p,v)
-	local pt=add(parts,clone(all_parts[part],{pos=v_clone(p),v=v and v_clone(v) or v_zero(),draw=draw_part}))
-	pt.t,pt.update=time_t+pt.dly,pt.update or _g.update_part
+	local pt=add(parts,clone(all_parts[part],{pos=v_clone(p),v=v and v_clone(v) or v_zero(),frame=0,draw=draw_part}))
+	pt.t,pt.update=time_t+pt.dly,pt.update or update_part
 	pt.df=1/pt.dly
 	if(pt.sfx) sfx_v(pt.sfx,p)
 	return pt
@@ -1368,7 +1364,7 @@ function draw_gauge()
 		if(i<0.2) di=-0.025 c=8
 		i+=di
 	end
-	local rpm=1-plyr.rpm/plyr.max_rpm
+	local rpm=1-plyr.rpm_ratio
 	rpm*=0.75
 	color(8)
 	line(15,111,15+10*cos(rpm),111+10*sin(rpm))
@@ -1401,7 +1397,8 @@ function _draw()
 	printb("best time",127,2,10,-1)
 	printb(time_tostr(track.best_t),126,8,6,-1)
  
- print("sa:"..plyr.slip_angles[1].." sr:"..plyr.slip_ratio[1],2,18,7)
+
+	 print("sa:"..plyr.slip_angles[1].." sr:"..plyr.slip_ratio[1],2,18,7)
  print("sa:"..plyr.slip_angles[2].." sr:"..plyr.slip_ratio[2],2,24,7)
  
  local front_sa=abs(plyr.slip_angles[2])
@@ -1437,7 +1434,8 @@ function _init()
 	local tmp_hmap={}
 	unpack_rle(function(v)
 		tmp_hmap[i],tmp_hmap[i+1]=shr(band(0xf0,v),4),band(0xf,v)
-		tmp_hmap[i]/=4		
+		-- lower heightmap
+		tmp_hmap[i]/=4
 		tmp_hmap[i+1]/=4
 		i+=2
 		return i<0x1000
@@ -1464,11 +1462,11 @@ function _init()
 	
 	local pos=track:get_startpos()
   
-	plyr=make_rigidbody(make_actor("plyr",{pos[1],pos[2]+4,pos[3]},0.5))
+	plyr=make_plyr({pos[1],pos[2]+4,pos[3]},0.5)
 	plyr.slip_angles={0,0}
 	plyr.slip_ratio={0,0}
 	
-	ghost=make_actor("ghost",v_zero())
+	ghost=make_ghost(v_zero())
 	
 end
 
