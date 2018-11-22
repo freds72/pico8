@@ -485,12 +485,14 @@ function make_plyr(p,angle)
 		--sr=mid(sr,-0.25,0.25)
 
 		-- limit overall enveloppe
+		--[[
 		local scale=sa*sa+sr*sr
 		if scale>2 then
 			scale=1-smoothstep(scale/2)
 			sa*=scale
 			sr*=scale
 		end
+		]]
 		plyr.slip_angles[rpm and 2 or 1]=sa
 		plyr.slip_ratio[rpm and 2 or 1]=sr
 
@@ -752,6 +754,20 @@ function make_rigidbody(a,bbox)
 			v_add(p,self.v)
 			return p
 		end,
+		incident_face=function(self,rn)
+			rn=v_clone(rn)
+			-- world to local
+			m_inv_x_v(self.m,rn)
+			local dmin,fmin=32000
+			for _,f in pairs(bbox.f) do
+				local n=bbox.n[f.ni]
+				local d=v_dot(rn,n)
+				if d<dmin then
+					dmin,fmin=d,f
+				end
+			end
+			return fmin,bbox.v
+		end,
 			-- register a force
 		add_force=function(self,f,p)
 			v_add(force,f,a.mass)
@@ -788,9 +804,10 @@ function make_rigidbody(a,bbox)
 			force,torque=v_zero(),v_zero()
 		end,
 		update_contacts=function(self,contacts)
-			local i=0
-			-- ground contacts
-			for _,v in pairs(bbox.v) do
+			-- ground contacts against incident face
+			local f=self:incident_face(v_up)
+			for _,vi in pairs(f.vi) do
+				local v=bbox.v[vi]
 				-- to world space
 				local p=m_x_v(self.m,v)
 				v_add(p,self.pos)
@@ -984,7 +1001,7 @@ end
 
 -- particles
 function update_part(self)
-	if(self.t<time_t or self.r<0) return false
+	if(self.t<time_t) return false
 	-- gravity
 	v_add(self.v,v_grav,self.g_scale)
 	-- update pos
@@ -1398,6 +1415,7 @@ function _draw()
 	printb(time_tostr(track.best_t),126,8,6,-1)
  
 
+	--[[
 	 print("sa:"..plyr.slip_angles[1].." sr:"..plyr.slip_ratio[1],2,18,7)
  print("sa:"..plyr.slip_angles[2].." sr:"..plyr.slip_ratio[2],2,24,7)
  
@@ -1407,8 +1425,47 @@ function _draw()
   color(t<front_sa and 2 or 14)
  	pset(i,64-64*out_cubic(t))
  end
+ ]]
 	rectfill(0,0,127,8,8)
  print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)
+
+ 
+	local a=active_ground_actors[1]
+	if a then
+		-- project in obj space
+		local p=make_v(plyr.pos,a.pos)
+		m_inv_x_v(plyr.m,p)
+		-- plane normal
+		local n=make_v(plyr.pos,a.pos)
+		v_normz(n)
+		local f=plyr:incident_face(n)
+		n={-n[3],0,n[1]}
+		v_normz(n)
+		m_inv_x_v(plyr.m,n)
+		
+		local model=all_models["205gti_bbox"]
+		local p0=model.v[f.vi[#f.vi]]
+		for i=1,#f.vi-1 do
+			local p1=model.v[f.vi[i]]
+			-- segment
+			local s=make_v(p0,p1)
+			local den=v_dot(n,s)
+			if abs(den)>0 then
+				local t=v_dot(n,make_v(p0,p))/den
+				if t>=0 and t<=1 then
+					-- intersect pt
+					v_scale(s,t)
+					v_add(s,p0)
+					-- pt to world
+					s=m_x_v(plyr.m,s)
+					v_add(s,plyr.pos)
+					local x,y,z,w=cam:project(s)
+					circfill(x,y,2,8)
+				end
+			end
+			p0=p1
+		end
+	end
  
  --print(plyr.acc,2,18,7)
  
