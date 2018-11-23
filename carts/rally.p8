@@ -603,6 +603,7 @@ function make_plyr(p,angle)
 
 			-- hit ground actors?
 			for _,a in pairs(active_ground_actors) do
+				if(a.is_solid) break
 				local v=plyr:is_colliding(a.pos)
 				if v then
 					-- make it fly a bit!
@@ -664,11 +665,12 @@ end
 local all_ground_actors={
 	{spr=35,hit_part="chkpt"},
 	{spr=53,hit_part="cone",w=8},
-	{rnd={spr={66,68,98,33}},hit_part="angel",hit_t=150}
+	{rnd={spr={66,68,98,33}},hit_part="angel",hit_t=150},
+	{spr=5,is_solid=true}
 	}
 function make_ground_actor(i,j,kind)
 	-- todo:debug
-	kind=1
+	kind=4
 	local x,z,idx=shl(i+rnd(),ground_shift),shl(j+rnd(),ground_shift),safe_index(i,j)
 	local a=clone(all_ground_actors[kind],{
 		pos={x,get_altitude_and_n({x,0,z})+0.5,z},
@@ -759,19 +761,25 @@ function make_rigidbody(a,bbox)
 			v_add(p,self.v)
 			return p
 		end,
+		-- obj to world space
+		pt_toworld=function(self,p)
+			p=m_x_v(self.m,p)
+			v_add(p,self.pos)
+			return p
+		end,
 		incident_face=function(self,rn)
 			rn=v_clone(rn)
 			-- world to local
 			m_inv_x_v(self.m,rn)
-			local dmin,fmin=32000
+			local dmin,fmin,nmin=32000
 			for _,f in pairs(bbox.f) do
 				local n=bbox.n[f.ni]
 				local d=v_dot(rn,n)
 				if d<dmin then
-					dmin,fmin=d,f
+					dmin,fmin,nmin=d,f,n
 				end
 			end
-			return fmin,bbox.v
+			return fmin,nmin
 		end,
 			-- register a force
 		add_force=function(self,f,p)
@@ -814,8 +822,7 @@ function make_rigidbody(a,bbox)
 			for _,vi in pairs(f.vi) do
 				local v=bbox.v[vi]
 				-- to world space
-				local p=m_x_v(self.m,v)
-				v_add(p,self.pos)
+				local p=self:pt_toworld(v)
 				local h,n=get_altitude_and_n(p,true)
 				local depth=h-p[2]
 				if depth>k_small then
@@ -834,21 +841,55 @@ function make_rigidbody(a,bbox)
 			end
 			
 			-- static object contacts
-			--[[
 			for _,a in pairs(active_ground_actors) do
-				local p=v_clone(a.pos)
-				p[2]=self.pos[2]
-				local v=plyr:is_colliding(p)
-				if v then
-				 local n=make_v(self.pos,p)
-				 v_normz(n)
-					local ct=make_contact_solver(self,p,n,0.1)
-					if ct then
-						add(contacts,ct)
-					end					
- 			end
+				if a.is_solid then
+					-- plane point
+					local p=a.pos
+					-- estimated impact direction
+					local n=make_v(a.pos,plyr.pos)
+					-- assumes obj is not above pole
+					n[2]=0
+					-- too far?
+					if(v_dot(n,n)>9) break
+					v_normz(n)
+					-- best response face
+					local f,fn=plyr:incident_face(n)
+					-- use face normal
+					-- for clip plane normal
+					fn=m_x_v(plyr.m,fn)
+					-- plane normal
+					n={-fn[3],0,fn[1]}
+					v_normz(n)
+					-- plane direction
+					fn[2]=0
+					v_normz(fn)
+					
+					local p0=self:pt_toworld(bbox.v[f.vi[#f.vi]])
+					for i=1,#f.vi-1 do
+						local p1=self:pt_toworld(bbox.v[f.vi[i]])
+						-- segment
+						local s=make_v(p0,p1)
+						local den=v_dot(n,s)
+						if abs(den)>0 then
+							local t=v_dot(n,make_v(p0,p))/den
+							if t>=0 and t<=1 then
+								-- intersect pos
+								v_scale(s,t)
+								v_add(s,p0)
+								-- contact depth
+								local depth=-v_dot(fn,make_v(p,s))
+								if depth>-k_small then
+									local ct=make_contact_solver(self,s,n,depth)
+									if ct then
+										add(contacts,ct)
+									end
+								end
+							end
+						end
+						p0=p1
+					end
+				end
 			end
-			]]
 		end,
 		-- is rigid body on ground?
 		up_ratio=function(self)
@@ -1438,42 +1479,6 @@ function _draw()
  print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)
 
  
-	local a=active_ground_actors[1]
-	if a then
-		-- project in obj space
-		local p=make_v(plyr.pos,a.pos)
-		m_inv_x_v(plyr.m,p)
-		-- plane normal
-		local n=make_v(a.pos,plyr.pos)
-		v_normz(n)
-		local f=plyr:incident_face(n)
-		n={-n[3],0,n[1]}
-		v_normz(n)
-		m_inv_x_v(plyr.m,n)
-		
-		local model=all_models["205gti_bbox"]
-		local p0=model.v[f.vi[#f.vi]]
-		for i=1,#f.vi-1 do
-			local p1=model.v[f.vi[i]]
-			-- segment
-			local s=make_v(p0,p1)
-			local den=v_dot(n,s)
-			if abs(den)>0 then
-				local t=v_dot(n,make_v(p0,p))/den
-				if t>=0 and t<=1 then
-					-- intersect pt
-					v_scale(s,t)
-					v_add(s,p0)
-					-- pt to world
-					s=m_x_v(plyr.m,s)
-					v_add(s,plyr.pos)
-					local x,y,z,w=cam:project(s)
-					circfill(x,y,2,8)
-				end
-			end
-			p0=p1
-		end
-	end
  
  --print(plyr.acc,2,18,7)
  
