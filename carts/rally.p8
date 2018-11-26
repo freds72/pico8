@@ -101,6 +101,9 @@ end
 function rndarray(a)
 	return a[flr(rnd(#a))+1]
 end
+function acos(c)
+ return atan2(c,sqrt(1-c*c))
+end
 
 -- https://github.com/morgan3d/misc/tree/master/p8sort
 function sort(data)
@@ -475,7 +478,7 @@ function make_plyr(p,angle)
 			-- 
 			sa=-v_dot(right,relv)
 			-- limiting factor (normalized unit)
-			local t=abs(sa)/sqrt(relv_len)
+			local t=acos(abs(sa)/sqrt(relv_len))
 			plyr.slip_angles[rpm and 2 or 1]=t
 			sa*=out_cubic(t)
 		end
@@ -615,22 +618,28 @@ function make_plyr(p,angle)
 	return add(actors,make_rigidbody(a,all_models["205gti_bbox"]))
 end
 
-function make_ghost(p)
+function make_ghost()
 	local model=all_models["205gti"]
-	local k,best,best_t,hist=1,{},32000,{}
+	local k,best,hist,score=1,{},{},0
 	-- listen to track event
-	track.on_new_lap=function(t)
+	track.on_new_lap=function(t,best_t)
 		-- new best?
 		if t<=best_t then
-			best,best_t,hist=hist,t,{}
+			best,hist=hist,{}
+		else
+			-- ghost wins
+			score+=1
 		end
 		-- restart replay
 		k=1
 	end
 	
 	return add(actors,{
-		pos=v_clone(p),
-		q=make_q(v_up,0),		
+		pos=v_zero(),
+		q=make_q(v_up,0),
+		get_score=function(self)
+			return score
+		end,
 		draw=function(self)
 		 if self.m then
 				draw_model(model,self.m,self.pos,true)
@@ -912,7 +921,8 @@ function world:update()
 end
 
 -- track
-function make_track(segments)
+-- best lap time (max 90s)
+function make_track(best_t,segments)
 	-- "close" track
 	add(segments,segments[#segments])
 	-- reset segment time
@@ -921,10 +931,8 @@ function make_track(segments)
 	end)
 	-- active index
 	local checkpoint,checkpoint_t=0,0
- -- number of laps
- -- best lap time
  -- lap_time
-	local laps,best_t,lap_t=0,32000,0
+	local lap_t,remaining_t=0,best_t
 	return {	
 	 -- lap callback
 		on_new_lap=nop,
@@ -937,9 +945,6 @@ function make_track(segments)
 		 angle=(angle+1)%1
 		 return angle,sqrt(v_dot(v,v))
 		end,
-		is_over=function(self)
-			return flr(checkpoint/#segments)>laps
-		end,
 		-- time penalty
 		penalty=function(self,t)
 			lap_t+=t
@@ -947,22 +952,23 @@ function make_track(segments)
 		update=function(self)
 			checkpoint_t+=1
 			lap_t+=1
+			remaining_t-=1
 			local p=segments[checkpoint%#segments+1]
 			if sqr_dist(plyr.pos,p.pos)<64 then
 				checkpoint+=1
 				if checkpoint%#segments==0 then
 					checkpoint=0
-					laps+=1		
 					best_t=min(lap_t,best_t)
-					self.on_new_lap(lap_t)
-					lap_t=0
+					self.on_new_lap(lap_t,best_t)
+					-- next time 
+					lap_t,remaining_t=0,best_t
 				else
 				 -- don't reset timer for start checkpoint
 					if checkpoint_t<p.best_t then
 						-- record delta time
 						p.dt=p.best_t-checkpoint_t
 						-- record segment duration
-						p.best_t=checkpoint_t						
+						p.best_t=checkpoint_t
 					end
 					checkpoint_t=0
 				end
@@ -973,8 +979,12 @@ function make_track(segments)
 		printb(time_tostr(lap_t),3,8,6)
 		printb("best time",127,2,10,-1)
 		printb(time_tostr(best_t),126,8,6,-1)
+		
+		if remaining_t<900 then
+			print(time_tostr(remaining_t),64,32,9)
+		end
  
-		 local angle,dist=self:get_dir(plyr.pos)
+		local angle,dist=self:get_dir(plyr.pos)
 			spr(116+flr(8*angle),60,2)
 			print(flr(dist).."m",64-6,11,7)
 		end
@@ -1438,10 +1448,10 @@ function draw_curve(s,x,y,t,curve)
 	line(x+32*t,y+6,x+32*t,h,8)
 end
 
-function draw_wheel(x,y,angle)
+function draw_wheel(x,y,angle,col)
 	rectfill(x,y,x+16,y+16,0)
 	local c,s=cos(angle),-sin(angle)
-	line(x+8+8*c,y+8-8*s,x+8-8*c,y+8+8*s,8)
+	line(x+8+8*c,y+8-8*s,x+8-8*c,y+8+8*s,col)
 end
 
 function _draw()
@@ -1459,7 +1469,8 @@ function _draw()
 	draw_curve("r.sr",94,46,plyr.slip_ratio[2],out_cubic)
 	
 	if plyr.angle then
-		draw_wheel(1,72,plyr.angle)
+		draw_wheel(1,72,plyr.angle,8)
+		draw_wheel(1,72,plyr.slip_angles[1],2)
 	end
 	
 	--rectfill(0,0,127,8,8)
@@ -1510,8 +1521,9 @@ function _init()
 	
 	cam=make_cam(96)
 	
- -- read track	
-	track=make_track(unpack_track())
+ -- read track
+ -- time to beat
+	track=make_track(900,unpack_track())
 	-- read actors
 	unpack_actors()
 	
@@ -1520,7 +1532,7 @@ function _init()
 	plyr.slip_angles={0,0}
 	plyr.slip_ratio={0,0}
 	
-	ghost=make_ghost(v_zero())
+	ghost=make_ghost()
 	
 end
 
