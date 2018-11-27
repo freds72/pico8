@@ -10,7 +10,6 @@ local physic_actors={}
 -- physic thresholds
 local k_small=0.001
 local k_small_v=0.01
-local k_depth=0.05
 -- baumgarte
 local k_bias=0.2
 local k_slop=0.05
@@ -21,9 +20,13 @@ local ground_scale=2^ground_shift
 local ground_left,ground_right,ground_far,ground_near=-7,7,5,-7
 local v_grav={0,-1,0}
 local world={}
-
-local good_side,bad_side,any_side,no_side=0x1,0x2,0x0,0x3
-
+-- transitions
+local game_state,next_state_t 
+local game_states={
+	start={next="play",ttl=4*30},
+	play={next="play",ttl=0},
+	gameover={next="start",ttl=900}
+}
 function nop() return true end
 
 -- zbuffer (kind of)
@@ -1353,12 +1356,22 @@ function draw_ground(self)
 	draw_actors(nj)
 end
 
+function next_game_state(s)
+	game_state=s or game_states[game_state].next
+	next_state_t=game_states[game_state].ttl
+end
+
 function _update()
 	time_t+=1
-
+	next_state_t-=1
+	if next_state_t<0 then
+		next_game_state()
+	end
+	
 	zbuf_clear()
 	
-	if plyr then
+	if plyr and game_state=="play" then
+		track:update()
 		plyr:control()
 	end
 
@@ -1373,19 +1386,19 @@ function _update()
 	zbuf_filter(parts)
 	
 	if plyr then
-		-- do not track dead player
-		if not plyr.disabled then
-			-- update cam
-			local lookat=v_clone(plyr.pos)
-			v_add(lookat,m_fwd(plyr.m),3)
-			-- keep altitude
-			lookat[2]=plyr.pos[2]+2
-			cam.dist=mid(sqrt(v_dot(plyr.v,plyr.v)),8,15)
-			cam:track(lookat,0.15)
-		end
+		-- update cam
+		local lookat=v_clone(plyr.pos)
+		v_add(lookat,m_fwd(plyr.m),3)
+		-- keep altitude
+		lookat[2]=plyr.pos[2]+2
+		cam.dist=mid(sqrt(v_dot(plyr.v,plyr.v)),8,15)
+		cam:track(lookat,0.15)
 	end
 	
-	track:update()
+	-- transitions?
+	if ghost:get_score()>2 then
+		next_game_state("gameover")
+	end
 end
 
 local padding_mask="00"
@@ -1463,7 +1476,10 @@ function _draw()
 	zbuf_sort()
 	draw_ground()
 	
-	draw_hud()	
+	draw_hud()
+	
+	bprint("12",64,64,7)
+	
 	
 	--[[
 	draw_curve("f.sa",1,20,plyr.slip_angles[1],out_cubic)
@@ -1539,6 +1555,8 @@ function _init()
 	
 	ghost=make_ghost()
 	
+	-- init state machine
+	next_game_state("start")
 end
 
 -->8
@@ -1756,6 +1774,33 @@ function sprint(s,x,y,ramp,rev)
 	end
  clip()
 end
+local bprint_chars="123go"
+local chars2mem={}
+for i=1,#bprint_chars do
+	local c=sub(bprint_chars,i,i)
+	cls(0)
+	print(c,0,0,7)
+	local mem=0x4300+shl(i-1,5)
+	for y=0,7 do
+		memcpy(mem+4*y,0x6000+shl(y,6),4)
+	end
+	chars2mem[c]=mem
+end
+	
+function bprint(s,x,y,c)
+	for i=1,#s do
+		local mem=chars2mem[sub(s,i,i)]
+		for j=0,7 do
+			local mask=poke4(mem)
+			for k=0,7 do
+				pset(x+k,y+j,band(shr(0xf000,4*k),mask)!=0 and 7 or 1)
+			end
+			mem+=2
+		end
+		x+=8
+	end
+end
+
 __gfx__
 000000000001510000000000eeeeeeeeeeeeeeee0000000000000000bb88856599777777777777777777777777777777777777788756566bb000000000000000
 0000000001dc770001000000eeeeeeeeeeeeeeee0000000000000000b888856599766666777777777711666667666677777777788756666bb000000000000000
