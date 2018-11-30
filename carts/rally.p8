@@ -21,12 +21,7 @@ local ground_left,ground_right,ground_far,ground_near=-7,7,5,-7
 local v_grav={0,-1,0}
 local world={}
 -- transitions
-local game_state,game_state_ttl 
-local game_states={
-	start={next="play",ttl=4*30},
-	play={next="play",ttl=0},
-	gameover={next="start",ttl=900}
-}
+local game_state
 function nop() return true end
 
 -- zbuffer (kind of)
@@ -623,15 +618,12 @@ end
 
 function make_ghost()
 	local model=all_models["205gti"]
-	local k,best,hist,score=1,{},{},0
+	local k,best,hist=1,{},{}
 	-- listen to track event
 	track.on_new_lap=function(t,best_t)
 		-- new best?
 		if t<=best_t then
 			best,hist=hist,{}
-		else
-			-- ghost wins
-			score+=1
 		end
 		-- restart replay
 		k=1
@@ -640,9 +632,6 @@ function make_ghost()
 	return add(actors,{
 		pos=v_zero(),
 		q=make_q(v_up,0),
-		get_score=function(self)
-			return score
-		end,
 		draw=function(self)
 		 if self.m then
 				draw_model(model,self.m,self.pos,true)
@@ -939,6 +928,9 @@ function make_track(best_t,segments)
 	return {	
 	 -- lap callback
 		on_new_lap=nop,
+		get_best_t=function()
+			return best_t
+		end,
 		get_startpos=function(self)
 			return segments[1].pos
 		end,
@@ -953,9 +945,13 @@ function make_track(best_t,segments)
 			lap_t+=t
 		end,
 		update=function(self)
+			remaining_t-=1
+			if remaining_t==0 then
+				next_game_state("gameover")
+				return
+			end
 			checkpoint_t+=1
 			lap_t+=1
-			remaining_t-=1
 			local p=segments[checkpoint%#segments+1]
 			if sqr_dist(plyr.pos,p.pos)<64 then
 				checkpoint+=1
@@ -978,21 +974,18 @@ function make_track(best_t,segments)
 			end
 		end,
 		draw=function(self)
-		printb("lap time",2,2,7)
-		printb(time_tostr(lap_t),4,12,3)
-		printb("best time",127,2,10,true)
-		printb(time_tostr(best_t),126,12,0,true)
-
-		if remaining_t<900 then
-			sprint(padding(flr(remaining_t/30)),60,2,21,2)
-		end
-  
-  --[[
-		local angle,dist=self:get_dir(plyr.pos)
-		spr(116+flr(8*angle),60,2)
-		print(flr(dist).."m",64-6,11,1)
-		print(flr(dist).."m",64-6,10,7)
-		]]
+			printb("lap time",2,2,7)
+			printb(time_tostr(lap_t),4,9,3)
+			printb("best time",127,2,10,true)
+			printb(time_tostr(best_t),126,9,11,true)
+	
+			if remaining_t<900 then
+				sprint(padding(flr(remaining_t/30)),60,2,21,2)
+			end
+			local angle,dist=self:get_dir(plyr.pos)
+			spr(116+flr(8*angle),60,108)
+			print(flr(dist).."m",64-6,118,1)
+			print(flr(dist).."m",64-6,117,7)
 	end
 	}
 end
@@ -1356,21 +1349,66 @@ function draw_ground(self)
 	draw_actors(nj)
 end
 
-function next_game_state(s)
-	game_state=s or game_states[game_state].next
-	game_state_ttl=game_states[game_state].ttl
+function make_states()
+	local ttl=0
+	local states={
+		start={
+			init=function()
+				-- read track
+				track=make_track(900,unpack_track())
+				-- read actors
+				unpack_actors()
+	
+				local pos=track:get_startpos()
+				plyr=make_plyr({pos[1],pos[2]+4,pos[3]},0.6)
+				plyr.slip_angles={0,0}
+				plyr.slip_ratio={0,0}
+			end,
+			draw=function()
+				banner(0x12)
+				local t=game_state_ttl/30
+				local dt=t%1
+				t=flr(t)
+				sprint(t==0 and "go" or tostr(t),lerp(48,127,smoothstep(dt)),48,21,3)
+			end,
+			next="play",
+			ttl=4*30},
+		play={
+			control=true,
+			init=nop,
+			draw=function()
+				draw_hud()
+			end,
+			next="play",
+			ttl=0},
+		gameover={
+			draw=function()
+				banner(0x82)
+				sprint("game over",24,48,21,3)
+				rectfill(0,63,127,72,2)
+				print("best time:"..time_tostr(track:get_best_t()),32,64,7)
+			end,
+			next="start",
+			ttl=900}
+	}
+	return function(s)
+		ttl-=1
+		if s or ttl<0 then
+			game_state=s and states[s] or states[current.next]
+			ttl=current.ttl
+			current:init()
+		end
+	end
 end
 
 function _update()
 	time_t+=1
-	game_state_ttl-=1
-	if game_state_ttl<0 then
-		next_game_state()
-	end
+	-- basic state mgt
+	update_state()
 	
 	zbuf_clear()
 	
-	if plyr and game_state=="play" then
+	if plyr and game_state.control then
 		track:update()
 		plyr:control()
 	end
@@ -1393,11 +1431,6 @@ function _update()
 		lookat[2]=plyr.pos[2]+2
 		cam.dist=mid(sqrt(v_dot(plyr.v,plyr.v)),8,15)
 		cam:track(lookat,0.15)
-	end
-	
-	-- transitions?
-	if ghost:get_score()>2 then
-		next_game_state("gameover")
 	end
 end
 
@@ -1426,6 +1459,11 @@ function printb(s,x,y,c,rev)
 	-- shade
 	line(x,y+7,x+len,y+7,1)
 end
+function banner(c)
+	fillp(0xa5a5)
+	rectfill(0,44,127,62,c)
+	fillp()
+end
 
 function draw_gauge()
 	circ(16,111,16,7)
@@ -1452,7 +1490,7 @@ function draw_hud()
 	
 	track:draw()
 end
-
+--[[
 function draw_curve(s,x,y,t,curve)
 	t=min(abs(t),1)
 	local h=y+24
@@ -1469,7 +1507,7 @@ function draw_wheel(x,y,angle,col)
 	local c,s=cos(angle),-sin(angle)
 	line(x+8+8*c,y+8-8*s,x+8-8*c,y+8+8*s,col)
 end
-
+]]
 function _draw()
 	cls(0)
 
@@ -1477,10 +1515,11 @@ function _draw()
 	draw_ground()
 	
 	if game_state=="play" then
-		draw_hud()
+		
 	elseif game_state=="start" then
-		local t=flr(game_state_ttl/30)
-		sprint(t==0 and "go" or tostr(t),48,48,5,5)
+		
+	elseif game_state=="gameover" then
+		
 	end
 	
 	--[[
@@ -1760,7 +1799,7 @@ if(y2<y1)v1,v2,x1,x2,y1,y2=v2,v1,x2,x1,y2,y1
 end
 -->8
 -- sprite print
-local bprint_chars="0123456789-go"
+local bprint_chars=" 0123456789-abcdefghijklmnopqrstuvwxyz!"
 local chars2mem={}
 for i=1,#bprint_chars do
 	local c=sub(bprint_chars,i,i)
@@ -1792,7 +1831,7 @@ function sprint(txt,x,y,s,w)
 			mem+=4
 		end
 		--next char
-		x+=w*xmax+w
+		x+=w*(xmax+2)
 	end
 	palt()
 end
