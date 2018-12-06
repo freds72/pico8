@@ -510,8 +510,8 @@ end
 function make_track()
 	local track={}
 	return {
-	 near_dist=1.5,
-	 far_dist=2.5,
+	 near_dist=1,
+	 far_dist=2,
 	 count=function(self)
 	 	return #track
 	 end,
