@@ -476,8 +476,7 @@ function make_plyr(p,angle)
 
 			-- limiting factor (normalized unit)
 			local t=acos(abs(sa)/sqrt(relv_len))-0.75
- 		t*=360/25
-			plyr.slip_angles[rpm and 2 or 1]=t
+			t*=360/25
 			sa_ratio=apply_curve(sr_curve,t)
 		end	
 		
@@ -485,8 +484,11 @@ function make_plyr(p,angle)
 		relv_len=v_dot(fwd,relv)
 		-- convert rpm to rps
 		local sr=(brake*(rpm or relv_len)-relv_len)
-		if abs(relv_len)>k_small then
-			sr/=abs(relv_len)
+		relv_len=abs(relv_len)
+		-- limit initial conditions
+		sr=mid(sr,-relv_len,relv_len)
+		if relv_len>k_small then
+			sr/=relv_len
 		end
 		local sr_ratio=sa_ratio*apply_curve(sr_curve,abs(sr))
 		-- todo: include speed
@@ -494,8 +496,6 @@ function make_plyr(p,angle)
 			slide=true
 		end
 		-- todo: include terrain quality
-		plyr.slip_ratio[rpm and 2 or 1]=abs(sr)
-				
 		-- adjust long.
 		sr*=48*sr_ratio
 
@@ -518,7 +518,6 @@ function make_plyr(p,angle)
 		if slide then
 			pos=v_clone(pos)
 			v_add(pos,m_right(self.m),rnd(2)-1)
-			--add(pos,v_up)
 			make_part("smoke",pos)
 		end
 
@@ -574,8 +573,6 @@ function make_plyr(p,angle)
 		
 			-- steering angle
 			angle=1-0.05*turn
-			-- debug
-			self.angle=angle
 			
 			-- front wheels
 			local c,s=cos(angle),sin(angle)
@@ -624,7 +621,6 @@ function make_plyr(p,angle)
 	return add(actors,make_rigidbody(a,all_models["205gti_bbox"]))
 end
 
---[[
 function make_ghost()
 	local model,k,best,hist=all_models["205gti"],1,{},{}
 	-- listen to track event
@@ -664,7 +660,6 @@ function make_ghost()
 		end
 	})
 end
-]]
 
 -- note: limited to a single actor per tile
 local all_ground_actors={
@@ -1393,8 +1388,6 @@ function start_state()
 
 	local pos=track:get_startpos()
 	plyr=make_plyr({pos[1],pos[2]+4,pos[3]},0.6)
-	plyr.slip_angles={0,0}
-	plyr.slip_ratio={0,0}
 
 	local ttl=4*30
 	return 
@@ -1489,7 +1482,7 @@ function time_tostr(t)
 	return s
 end
 
--- print box
+-- print bold
 function printb(s,x,y,c)
 	print(s,x,y+1,1)
 	print(s,x,y,c)
@@ -1529,17 +1522,6 @@ function draw_hud()
 	track:draw()
 end
 
-function draw_curve(s,x,y,t,curve)
-	local h=y+24
-	rectfill(x,y,x+32,h,1)
-	print(s..":"..t,x+1,y+1,7)
-	for i=0,32 do
-		pset(x+i,h-16*apply_curve(curve,i/32),13)
-	end
-	t=min(abs(t),1)
-	line(x+32*t,y+6,x+32*t,h,8)
-end
-
 function _draw()
 	cls(0)
 
@@ -1547,16 +1529,7 @@ function _draw()
 	draw_ground()
 	
 	draw_state()
-	
-	draw_curve("f.sa",1,20,plyr.slip_angles[1],sa_curve)
-	draw_curve("r.sa",1,46,plyr.slip_angles[2],sa_curve)
 
-	draw_curve("f.sr",94,20,plyr.slip_ratio[1],sr_curve)
-	draw_curve("r.sr",94,46,plyr.slip_ratio[2],sr_curve)
-		
-	if plyr.angle then
-		print((plyr.angle-1)*360,2,74,7)
-	end
 	--rectfill(0,0,127,8,8)
 	--print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)
  
@@ -1610,8 +1583,8 @@ function _init()
 		
 	cam=make_cam(96)
 		
-	-- read track	
-	-- ghost=make_ghost()
+	-- read track
+	host=make_ghost()
 
 	-- init state machine
 	next_state(start_state)
