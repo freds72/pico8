@@ -462,8 +462,7 @@ function make_plyr(p,angle)
 		fwd=m_x_v(self.m,fwd)
 		
 		-- application point (world space)
-		local pos,slide=v_clone(self.pos),false
-		v_add(pos,m_fwd(self.m),offset)
+		local pos,slide=self.pt_world(offset),false
 
 		-- point velocity
 		local relv=self:pt_velocity(pos)
@@ -502,6 +501,8 @@ function make_plyr(p,angle)
 		-- limit overall enveloppe
 		sa*=48*sr_ratio
 		
+		self.slip_angles[rpm and 2 or 1][time_t%32]=sa
+		
 		-- impulse factors
 		sa*=self.traction_ratio
 		if abs(sa)>k_small then
@@ -533,7 +534,7 @@ function make_plyr(p,angle)
 		-- init orientation
 		m=m_from_q(q),
 		-- obj to world space
-		pt_toworld=function(self,p)
+		pt_world=function(self,p)
 			p=m_x_v(self.m,p)
 			v_add(p,self.pos)
 			return p
@@ -610,7 +611,7 @@ function make_plyr(p,angle)
 			poke(0x3202, sspd*4)
 
  		if rnd()>0.9 then
- 			local pos=self:pt_toworld({0,0,-1.8})
+ 			local pos=self:pt_world({0,0,-1.8})
  			--add(pos,v_up)
  			make_part("fire",pos)
  		end
@@ -620,7 +621,7 @@ function make_plyr(p,angle)
 	}
 	return add(actors,make_rigidbody(a,all_models["205gti_bbox"]))
 end
-
+--[[
 function make_ghost()
 	local model,k,best,hist=all_models["205gti"],1,{},{}
 	-- listen to track event
@@ -660,6 +661,7 @@ function make_ghost()
 		end
 	})
 end
+]]
 
 -- note: limited to a single actor per tile
 local all_ground_actors={
@@ -818,7 +820,7 @@ function make_rigidbody(a,bbox)
 			for _,vi in pairs(f.vi) do
 				local v=bbox.v[vi]
 				-- to world space
-				local p=self:pt_toworld(v)
+				local p=self:pt_world(v)
 				local h,n=get_altitude_and_n(p,true)
 				local depth=h-p[2]
 				if depth>k_small then
@@ -1388,6 +1390,7 @@ function start_state()
 
 	local pos=track:get_startpos()
 	plyr=make_plyr({pos[1],pos[2]+4,pos[3]},0.6)
+	plyr.slip_angles={{},{}}
 
 	local ttl=4*30
 	return 
@@ -1522,6 +1525,32 @@ function draw_hud()
 	track:draw()
 end
 
+function draw_curve(x,y,points,scale)
+	rectfill(x,y,x+32,y+32,0)
+	line(x,y+16,x+32,y+16,1)
+	for i=0,31 do
+		local p=points[(time_t-i)%32]
+		if p then
+			p/=scale
+			line(x+i,y+16,x+i,y+16*(1-p),abs(p)>1 and 8 or 7)
+		end
+	end
+end
+
+function draw_tireforce(self,offset)
+	local pos=self:pt_world(offset)
+	local relv=self:pt_velocity(pos)
+	draw_vector(self,pos,relv)
+end
+
+function draw_vector(self,p,v,c)
+	v=m_x_v(self.m,v)
+	v_add(v,p)
+	local x0,y0=cam:project(p)
+	local x1,y1=cam:project(v)
+	line(x0,y0,x1,y1,c)
+end
+
 function _draw()
 	cls(0)
 
@@ -1529,6 +1558,11 @@ function _draw()
 	draw_ground()
 	
 	draw_state()
+	
+	draw_curve(0,48,plyr.slip_angles[1],48)
+	draw_curve(0,76,plyr.slip_angles[2],48)
+	
+		
 
 	--rectfill(0,0,127,8,8)
 	--print("mem:"..stat(0).." cpu:"..stat(1).."("..stat(7)..")",2,2,7)
@@ -1584,7 +1618,7 @@ function _init()
 	cam=make_cam(96)
 		
 	-- read track
-	host=make_ghost()
+	-- ghost=make_ghost()
 
 	-- init state machine
 	next_state(start_state)
