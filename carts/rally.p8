@@ -462,7 +462,7 @@ function make_plyr(p,angle)
 		fwd=m_x_v(self.m,fwd)
 		
 		-- application point (world space)
-		local pos,slide=self.pt_world(offset),false
+		local pos,slide=self:pt_world({0,0,offset}),false
 
 		-- point velocity
 		local relv=self:pt_velocity(pos)
@@ -1185,7 +1185,7 @@ function get_raw_qcode(i,j)
 	return qmap[safe_index(i,j)] or 0
 end
 function get_height(i,j)
-	return hmap[safe_index(i,j)]
+	return hmap[safe_index(i,j)] or 0
 end
 
 -- return altitude & normal (optional)
