@@ -265,21 +265,26 @@ end
 
 -- little hack to perform in-place data updates
 local draw_session_id=0
-local znear,zdir=1,-1
+local znear,zfar=1,16
 function draw_model(model,m,x,y,z,w)
 	draw_session_id+=1
 
-	local side=32
+	local side=4
 	local planes_p={
-			{side,0,0},
-			{0,side,0},
-			{-side,0,0},
-			{0,-side,0}}
+			{0,0,zfar},
+			{0,0,znear},
+			{side,0,zfar},
+			--{0,side,zfar},
+			--{-side,0,zfar},
+			--{0,-side,zfar}
+	}
 	local planes_n={
-		{-1,0,0},
-		{0,-1,0},
+		{0,0,1},
+		{0,0,-1},
 		{1,0,0},
-		{0,1,0}}
+		{0,1,0},
+		{-1,0,0},
+		{0,-1,0}}
 
 	-- project in cam space
 	local p={}
@@ -292,9 +297,9 @@ function draw_model(model,m,x,y,z,w)
 			local a=p[ak]
 			-- not in cache?
 			if not a then
-				local v=make_v(cam.pos,model.v[ak])
-				m_x_v(cam.m,v)
-				a,p[ak]=v,v
+				local pv=make_v(cam.pos,model.v[ak])
+				m_x_v(cam.m,pv)
+				a,p[ak]=pv,pv
 			end
 			add(v,a)
 		end
@@ -302,8 +307,8 @@ function draw_model(model,m,x,y,z,w)
 		local out={}
 		for i=1,#planes_p do
 			local pp,pn=planes_p[i],planes_n[i]
-			local v0=v[1]
-			for k=2,#v do
+			local v0=v[#v]
+			for k=1,#v do
 				local v1=v[k]
 				plane_ray_intersect(pn,pp,v0,v1,out)
 				v0=v1
@@ -311,18 +316,23 @@ function draw_model(model,m,x,y,z,w)
 			-- previous clipped points
 			v,out=out,{}
 		end
-		polyfill(v,model.c)
+		poly(v,model.c)
+		for _,v in pairs(planes_p) do
+			local x0,y0=cam:project2d(v)
+			circfill(x0,y0,1,8)
+		end
 	end
 end
 
 function plane_ray_intersect(n,p,a,b,out)
-	if(v_dot(make_v(a,p),n)>0) add(out,a)
+	p=make_v(a,p)
+	if(v_dot(p,n)>0) add(out,a)
 		
 	local r=make_v(a,b)
 	local den=v_dot(r,n)
 	-- no intersection
 	if abs(den)>0.001 then
-		local t=v_dot(make_v(a,p),n)/den
+		local t=v_dot(p,n)/den
 		if t>=0 and t<=1 then
 			-- intersect pos
 			v_scale(r,t)
@@ -553,11 +563,11 @@ function world:update()
 end
 
 
-function make_plyr(x,y,z)
+function make_plyr(x,y,z,angle)
 	local p={
-		acc=0.2,
+		acc=0.05,
 		pos={x,y,z},
-		q=make_q(v_fwd,0),
+		q=make_q(v_up,angle or 0),
 		roll=0,
 		pitch=0,
 		draw=nop,
@@ -616,18 +626,6 @@ function make_cam(x0,y0,focal)
 		end
 	}
 	return c
-end
-
-function polyfill(p,c)
-	if #p>2 then
-		local x0,y0=cam:project2d(p[1])
-		local x1,y1=cam:project2d(p[2])
-		for i=3,#p do
-			local x2,y2=cam:project2d(p[i])
-			trifill(x0,y0,x1,y1,x2,y2,c)
-			x1,y1=x2,y2
-		end
-	end
 end
 
 local sky_gradient={0x77,0x76,0xc6,0xcc}
@@ -766,7 +764,7 @@ function draw_mfd(x,y)
 end
 
 function _draw()
-	cls(4)
+	cls()
 
  -- draw horizon
 	-- todo
@@ -785,7 +783,7 @@ function _init()
 
 	make_actor(all_actors.landing,{0,0,0})
 	make_actor(all_actors.shade,{0,5,0})
-	plyr=make_plyr(0,5,-10)
+	plyr=make_plyr(5,5,-10,0.15)
 end
 
 
@@ -861,6 +859,29 @@ function trifill(x0,y0,x1,y1,x2,y2,col)
   p01_trapeze_w(y0,y0,y1,col,x0,x1)
   p01_trapeze_w(y1,col,y2,y2,x1,x2)
  end
+end
+
+function polyfill(p,c)
+	if #p>2 then
+		local x0,y0=cam:project2d(p[1])
+		local x1,y1=cam:project2d(p[2])
+		for i=3,#p do
+			local x2,y2=cam:project2d(p[i])
+			trifill(x0,y0,x1,y1,x2,y2,c)
+			x1,y1=x2,y2
+		end
+	end
+end
+function poly(p,c)
+	if #p>1 then
+		color(c)
+		local x0,y0=cam:project2d(p[#p])
+		for i=1,#p do
+			local x1,y1=cam:project2d(p[i])
+			line(x0,y0,x1,y1)
+			x0,y0=x1,y1
+		end
+	end
 end
 
 __gfx__
