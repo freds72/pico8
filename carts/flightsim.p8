@@ -1,11 +1,11 @@
 pico-8 cartridge // http://www.pico-8.com
 version 16
 __lua__
--- xwing vs. tie figther
+-- mini-flightsim
 -- by freds72
 
 -- game globals
-local time_t,good_side,bad_side=0,0x1,0x2
+local time_t=0
 
 -- register json context here
 function nop() return true end
@@ -218,6 +218,11 @@ function m_inv(m)
 	m[3],m[9]=m[9],m[3]
 	m[7],m[10]=m[10],m[7]
 end
+-- inplace 3x3 matrix multiply invert
+function m_inv_x_v(m,v)
+	local x,y,z=v[1],v[2],v[3]
+	v[1],v[2],v[3]=m[1]*x+m[2]*y+m[3]*z,m[4]*x+m[5]*y+m[6]*z,m[7]*x+m[8]*y+m[9]*z
+end
 function m_set_pos(m,v)
 	m[13],m[14],m[15]=v[1],v[2],v[3]
 end
@@ -253,8 +258,13 @@ local all_models={
 		v={{5,0,5},
 			{-5,0,5},
 			{-5,0,-5},
-			{5,0,-5}},
-		e={{1,2,3,4}}
+			{5,0,-5},
+			{5,5,5},
+			{-5,5,5},
+			{-5,5,-5},
+			{5,5,-5}},
+		e={{1,2,3,4},
+					{5,6,7,8}}
 	}
 }
 
@@ -265,26 +275,24 @@ end
 
 -- little hack to perform in-place data updates
 local draw_session_id=0
-local znear,zfar=1,16
+local znear,zfar=1,64
+local planes_p={
+		{0,0,zfar},
+		{0,0,znear},
+		--{0,0,0},
+		--{0,0,0},
+		--{0,0,0},
+		--{0,0,0}
+}
+local planes_n={
+	{0,0,1},
+	{0,0,-1},
+	{0.707,0,-0.707},
+	{-0.707,0,-0.707},
+	{0,0.707,-0.707},
+	{0,-0.707,-0.707}}
 function draw_model(model,m,x,y,z,w)
 	draw_session_id+=1
-
-	local side=4
-	local planes_p={
-			{0,0,zfar},
-			{0,0,znear},
-			{side,0,zfar},
-			--{0,side,zfar},
-			--{-side,0,zfar},
-			--{0,-side,zfar}
-	}
-	local planes_n={
-		{0,0,1},
-		{0,0,-1},
-		{1,0,0},
-		{0,1,0},
-		{-1,0,0},
-		{0,-1,0}}
 
 	-- project in cam space
 	local p={}
@@ -316,12 +324,48 @@ function draw_model(model,m,x,y,z,w)
 			-- previous clipped points
 			v,out=out,{}
 		end
-		poly(v,model.c)
-		for _,v in pairs(planes_p) do
-			local x0,y0=cam:project2d(v)
-			circfill(x0,y0,1,8)
-		end
+		polyfill(v,model.c)	
 	end
+end
+
+-- 
+function shadow_volume(model,pos,m)
+ local volume={}
+	-- project in m space
+	local p={}
+	for _,e in pairs(model.e) do
+		-- edges loop
+		local v={}
+		for i=1,#e do
+			local ak=e[i]
+			-- edge positions
+			local a=p[ak]
+			-- not in cache?
+			if not a then
+				local pv=make_v(pos,model.v[ak])
+				m_inv_x_v(m,pv)
+				a,p[ak]=pv,pv
+			end
+			add(v,a)
+		end
+		-- clip loop
+		local out={}
+		for i=1,#planes_p do
+			local pp,pn=planes_p[i],planes_n[i]
+			local v0=v[#v]
+			for k=1,#v do
+				local v1=v[k]
+				plane_ray_intersect(pn,pp,v0,v1,out)
+				v0=v1
+			end
+			-- previous clipped points
+			v,out=out,{}
+		end
+		-- convert point back to 3d space
+				
+  add(volume,v)
+	end
+	return volume
 end
 
 function plane_ray_intersect(n,p,a,b,out)
@@ -333,7 +377,7 @@ function plane_ray_intersect(n,p,a,b,out)
 	-- no intersection
 	if abs(den)>0.001 then
 		local t=v_dot(p,n)/den
-		if t>=0 and t<=1 then
+		if t>0.001 and t<=1 then
 			-- intersect pos
 			v_scale(r,t)
 			v_add(r,a)
@@ -562,7 +606,6 @@ function world:update()
 	end
 end
 
-
 function make_plyr(x,y,z,angle)
 	local p={
 		acc=0.05,
@@ -621,20 +664,20 @@ function make_cam(x0,y0,focal)
 		-- project cam-space points into 2d
 		project2d=function(self,v)
 			-- view to screen
- 			local w=focal/v[3]
- 			return x0+v[1]*w,y0-v[2]*w
+ 		local w=focal/v[3]
+ 		return x0+v[1]*w,y0-v[2]*w
 		end
 	}
 	return c
 end
 
-local sky_gradient={0x77,0x76,0xc6,0xcc}
-local sky_fillp={0xa5a5,0xa5a5,0xa5a5,0xa5a5}
+local sky_gradient={0x77,0xc7,0xc6,0xcc}
+local sky_fillp={0xffff,0xa5a5,0xa5a5,0xffff}
 function draw_ground(self)
 
 	-- draw horizon
 	local zfar=-256
-	local x,y=-32*zfar/64,32*zfar/64
+	local x,y=-64*zfar/64,64*zfar/64
 	local farplane={
 			{x,y,zfar},
 			{x,-y,zfar},
@@ -698,18 +741,22 @@ function control_plyr(self)
 	if(btn(2)) pitch=-1
 	if(btn(3)) pitch=1
 		 		
+	local boost=1
+	if(btn(5)) boost=10
+	if(btn(4)) boost=-10
+	
 	self.roll+=roll
 	self.pitch+=pitch
 	
-	local q=make_q(m_right(plyr.m),-self.pitch/256)
-	q_x_q(q,make_q(m_fwd(plyr.m),self.roll/256))
+	local q=make_q(m_fwd(plyr.m),self.roll/256)
+	q_x_q(q,make_q(m_right(plyr.m),-self.pitch/256))
 	q_x_q(q,plyr.q)
 	-- avoid matrix skew
 	q_normz(q)
 
 	local m=m_from_q(q)
 	local fwd=m_fwd(m)
-	v_add(self.pos,fwd,self.acc)
+	v_add(self.pos,fwd,boost*self.acc)
 
 	m_set_pos(m,self.pos)
 	self.m,self.q=m,q
@@ -732,37 +779,6 @@ function _update()
 	cam:update()
 end
 
-function draw_cockpit()
--- draw cockpit
-	palt(0,false)
-	palt(14,true)
-	spr(48,0,23,8,9)
-	spr(48,64,23,8,9,true)
-	
-	-- rwr
-	spr(3,18,67,3,3)
-	
-	--
-	rectfill(0,89,127,127,6)
-	
-	-- mfd's
-	draw_mfd(3,90)
-	print(1000,14,95,11)
-
-	draw_mfd(87,90)
-
- rectfill(42,90,85,127,5)
-	palt()
-end
-
-function draw_mfd(x,y)
-	rectfill(x,y,x+37,y+37,3)
-	sspr(0,0,19,19,x,y)
-	sspr(0,0,19,19,x+19,y,19,19,true)	
-	sspr(0,0,19,19,x,y+19,19,19,false,true)	
-	sspr(0,0,19,19,x+19,y+19,19,19,true,true)	
-end
-
 function _draw()
 	cls()
 
@@ -774,7 +790,7 @@ function _draw()
 	zbuf_draw()
 	--clip()
 	
-	
+	print(stat(1),2,2,8)
 end
 
 function _init()
@@ -783,7 +799,7 @@ function _init()
 
 	make_actor(all_actors.landing,{0,0,0})
 	make_actor(all_actors.shade,{0,5,0})
-	plyr=make_plyr(5,5,-10,0.15)
+	plyr=make_plyr(0,5,-10,0.15)
 end
 
 
