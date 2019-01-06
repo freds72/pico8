@@ -36,8 +36,8 @@ def diffuse_to_p8color(rgb):
         #print("diffuse:{} -> {}\n".format(rgb,p8_colors.index(h)))
         return p8_colors.index(h)
     except Exception as e:
-        # unknown color: purple!
-        return 14
+        # unknown color
+        raise Exception('Unknown color: 0x{}'.format(h))
 
 # model data
 s = ""
@@ -54,42 +54,32 @@ s = s + "{:02x}".format(bpy.context.object.get("scale", 1))
 bm = bmesh.new()
 bm.from_mesh(obdata)
 
+# create a map loop index -> vertex index (see: https://www.python.org/dev/peps/pep-0274/)
+loop_vert = {l.index:l.vertex_index for l in obdata.loops}
+
 s = s + "{:02x}".format(len(obdata.vertices))
 for v in obdata.vertices:
     s = s + "{}{}{}".format(pack_float(v.co.x), pack_float(v.co.z), pack_float(v.co.y))
 
 # faces:
-s = s + "{:02x}".format(len(bm.faces))
-for f in bm.faces:
-    # face point index    
-    # + vertex count
-    s = s + "{:02x}{:02x}".format(f.verts[0].index+1,len(f.verts))
-    # vertice id's
-    for v in f.verts:
-        s = s + "{:02x}".format(v.index+1)
-    # center point
-    v = f.calc_center_median_weighted()
-    s = s + "{}{}{}".format(pack_float(v.x), pack_float(v.z), pack_float(v.y))
-    # + color
+s = s + "{:02x}".format(len(obdata.polygons))
+for f in obdata.polygons:
+    # color
     slot = obj.material_slots[f.material_index]
     mat = slot.material
     s = s + "{:02x}".format(diffuse_to_p8color(mat.diffuse_color))
     # + dual-sided?
     s = s + "{:02x}".format(0 if mat.game_settings.use_backface_culling else 1)
+    # + vertex count
+    s = s + "{:02x}".format(len(f.loop_indices))
+    # + vertex id (= edge loop)
+    for li in f.loop_indices:
+        s = s + "{:02x}".format(loop_vert[li]+1)        
 
 #normals
 s = s + "{:02x}".format(len(obdata.polygons))
 for f in obdata.polygons:
     s = s + "{}{}{}".format(pack_float(f.normal.x), pack_float(f.normal.z), pack_float(f.normal.y))
-
-# all edges and corresponding faces
-s = s + "{:02x}".format(len(bm.edges))
-for e in bm.edges:
-    s = s + "{:02x}{:02x}".format(e.verts[0].index+1, e.verts[1].index+1)
-    # number of connected faces
-    s = s + "{:02x}".format(len(e.link_faces))
-    for f in e.link_faces:
-        s = s + "{:02x}".format(f.index+1)
 
 #
 with open(args.out, 'w') as f:
