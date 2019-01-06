@@ -17,6 +17,7 @@ local actors,world={},{}
 local ground_shift,ground_colors,ground_level=2,{1,13,6}
 -- camera
 local cam
+local face_id=0
 -- light direction (sun)
 local light_n={-0.707,-0.707,0}
 
@@ -35,6 +36,7 @@ function zbuf_draw()
 	-- sort
 	-- render
 	local faces,light_faces={},{}
+	face_id=0
 	for _,d in pairs(drawables) do
 		if d.model then
 			collect_faces(d.model,d.pos,d.m,faces,light_faces)
@@ -45,77 +47,76 @@ function zbuf_draw()
 			add(objs,{self=d,key=z,draw=d.draw,x=x,y=y,z=z,w=w})
 		end
 	end
-	-- clip faces with light volumes
-	for _,sf in pairs(light_faces) do
-		-- clip against whole plane
-		local faces1={}
-		for _,f in pairs(faces) do
-			-- don't self clip
-			if #f.v>2 and sf.id!=f.id then
-				local in_light,in_shadow={},{}
-				local v0=f.v[#f.v]
-				for k=1,#f.v do
-					local v1=f.v[k]
-					plane_ray_intersect(sf.n,sf.v[1],v0,v1,in_light,in_shadow)
-					v0=v1
-				end
-				-- register new faces				
-				add(faces1,{id=f.id,v=in_light,c=f.c,light=false})
-				add(faces1,{id=f.id,v=in_shadow,c=f.c,light=true})
-			else
-				f.light=true
-				add(faces1,f)
-			end
-		end
-		faces=faces1
-
-		-- clip against edges
-		local pv0=sf.v[#sf.v]
-		for i=1,#sf.v do
-			local pv1=sf.v[i]
-			local pn=make_v(pv0,pv1)
-			v_normz(pn)
-		 	pn=make_v_cross(pn,light_n)
-
-			-- clip each visible face
-			local faces2={}
-			for _,f in pairs(faces) do
-				-- don't self clip
-				if sf.id!=f.id then
-					local in_light,in_shadow={},{}
-  					local v0=f.v[#f.v]
-  					for k=1,#f.v do
-  						local v1=f.v[k]
-  						plane_ray_intersect(pn,pv0,v0,v1,in_light,in_shadow)
-  						v0=v1
-  					end
-  					-- register new faces				
-  					add(faces2,{id=f.id,v=in_light,c=f.c,light=true})
-					add(faces2,{id=f.id,v=in_shadow,c=f.c,light=false})
-				else
-					f.light=true
-					add(faces2,f)
-				end
-			end
-			-- use new faces for new shadow caster edge
-			faces=faces2		 
-		 	pv0=pv1
-			-- debug
-			-- if(true) break
-		end	
 	
+	--
+	for _,f in pairs(faces) do
+		-- clip face with light volumes
+		f.shadows={}
+		-- no need to shade shaded faces
+		if true then -- f.light==false then
+ 		for _,sf in pairs(light_faces) do
+ 			-- per-face shadow polygon
+ 			local shadow_v={}
+ 			-- clip against near face
+ 			-- don't self clip
+ 			if sf.id!=f.id then
+ 				local v0=f.v[#f.v]
+ 				for k=1,#f.v do
+ 					local v1=f.v[k]
+ 					plane_ray_intersect(sf.n,sf.v[1],v0,v1,shadow_v)
+ 					v0=v1
+ 				end
+ 				-- 
+ 				if #shadow_v>2 then
+ 					-- clip against shadow edges					
+ 					local pv0=sf.v[#sf.v]
+ 					for i=1,#sf.v do
+ 						local pv1=sf.v[i]
+ 						local pn=sf.pn[i]
+ 						-- generate plane normal + cache
+ 						if not pn then
+ 							pn=make_v(pv0,pv1)
+ 							v_normz(pn)
+ 							pn=make_v_cross(pn,light_n)
+ 							sf.pn[i]=pn
+ 						end
+ 						
+ 						-- clip current face
+ 						local tmp_v={}
+ 						local v0=shadow_v[#shadow_v]
+ 						for k=1,#shadow_v do
+ 							local v1=shadow_v[k]
+ 							plane_ray_intersect(pn,pv0,v0,v1,tmp_v)
+ 							v0=v1
+ 						end
+ 						-- use output for next edge
+ 						shadow_v=tmp_v
+ 						-- next shadow edge
+ 		 				pv0=pv1
+ 					end
+ 					-- attach shadow poly to face
+ 					add(f.shadows,shadow_v)
+ 				end
+ 			end	
+ 		end
+	 end
 	end
 
 	-- project in cam space
 	for _,f in pairs(faces) do
-		if(f.light==false) f.c=1
 		if #f.v>0 then
 	 		-- project into cam space
  			local z=0
 	 		for i=1,#f.v do 			
  				f.v[i]=m_x_v(cam.m,make_v(cam.pos,f.v[i]))
  				z+=f.v[i][3]
- 			end
+			end
+			-- any shadow poly?
+			for _,v in pairs(f.shadows) do 
+				for i=1,#v do
+					v[i]=m_x_v(cam.m,make_v(cam.pos,v[i]))
+				end
+			end
  			z/=#f.v
  			f.key=z		
  			add(objs,f)
@@ -131,7 +132,12 @@ function zbuf_draw()
 		if o.draw then
 			o.self:draw(o.x,o.y,o.z,o.w)
 		else
-			polyfill(o.v,o.c)
+			cam:polyfill(o.v,o.light==true and o.c or sget(8,o.c))
+			-- shadow color
+			local sc=sget(8,o.c)
+			for _,v in pairs(o.shadows) do
+				cam:polyfill(v,sc)	
+			end
 		end
 	end
 end
@@ -160,12 +166,14 @@ function collect_faces(model,pos,m,out,out_light)
 	local v_cache={} 
 	for i=1,#model.f do
 		local f,n=model.f[i],model.n[i]
+		face_id+=1
 		-- light facing?
 		local cam_facing,light_facing=v_dot(n,cam_pos)>=model.cp[i],v_dot(n,l)<0
 		-- viz calculation
 		local vertices={}
 		if cam_facing or light_facing then
 			-- project vertices
+			-- todo: global cache
 			for k=1,#f.vi do
 				local vi=f.vi[k]
 				local v=v_cache[vi]
@@ -178,14 +186,13 @@ function collect_faces(model,pos,m,out,out_light)
 			end
 		end
 		if cam_facing then
-			-- register face
-			local c=f.c
-			--if(light_facing) c=sget(9,c)
-			add(out,{v=vertices,c=c,id=f.id})
+			add(out,{v=vertices,c=f.c,id=face_id,light=light_facing})
 		end
 		-- shadow caster
 		if light_facing then
-			add(out_light,{v=vertices,id=f.id,n=m_x_v(m,n)})
+			-- include face normal in world space
+			local n=m_x_v(m,n)
+			add(out_light,{v=vertices,id=face_id,n=n,pn={}})
 		end
 	end
 end
@@ -396,98 +403,6 @@ end
 
 -- little hack to perform in-place data updates
 local draw_session_id=0
-local znear,zfar=1,64
-local planes_p={
-		{0,0,zfar},
-		{0,0,znear},
-		--{0,0,0},
-		--{0,0,0},
-		--{0,0,0},
-		--{0,0,0}
-}
-local planes_n={
-	{0,0,1},
-	{0,0,-1},
-	{0.707,0,-0.707},
-	{-0.707,0,-0.707},
-	{0,0.707,-0.707},
-	{0,-0.707,-0.707}}
-function draw_model(model,m,x,y,z,w)
-	draw_session_id+=1
-
-	-- project in cam space
-	local p={}
-	for _,f in pairs(model.f) do
-		-- edges loop
-		local v={}
-		for i=1,#f.vi do
-			local ak=f.vi[i]
-			-- edge positions
-			local a=p[ak]
-			-- not in cache?
-			if not a then
-				local pv=make_v(cam.pos,model.v[ak])
-				m_x_v(cam.m,pv)
-				a,p[ak]=pv,pv
-			end
-			add(v,a)
-		end
-		-- clip loop
-		local out={}
-		for i=1,#planes_p do
-			local pp,pn=planes_p[i],planes_n[i]
-			local v0=v[#v]
-			for k=1,#v do
-				local v1=v[k]
-				plane_ray_intersect(pn,pp,v0,v1,out)
-				v0=v1
-			end
-			-- previous clipped points
-			v,out=out,{}
-		end
-		polyfill(v,f.c)	
-	end
-end
-
--- 
-function shadow_volume(model,pos,m)
- local volume={}
-	-- project in m space
-	local p={}
-	for _,e in pairs(model.e) do
-		-- edges loop
-		local v={}
-		for i=1,#e do
-			local ak=e[i]
-			-- edge positions
-			local a=p[ak]
-			-- not in cache?
-			if not a then
-				local pv=make_v(pos,model.v[ak])
-				m_inv_x_v(m,pv)
-				a,p[ak]=pv,pv
-			end
-			add(v,a)
-		end
-		-- clip loop
-		local out={}
-		for i=1,#planes_p do
-			local pp,pn=planes_p[i],planes_n[i]
-			local v0=v[#v]
-			for k=1,#v do
-				local v1=v[k]
-				plane_ray_intersect(pn,pp,v0,v1,out)
-				v0=v1
-			end
-			-- previous clipped points
-			v,out=out,{}
-		end
-		-- convert point back to 3d space
-				
-  add(volume,v)
-	end
-	return volume
-end
 
 function plane_ray_intersect(n,p,a,b,inside,outside)
 	local pa=make_v(a,p)
@@ -535,8 +450,8 @@ local all_actors={
 			--local q=make_q(v_up,time_t/300)
 			--self.q=q
 			--self.m=m_from_q(q)
-			self.pos[1]=2*cos(time_t/300)
-			self.pos[3]=2*sin(time_t/300)
+			--self.pos[1]=5*cos(time_t/300)
+			--self.pos[3]=5*sin(time_t/300)
 			return true
 		end
 	}
@@ -769,6 +684,15 @@ function make_actor(src,p,q)
 end
 
 function make_cam(x0,y0,focal)
+	-- clip planes
+	local znear,zfar=1,64
+	local z_planes={
+		{0,0,zfar},
+		{0,0,znear}}
+	local z_normals={
+		{0,0,1},
+		{0,0,-1}}
+
 	local c={
 		pos={0,0,3},
 		q=make_q(v_up,0),
@@ -797,6 +721,23 @@ function make_cam(x0,y0,focal)
 			-- view to screen
  		local w=focal/v[3]
  		return x0+v[1]*w,y0-v[2]*w
+		end,
+		-- draw
+		polyfill=function(self,v,c)
+ 		-- clip loop
+ 		local out={}
+ 		for i=1,#z_planes do
+ 			local pp,pn=z_planes[i],z_normals[i]
+ 			local v0=v[#v]
+ 			for k=1,#v do
+ 				local v1=v[k]
+ 				plane_ray_intersect(pn,pp,v0,v1,out)
+ 				v0=v1
+ 			end
+ 			-- previous clipped points
+ 			v,out=out,{}
+ 		end
+ 		polyfill(v,c)	
 		end
 	}
 	return c
@@ -899,14 +840,12 @@ function _update()
 	
 	control_plyr(plyr)
 
-	--[[
  	light_n={
  		cos(time_t/300),
  		-1,
  		sin(time_t/300)
  	}
  	v_normz(light_n)
-	]]
 
 	-- update cam
 	cam:track(plyr.pos,plyr.q)
@@ -937,8 +876,11 @@ function _init()
 
 	cam=make_cam(64,64,64)
 
-	make_actor(all_actors.shader,{0,5,0})
 	make_actor(all_actors.ground,{0,0,0})
+	make_actor(all_actors.tree,{0,0,0})
+	make_actor(all_actors.shader,{2,4,0})
+	make_actor(all_actors.shader,{-2,8,0})
+	make_actor(all_actors.shader,{0,2,-2})
 	plyr=make_plyr(0,5,-10,0.15)
 end
 
@@ -964,7 +906,6 @@ function unpack_string()
 	end
 	return s
 end
-local face_id=0
 function unpack_models()
 	-- for all models
 	for m=1,unpack_int() do
@@ -981,8 +922,7 @@ function unpack_models()
 		-- faces
 		model.f={}
 		for i=1,unpack_int() do
-			face_id+=1
-			local f={id=face_id,ni=i,vi={},c=unpack_int(),double_sided=unpack_int()==1}
+			local f={ni=i,vi={},c=unpack_int(),double_sided=unpack_int()==1}
 			-- vertex indices
 			for i=1,unpack_int() do
 				add(f.vi,unpack_int())
@@ -1077,21 +1017,21 @@ end
 
 __gfx__
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000000001c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000000002e0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000000003b0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000490000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000560000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000670000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000770000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000000008e0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000000009a0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000a70000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000bb0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000cc0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000d60000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000ef0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000f70000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000001c000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000052e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000013b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000249000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000156000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000567000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000677000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000028e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000049a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000000009a7000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000000003bb000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000000001cc000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000000005d6000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000000002ef000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000ef7000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -1142,4 +1082,4 @@ __gfx__
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 3040f1d10101308068083808c8080808a7086a08a7083808a8f8d8a88737a8876040003010203040003030205030003060407040003050201030003070408030
 003080406060b98817568817b988f80888f90888165688f86021d1a10291f0a0400608060a080606080a0a080a103000401020403010080a0850b171c0910110
-400a080a0a080606080606080a106000401040302010080a08
+400a080a0a080606080606080a106000401040302010080a08000000000000000000000000000000000000000000000000000000000000000000000000000000
