@@ -47,13 +47,14 @@ function zbuf_draw()
 			add(objs,{self=d,key=z,draw=d.draw,x=x,y=y,z=z,w=w})
 		end
 	end
+	print(#faces,2,12,7)
 	
 	--
 	for _,f in pairs(faces) do
-		-- clip face with light volumes
-		f.shadows={}
 		-- no need to shade shaded faces
-		if true then -- f.light==false then
+		if f.light==true then
+			-- clip face with light volumes
+			f.shadows={}
  		for _,sf in pairs(light_faces) do
  			-- per-face shadow polygon
  			local shadow_v={}
@@ -92,7 +93,7 @@ function zbuf_draw()
  						-- use output for next edge
  						shadow_v=tmp_v
  						-- next shadow edge
- 		 				pv0=pv1
+ 		 			pv0=pv1
  					end
  					-- attach shadow poly to face
  					add(f.shadows,shadow_v)
@@ -112,14 +113,16 @@ function zbuf_draw()
  				z+=f.v[i][3]
 			end
 			-- any shadow poly?
-			for _,v in pairs(f.shadows) do 
-				for i=1,#v do
-					v[i]=m_x_v(cam.m,make_v(cam.pos,v[i]))
+			if f.shadows then
+				for _,v in pairs(f.shadows) do 
+					for i=1,#v do
+						v[i]=m_x_v(cam.m,make_v(cam.pos,v[i]))
+					end
 				end
 			end
- 			z/=#f.v
- 			f.key=z		
- 			add(objs,f)
+ 		z/=#f.v
+ 		f.key=z		
+ 		add(objs,f)
 		end
 	end
 
@@ -133,10 +136,12 @@ function zbuf_draw()
 			o.self:draw(o.x,o.y,o.z,o.w)
 		else
 			cam:polyfill(o.v,o.light==true and o.c or sget(8,o.c))
-			-- shadow color
-			local sc=sget(8,o.c)
-			for _,v in pairs(o.shadows) do
-				cam:polyfill(v,sc)	
+			if o.shadows then
+ 			-- shadow color
+ 			local sc=sget(8,o.c)
+ 			for _,v in pairs(o.shadows) do
+ 				cam:polyfill(v,sc)	
+ 			end
 			end
 		end
 	end
@@ -169,11 +174,11 @@ function collect_faces(model,pos,m,out,out_light)
 		face_id+=1
 		-- light facing?
 		local cam_facing,light_facing=v_dot(n,cam_pos)>=model.cp[i],v_dot(n,l)<0
+		if(f.double_sided) cam_facing,light_facing=true,true
 		-- viz calculation
 		local vertices={}
 		if cam_facing or light_facing then
-			-- project vertices
-			-- todo: global cache
+			-- project vertices			
 			for k=1,#f.vi do
 				local vi=f.vi[k]
 				local v=v_cache[vi]
@@ -191,8 +196,7 @@ function collect_faces(model,pos,m,out,out_light)
 		-- shadow caster
 		if light_facing then
 			-- include face normal in world space
-			local n=m_x_v(m,n)
-			add(out_light,{v=vertices,id=face_id,n=n,pn={}})
+			add(out_light,{v=vertices,id=face_id,n=m_x_v(m,n),pn={}})
 		end
 	end
 end
@@ -404,24 +408,22 @@ end
 -- little hack to perform in-place data updates
 local draw_session_id=0
 
-function plane_ray_intersect(n,p,a,b,inside,outside)
-	local pa=make_v(a,p)
-	if(v_dot(pa,n)>0) add(inside,a)
+function plane_ray_intersect(n,p,a,b,inside)
+	p=make_v(a,p)
+	if(v_dot(p,n)>0) add(inside,a)
 		
 	local r=make_v(a,b)
 	local den=v_dot(r,n)
 	-- no intersection
 	if abs(den)>0.001 then
-		local t=v_dot(pa,n)/den
-		if t>0.001 and t<=1 then
+		local t=v_dot(p,n)/den
+		if t>0.01 and t<=1 then
 			-- intersect pos
 			v_scale(r,t)
 			v_add(r,a)
 			add(inside,r)
-			if(outside) add(outside,r)
 		end
 	end
-	if(outside and v_dot(make_v(b,p),n)<=0) add(outside,b)
 end
 
 draw_plyr=function(self,x,y,z,w)
@@ -452,6 +454,12 @@ local all_actors={
 			--self.m=m_from_q(q)
 			--self.pos[1]=5*cos(time_t/300)
 			--self.pos[3]=5*sin(time_t/300)
+			return true
+		end
+	},
+	piper={
+		model="piper",
+		update=function(self)			
 			return true
 		end
 	}
@@ -685,7 +693,7 @@ end
 
 function make_cam(x0,y0,focal)
 	-- clip planes
-	local znear,zfar=1,64
+	local znear,zfar=0.25,64
 	local z_planes={
 		{0,0,zfar},
 		{0,0,znear}}
@@ -876,11 +884,9 @@ function _init()
 
 	cam=make_cam(64,64,64)
 
-	make_actor(all_actors.ground,{0,0,0})
+	--make_actor(all_actors.ground,{0,0,0})
 	make_actor(all_actors.tree,{0,0,0})
-	make_actor(all_actors.shader,{2,4,0})
-	make_actor(all_actors.shader,{-2,8,0})
-	make_actor(all_actors.shader,{0,2,-2})
+	make_actor(all_actors.tree,{2.5,0,0})
 	plyr=make_plyr(0,5,-10,0.15)
 end
 
@@ -1080,6 +1086,20 @@ __gfx__
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-3040f1d10101308068083808c8080808a7086a08a7083808a8f8d8a88737a8876040003010203040003030205030003060407040003050201030003070408030
+5040f1d10101308068083808c8080808a7086a08a7083808a8f8d8a88737a8876040003010203040003030205030003060407040003050201030003070408030
 003080406060b98817568817b988f80888f90888165688f86021d1a10291f0a0400608060a080606080a0a080a103000401020403010080a0850b171c0910110
-400a080a0a080606080606080a106000401040302010080a08000000000000000000000000000000000000000000000000000000000000000000000000000000
+400a080a0a080606080606080a106000401040302010080a0850b141b101d110846887f66898f668579868a89848672948282928a7e92828e928f774288874fc
+98f6fca8989da8489d98570988548998b36808986808f66867f7e8e698e88698e8e648e8e6f8e8379819869819e64819e6f8193798a7c7c968c7c9a718c908a8
+98a787f6a798f6a75798a7a89868c779083829c76729c728296818790838e9e7a7e9e728e9a7c779088874e7f774e788740838130898131398f613a89872a848
+7298570889d30889630788548698b3a70898a708f6a767f7a7187927e69827869827e64827e6f8273798f68698f6e648f6e6f8f637986818c963c00030401160
+9010503011211031600040d1e152d29010406050708090104050303272c0004002406062901040626080a29010401090f212901050102120a090901040202203
+a09010404020b0c090104090a02313901040c0b0e0d09010400123a0f0c000402111402090104060113050901030313041600040d1f184e15000405161817150
+00407181c1b1500040b1c1a19150004091a1615150004071b19151500040c18161a1c000304282b390105032d312c3b36000405292e3d290104082c2b2729010
+40705072b2c000400262824260004084f1e392901050a28070b2c290104062a2c28290103013f29090105012f20322c390104040422220901040424333229010
+40323010129010302303a0901040f213230390104043536333901040238373e2901040a3930323c00040c32242b3901040827232b3901030d3f332600040e184
+9252500040042434145000402464743450004064445474500040440414545000402404446450004074541434600040f1d1d2e363f908680a08080806080a0858
+08065828796998f9280806b70a08d7080a08080ae70a08d7080ae70806f70a0808f90868a696d708080a0608080879790a080808969608967908799616086806
+0808080806060858081688e77969080a0808080a77f9280816a70608d7080ae7080ae70806c70806080608d7080ae70608080806f70608081608686996d70a08
+080a0808087979060808089696089679087996060808a0b141b101d110d0d0a1321080fc98f6fca8981986980838e90838131398f613a898f68698b010004010
+207060100030804030100030702040100030807040100030708060100030605010100030805060100030305080100030105030100030201030100030203040b0
+080ae708c69908e9c88717b9174628080ad7674657081677a84657f846288817b900000000000000000000000000000000000000000000000000000000000000

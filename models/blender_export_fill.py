@@ -65,11 +65,14 @@ for v in obdata.vertices:
 s = s + "{:02x}".format(len(obdata.polygons))
 for f in obdata.polygons:
     # color
-    slot = obj.material_slots[f.material_index]
-    mat = slot.material
-    s = s + "{:02x}".format(diffuse_to_p8color(mat.diffuse_color))
-    # + dual-sided?
-    s = s + "{:02x}".format(0 if mat.game_settings.use_backface_culling else 1)
+    if len(obj.material_slots)>0:
+        slot = obj.material_slots[f.material_index]
+        mat = slot.material
+        s = s + "{:02x}".format(diffuse_to_p8color(mat.diffuse_color))
+        # + dual-sided?
+        s = s + "{:02x}".format(0 if mat.game_settings.use_backface_culling else 1)
+    else:
+        s = s + "{:02x}{:02x}".format(1,0)
     # + vertex count
     s = s + "{:02x}".format(len(f.loop_indices))
     # + vertex id (= edge loop)
