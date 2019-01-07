@@ -5,21 +5,29 @@ __lua__
 -- by freds72
 
 -- game globals
-local time_t=0
+local time_t,time_dt=0,1/30
 
 -- register json context here
 function nop() return true end
 
 -- player
 local plyr
-local actors,world={},{}
--- ground constants 
-local ground_shift,ground_colors,ground_level=2,{1,13,6}
+local actors={}
+
+-- physic engine
+local world={}
+-- physic thresholds
+local k_small=0.001
+local k_small_v=0.01
+-- baumgarte
+local k_bias=0.2
+local k_slop=0.05
+
 -- camera
 local cam
 local face_id=0
 -- light direction (sun)
-local light_n={-0.707,-0.707,0}
+local light_n={0,1,0}
 
 -- zbuffer (kind of)
 local drawables={}
@@ -132,7 +140,7 @@ function zbuf_draw()
 		if o.draw then
 			o.self:draw(o.x,o.y,o.z,o.w)
 		else
-			cam:draw(polyfill,o.v,o.light==true and o.c or sget(8,o.c))
+			cam:draw(polyfill,o.v,o.light==true and 1 or 8) --o.c or sget(8,o.c))
 			if o.shadows then
  			-- shadow color
  			local sc=sget(8,o.c)
@@ -194,7 +202,7 @@ function collect_faces(model,pos,m,out,out_light)
 		-- shadow caster
 		if light_facing then
 			-- include face normal in world space
-			if(#out_light<3) add(out_light,{v=vertices,id=face_id,n=m_x_v(m,n),pn={}})
+			-- add(out_light,{v=vertices,id=face_id,n=m_x_v(m,n),pn={}})
 		end
 	end
 end
@@ -264,7 +272,7 @@ function sqr_dist(a,b)
 end
 
 -- world axis
-local v_fwd,v_right,v_up={0,0,1},{1,0,0},{0,1,0}
+local v_fwd,v_right,v_up,v_zero={0,0,1},{1,0,0},{0,1,0},function() return {0,0,0} end
 
 function make_v(a,b)
 	return {
@@ -282,6 +290,9 @@ function v_clone(v)
 end
 function v_dot(a,b)
 	return a[1]*b[1]+a[2]*b[2]+a[3]*b[3]
+end
+function v_sqr(a)
+	return {a[1]*a[1],a[2]*a[2],a[3]*a[3]}
 end
 function v_normz(v)
 	local d=v_dot(v,v)
@@ -449,8 +460,7 @@ end
 local all_models={}
 
 function draw_actor(self,x,y,z,w)	
-	-- distance culling
-	draw_model(self.model,self.m,x,y,z,w)
+ -- particles
 end
 
 -- little hack to perform in-place data updates
@@ -458,13 +468,14 @@ local draw_session_id=0
 
 function plane_ray_intersect(n,p,a,b,inside)
 	p=make_v(a,p)
-	if(v_dot(p,n)>0) add(inside,a)
+	local da=v_dot(p,n)
+	if(da>0) add(inside,a)
 		
 	local r=make_v(a,b)
 	local den=v_dot(r,n)
 	-- no intersection
 	if abs(den)>0.001 then
-		local t=v_dot(p,n)/den
+		local t=da/den
 		if t>0.01 and t<=1 then
 			-- intersect pos
 			v_scale(r,t)
@@ -506,6 +517,8 @@ local all_actors={
 		end
 	},
 	piper={
+		mass=32,
+		hardness=0.02,
 		model="piper",
 		update=function(self)			
 			return true
@@ -573,8 +586,14 @@ end
 -- bounding box
 function make_rigidbody(a,bbox)
 	local force,torque=v_zero(),v_zero()
+ 	-- model bounding box
+	local vmin,vmax={32000,32000,32000},{-32000,-32000,-32000}
+	for _,v in pairs(bbox.v) do
+		vmin,vmax=v_min(vmin,v),v_max(vmax,v)
+	end
+	
 	-- compute inertia tensor
-	local size=v_sqr(get_modelsize(bbox))
+	local size=v_sqr(make_v(vmin,vmax))
 	local ibody=make_m(size[2]+size[3],size[1]+size[3],size[1]+size[2])
 	m_scale(ibody,a.mass/12)
 	
@@ -587,6 +606,12 @@ function make_rigidbody(a,bbox)
 		v=v_zero(),
 		omega=v_zero(),
 		mass_inv=1/a.mass,
+		-- obj to world space
+		pt_toworld=function(self,p)
+			p=m_x_v(self.m,p)
+			v_add(p,self.pos)
+			return p
+		end,
 		-- world velocity
 		pt_velocity=function(self,p)
 			p=make_v_cross(self.omega,make_v(self.pos,p))
@@ -649,7 +674,7 @@ function make_rigidbody(a,bbox)
 				local v=bbox.v[vi]
 				-- to world space
 				local p=self:pt_toworld(v)
-				local h,n=get_altitude_and_n(p,true)
+				local h,n=0,{0,1,0}
 				local depth=h-p[2]
 				if depth>k_small then
 					depth=v_dot(n,{0,depth,0})
@@ -685,9 +710,9 @@ function make_rigidbody(a,bbox)
 end
 
 -- physic world
-function world:update()
+function world_update()
 	local contacts={}
-	for _,a in pairs(self) do
+	for _,a in pairs(world) do
 		-- collect contacts
 		a:update_contacts(contacts)
 		a:prepare(time_dt)
@@ -702,7 +727,7 @@ function world:update()
 	end
 	
 	-- move bodies
-	for _,a in pairs(self) do
+	for _,a in pairs(world) do
 		a:integrate(time_dt)
 	end
 end
@@ -888,18 +913,23 @@ function _update()
 	
 	control_plyr(plyr)
 
+	--[[
  	light_n={
  		cos(time_t/300),
  		-1,
  		sin(time_t/300)
  	}
  	v_normz(light_n)
-
+ ]]
+ 
 	-- update cam
 	cam:track(plyr.pos,plyr.q)
 	
+	-- physic update
+	world_update()
+
 	zbuf_filter(actors)
-	
+
 	-- must be done after update loop
 	cam:update()
 end
@@ -924,10 +954,12 @@ function _init()
 
 	cam=make_cam(64,64,64)
 
-	make_actor(all_actors.ground,{0,0,0})
+	--make_actor(all_actors.ground,{0,0,0})
 	--make_actor(all_actors.shader,{0,2,0})
-	make_actor(all_actors.piper,{0,0,0})
-	plyr=make_plyr(0,5,-10,0.15)
+
+	make_rigidbody(make_actor(all_actors.piper,{0,5,0}),all_models["piper_bbox"])
+	plyr=make_plyr(2,1,3,0.58)
+		
 end
 
 -->8
@@ -1128,18 +1160,17 @@ __gfx__
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 5040f1d10101308068083808c8080808a7086a08a7083808a8f8d8a88737a8876040003010203040003030205030003060407040003050201030003070408030
 003080406060b98817568817b988f80888f90888165688f86021d1a10291f0a0400608060a080606080a0a080a103000401020403010080a0850b171c0910110
-400a080a0a080606080606080a106000401040302010080a0850b141b101d110846887f66898f668579868a89848672948282928a7e92828e928f774288874fc
-98f6fca8989da8489d98570988548998b36808986808f66867f7e8e698e88698e8e648e8e6f8e8379819869819e64819e6f8193798a7c7c968c7c9a718c908a8
-98a787f6a798f6a75798a7a89868c779083829c76729c728296818790838e9e7a7e9e728e9a7c779088874e7f774e788740838130898131398f613a89872a848
-7298570889d30889630788548698b3a70898a708f6a767f7a7187927e69827869827e64827e6f8273798f68698f6e648f6e6f8f637986818c963c00030401160
-9010503011211031600040d1e152d29010406050708090104050303272c0004002406062901040626080a29010401090f212901050102120a090901040202203
-a09010404020b0c090104090a02313901040c0b0e0d09010400123a0f0c000402111402090104060113050901030313041600040d1f184e15000405161817150
-00407181c1b1500040b1c1a19150004091a1615150004071b19151500040c18161a1c000304282b390105032d312c3b36000405292e3d290104082c2b2729010
-40705072b2c000400262824260004084f1e392901050a28070b2c290104062a2c28290103013f29090105012f20322c390104040422220901040424333229010
-40323010129010302303a0901040f213230390104043536333901040238373e2901040a3930323c00040c32242b3901040827232b3901030d3f332600040e184
-9252500040042434145000402464743450004064445474500040440414545000402404446450004074541434600040f1d1d2e363f908680a08080806080a0858
-08065828796998f9280806b70a08d7080a08080ae70a08d7080ae70806f70a0808f90868a696d708080a0608080879790a080808969608967908799616086806
-0808080806060858081688e77969080a0808080a77f9280816a70608d7080ae7080ae70806c70806080608d7080ae70608080806f70608081608686996d70a08
-080a0808087979060808089696089679087996060808a0b141b101d110d0d0a1321080fc98f6fca8981986980838e90838131398f613a898f68698b010004010
-207060100030804030100030702040100030807040100030708060100030605010100030805060100030305080100030105030100030201030100030203040b0
-080ae708c69908e9c88717b9174628080ad7674657081677a84657f846288817b900000000000000000000000000000000000000000000000000000000000000
+400a080a0a080606080606080a106000401040302010080a0850b141b101d110646887f66898f668579868a89848672948282928a7e92828e9288874fc98f6fc
+a8989da8489d98570988548998b36808986808f66867f7e8e698e88698e8e648e8e6f8e8379819869819e64819e6f8193798a7c7c968c7c9a718c908a898a787
+f6a798f6a75798a7a89868c779083829c76729c728296818790838e9e7a7e9e728e9a7c779088874e788740838130898131398f613a89872a8487298570889d3
+0889630788548698b3a70898a708f6a767f7a7187927e69827869827e64827e6f8273798f68698f6e648f6e6f8f637986818c923c00030400160901050300111
+1021600040c1d142c29010406050708090104050302262c00040f1406052901040526080929010301203209010404020a0b0901040b0a0d0c0901040f00390e0
+c000401101402090104060013050901030213031600040c1e164d1500040415171615000406171b1a1500040a1b191815000408191514150004061a181415000
+40b1715191c0003032729390105022b302a3936000404282c3c290104072b2a262901040705062a2c00040f152723260004064e1c382901050928070a2b29010
+405292b2729010401202f2039010300210f2901040403212209010403223131290104022301002901040f210200390104023334313901040036353d290104083
+73e203c00040a312329390104072622293901030b3d322600040d1648242500040e30414f3500040044454145000404424345450004024e3f33450004004e324
+445000405434f314600040e1c1c2c323f908680a08080806080a085808065828796998f928080a08080ae7080ae70806f70a0808f90868a696d708080a060808
+0879790a0808089696089679087996160868060808080806060858081688e77969080a0808080a77f9280608d70806b7080ae7080ae70806c70a08d7080ae706
+08080806f70608081608686996d70a08080a0808087979060808089696089679087996060808a0b141b101d110d0d0a1321080fc98f6fca8981986980838e908
+38131398f613a898f68698b010004010207060100030804030100030702040100030807040100030708060100030605010100030805060100030305080100030
+105030100030201030100030203040b0080ae708c69908e9c88717b9174628080ad7674657081677a84657f846288817b9000000000000000000000000000000
