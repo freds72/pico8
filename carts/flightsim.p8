@@ -42,25 +42,24 @@ function zbuf_draw()
 			collect_faces(d.model,d.pos,d.m,faces,light_faces)
 		else
 			-- other objects (particles, sprites...)
-			local p=d.pos
-			local x,y,z,w=cam:project(p[1],p[2],p[3])
+			local x,y,z,w=cam:project(d.pos)
 			add(objs,{self=d,key=z,draw=d.draw,x=x,y=y,z=z,w=w})
 		end
 	end
-	print(#faces,2,12,7)
+	print("#l:"..#light_faces,2,12,7)
+	print("f:"..#faces,2,22,7)
 	
 	--
 	for _,f in pairs(faces) do
-		-- no need to shade shaded faces
+		-- shadows on light faces only
 		if f.light==true then
 			-- clip face with light volumes
-			f.shadows={}
  		for _,sf in pairs(light_faces) do
- 			-- per-face shadow polygon
- 			local shadow_v={}
- 			-- clip against near face
  			-- don't self clip
  			if sf.id!=f.id then
+ 				-- per-face shadow polygon
+ 				local shadow_v={}
+ 				-- clip against near face
  				local v0=f.v[#f.v]
  				for k=1,#f.v do
  					local v1=f.v[k]
@@ -69,7 +68,7 @@ function zbuf_draw()
  				end
  				-- 
  				if #shadow_v>2 then
- 					-- clip against shadow edges					
+ 					-- clip against caster edges
  					local pv0=sf.v[#sf.v]
  					for i=1,#sf.v do
  						local pv1=sf.v[i]
@@ -93,39 +92,37 @@ function zbuf_draw()
  						-- use output for next edge
  						shadow_v=tmp_v
  						-- next shadow edge
- 		 			pv0=pv1
+ 		 				pv0=pv1
  					end
  					-- attach shadow poly to face
  					add(f.shadows,shadow_v)
  				end
- 			end	
+ 			end
  		end
 	 end
 	end
 
 	-- project in cam space
 	for _,f in pairs(faces) do
-		if #f.v>0 then
-	 		-- project into cam space
- 			local z=0
-	 		for i=1,#f.v do 			
- 				f.v[i]=m_x_v(cam.m,make_v(cam.pos,f.v[i]))
- 				z+=f.v[i][3]
-			end
-			-- any shadow poly?
-			if f.shadows then
-				for _,v in pairs(f.shadows) do 
-					for i=1,#v do
-						v[i]=m_x_v(cam.m,make_v(cam.pos,v[i]))
-					end
+		-- project into cam space
+		local z=0
+		for i=1,#f.v do
+			f.v[i]=m_x_v(cam.m,make_v(cam.pos,f.v[i]))
+			-- depth
+			z+=f.v[i][3]
+		end
+		f.key=z/#f.v
+		-- any shadow poly?
+		if f.shadows then
+			for _,v in pairs(f.shadows) do 
+				for i=1,#v do
+					v[i]=m_x_v(cam.m,make_v(cam.pos,v[i]))
 				end
 			end
- 		z/=#f.v
- 		f.key=z		
- 		add(objs,f)
 		end
+		add(objs,f)
 	end
-
+	
 	-- z-sorting
 	sort(objs)
 
@@ -135,12 +132,12 @@ function zbuf_draw()
 		if o.draw then
 			o.self:draw(o.x,o.y,o.z,o.w)
 		else
-			cam:polyfill(o.v,o.light==true and o.c or sget(8,o.c))
+			cam:draw(polyfill,o.v,o.light==true and o.c or sget(8,o.c))
 			if o.shadows then
  			-- shadow color
  			local sc=sget(8,o.c)
  			for _,v in pairs(o.shadows) do
- 				cam:polyfill(v,sc)	
+ 				cam:draw(polyfill,v,sc)
  			end
 			end
 		end
@@ -171,6 +168,7 @@ function collect_faces(model,pos,m,out,out_light)
 	local v_cache={} 
 	for i=1,#model.f do
 		local f,n=model.f[i],model.n[i]
+		-- unique face id
 		face_id+=1
 		-- light facing?
 		local cam_facing,light_facing=v_dot(n,cam_pos)>=model.cp[i],v_dot(n,l)<0
@@ -178,7 +176,7 @@ function collect_faces(model,pos,m,out,out_light)
 		-- viz calculation
 		local vertices={}
 		if cam_facing or light_facing then
-			-- project vertices			
+			-- project vertices
 			for k=1,#f.vi do
 				local vi=f.vi[k]
 				local v=v_cache[vi]
@@ -191,12 +189,12 @@ function collect_faces(model,pos,m,out,out_light)
 			end
 		end
 		if cam_facing then
-			add(out,{v=vertices,c=f.c,id=face_id,light=light_facing})
+			add(out,{v=vertices,c=f.c,id=face_id,light=light_facing,shadows={}})
 		end
 		-- shadow caster
 		if light_facing then
 			-- include face normal in world space
-			add(out_light,{v=vertices,id=face_id,n=m_x_v(m,n),pn={}})
+			if(#out_light<3) add(out_light,{v=vertices,id=face_id,n=m_x_v(m,n),pn={}})
 		end
 	end
 end
@@ -306,20 +304,89 @@ function v_add(v,dv,scale)
 	v[2]+=scale*dv[2]
 	v[3]+=scale*dv[3]
 end
+function v_min(a,b)
+	return {min(a[1],b[1]),min(a[2],b[2]),min(a[3],b[3])}
+end
+function v_max(a,b)
+	return {max(a[1],b[1]),max(a[2],b[2]),max(a[3],b[3])}
+end
 
 -- matrix functions
+function make_m(x,y,z)
+	return {
+		x or 1,0,0,
+		0,y or 1,0,
+		0,0,z or 1}
+end
 function m_x_v(m,v)
 	local x,y,z=v[1],v[2],v[3]
-	return {
-		m[1]*x+m[5]*y+m[9]*z,
-		m[2]*x+m[6]*y+m[10]*z,
-		m[3]*x+m[7]*y+m[11]*z}
+	return {m[1]*x+m[4]*y+m[7]*z,m[2]*x+m[5]*y+m[8]*z,m[3]*x+m[6]*y+m[9]*z}
 end
-function m_x_xyz(m,x,y,z)		
-	return
-		m[1]*x+m[5]*y+m[9]*z+m[13],
-		m[2]*x+m[6]*y+m[10]*z+m[14],
-		m[3]*x+m[7]*y+m[11]*z+m[15]
+-- inplace matrix multiply invert
+function m_inv_x_v(m,v,p)
+	local x,y,z=v[1],v[2],v[3]
+	v[1],v[2],v[3]=m[1]*x+m[2]*y+m[3]*z,m[4]*x+m[5]*y+m[6]*z,m[7]*x+m[8]*y+m[9]*z
+end
+
+-- generic matrix inverse
+function m_inv(me)
+	local te={
+	me[9]*me[5]-me[6]*me[8],me[9]*me[2]+me[3]*me[8],me[6]*me[2]-me[3]*me[5],
+	-me[9]*me[4]+me[6]*me[7],me[9]*me[1]-me[3]*me[7],-me[6]*me[1]+me[3]*me[4],
+	me[9]*me[4]-me[5]*me[8],-me[8]*me[1]+me[2]*me[7],me[5]*me[1]-me[2]*me[4]}
+
+	local det = me[1]*te[1]+me[2]*te[4]+me[3]*te[7]
+	-- not inversible?
+	assert(det>0)
+	m_scale(te,1/det)
+	return te
+end
+
+function m_scale(m,scale)
+	for i=1,#m do
+		m[i]*=scale
+	end
+end
+-- matrix transpose
+function m_transpose(m)
+	return {
+		m[1],m[4],m[7],
+		m[2],m[5],m[8],
+		m[3],m[6],m[9]}
+end
+-- matrix 
+function m_x_m(a,b)
+	local a11,a12,a13=a[1],a[4],a[7]
+	local a21,a22,a23=a[2],a[5],a[8]
+	local a31,a32,a33=a[3],a[6],a[9]
+	local b11,b12,b13=b[1],b[4],b[7]
+	local b21,b22,b23=b[2],b[5],b[8]
+	local b31,b32,b33=b[3],b[6],b[9]
+	
+ return {
+		a11*b11+a12*b21+a13*b31,
+		a21*b11+a22*b21+a23*b31,
+		a31*b11+a32*b21+a33*b31,
+		a11*b12+a12*b22+a13*b32,
+		a21*b12+a22*b22+a23*b32,
+		a31*b12+a32*b22+a33*b32,
+		a11*b13+a12*b23+a13*b33,
+		a21*b13+a22*b23+a23*b33,
+		a31*b13+a32*b23+a33*b33
+    }
+end
+
+-- returns right vector from matrix
+function m_right(m)
+	return {m[1],m[2],m[3]}
+end
+-- returns up vector from matrix
+function m_up(m)
+	return {m[4],m[5],m[6]}
+end
+-- returns foward vector from matrix
+function m_fwd(m)
+	return {m[7],m[8],m[9]}
 end
 
 -- quaternion
@@ -345,6 +412,16 @@ function q_normz(q)
 		q[4]/=d
 	end
 end
+function q_dydt(q,v,dt)
+	local dq={v[1]*dt,v[2]*dt,v[3]*dt,0}
+	q_x_q(dq,q)
+
+	q[1]+=0.5*dq[1]
+	q[2]+=0.5*dq[2]
+	q[3]+=0.5*dq[3]
+	q[4]+=0.5*dq[4]
+	q_normz(q)
+end
 
 function q_x_q(a,b)
 	local qax,qay,qaz,qaw=a[1],a[2],a[3],a[4]
@@ -363,38 +440,9 @@ function m_from_q(q)
 	local wx,wy,wz=w*x2,w*y2,w*z2
 
 	return {
-		1-(yy+zz),xy+wz,xz-wy,0,
-		xy-wz,1-(xx+zz),yz+wx,0,
-		xz+wy,yz-wx,1-(xx+yy),0,
-		0,0,0,1
-	}
-end
-
--- only invert 3x3 part
-function m_inv(m)
-	m[2],m[5]=m[5],m[2]
-	m[3],m[9]=m[9],m[3]
-	m[7],m[10]=m[10],m[7]
-end
--- inplace 3x3 matrix multiply invert
-function m_inv_x_v(m,v)
-	local x,y,z=v[1]-m[13],v[2]-m[14],v[3]-m[15]
-	v[1],v[2],v[3]=m[1]*x+m[2]*y+m[3]*z,m[5]*x+m[6]*y+m[7]*z,m[9]*x+m[10]*y+m[11]*z
-end
-function m_set_pos(m,v)
-	m[13],m[14],m[15]=v[1],v[2],v[3]
-end
--- returns foward vector from matrix
-function m_fwd(m)
-	return {m[9],m[10],m[11]}
-end
--- returns up vector from matrix
-function m_up(m)
-	return {m[5],m[6],m[7]}
-end
--- right vector
-function m_right(m)
-	return {m[1],m[2],m[3]}
+		1-(yy+zz),xy+wz,xz-wy,
+		xy-wz,1-(xx+zz),yz+wx,
+		xz+wy,yz-wx,1-(xx+yy)}
 end
 
 -- models
@@ -669,9 +717,7 @@ function make_plyr(x,y,z,angle)
 		draw=nop,
 		update=update_plyr
 	}
-	local m=m_from_q(p.q)
-	m_set_pos(m,p)
-	p.m=m
+	p.m=m_from_q(p.q)
 	add(actors,p)
 	return p
 end
@@ -685,9 +731,7 @@ function make_actor(src,p,q)
 	a.draw=a.draw or draw_actor
 	a.model=all_models[src.model]
 	-- init orientation
-	local m=m_from_q(a.q)
-	m_set_pos(m,p)
-	a.m=m
+	a.m=m_from_q(a.q)
 	return add(actors,a)
 end
 
@@ -705,24 +749,21 @@ function make_cam(x0,y0,focal)
 		pos={0,0,3},
 		q=make_q(v_up,0),
 		update=function(self)
-			self.m=m_from_q(self.q)
-			m_inv(self.m)
+			self.m=m_transpose(m_from_q(self.q))
 		end,
 		track=function(self,pos,q)
 			self.pos,q=v_clone(pos),q_clone(q)
 			self.q=q
 		end,
-		project=function(self,x,y,z)
+		project=function(self,v)
 			-- world to view
-			x-=self.pos[1]
-			y-=self.pos[2]
-			z-=self.pos[3]
-			x,y,z=m_x_xyz(self.m,x,y,z)
+			v=m_x_v(self.m,make_v(self.pos,v))
 			-- too close to cam plane?
-			if(z<1) return nil,nil,-1,nil
+			local z=v[3]
+			if(z<znear) return nil,nil,-1,nil
 			-- view to screen
 	 		local w=focal/z
- 			return x0+x*w,y0-y*w,z,w
+ 			return x0+v[1]*w,y0-v[2]*w,z,w
 		end,
 		-- project cam-space points into 2d
 		project2d=function(self,v)
@@ -731,7 +772,7 @@ function make_cam(x0,y0,focal)
  		return x0+v[1]*w,y0-v[2]*w
 		end,
 		-- draw
-		polyfill=function(self,v,c)
+		draw=function(self,fn,v,c)
  		-- clip loop
  		local out={}
  		for i=1,#z_planes do
@@ -745,7 +786,7 @@ function make_cam(x0,y0,focal)
  			-- previous clipped points
  			v,out=out,{}
  		end
- 		polyfill(v,c)	
+ 		fn(v,c)
 		end
 	}
 	return c
@@ -783,7 +824,7 @@ function draw_ground(self)
 	end
 
 	-- sun
-	local x,y,z,w=cam:project(cam.pos[1],cam.pos[2]+89,cam.pos[3]+20)
+	local x,y,z,w=cam:project({cam.pos[1],cam.pos[2]+89,cam.pos[3]+20})
 	if z>0 then
 		circfill(x,y,7+rnd(2),0xc7)
 		circfill(x,y,5,0x7a)
@@ -802,7 +843,7 @@ function draw_ground(self)
 		local ii=scale*i-dx+x0
 		for j=-4,4 do
 			local jj=scale*j-dy+z0
-			local x,y,z,w=cam:project(ii,0,jj)
+			local x,y,z,w=cam:project({ii,0,jj})
 			if z>0 then
 				pset(x,y,3)
 			end
@@ -836,7 +877,6 @@ function control_plyr(self)
 	local fwd=m_fwd(m)
 	v_add(self.pos,fwd,boost*self.acc)
 
-	m_set_pos(m,self.pos)
 	self.m,self.q=m,q
 end
 
@@ -884,9 +924,9 @@ function _init()
 
 	cam=make_cam(64,64,64)
 
-	--make_actor(all_actors.ground,{0,0,0})
-	make_actor(all_actors.tree,{0,0,0})
-	make_actor(all_actors.tree,{2.5,0,0})
+	make_actor(all_actors.ground,{0,0,0})
+	--make_actor(all_actors.shader,{0,2,0})
+	make_actor(all_actors.piper,{0,0,0})
 	plyr=make_plyr(0,5,-10,0.15)
 end
 
