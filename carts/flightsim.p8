@@ -121,11 +121,9 @@ function zbuf_draw()
 		end
 		f.key=z/#f.v
 		-- any shadow poly?
-		if f.shadows then
-			for _,v in pairs(f.shadows) do 
-				for i=1,#v do
-					v[i]=m_x_v(cam.m,make_v(cam.pos,v[i]))
-				end
+		for _,v in pairs(f.shadows) do 
+			for i=1,#v do
+				v[i]=m_x_v(cam.m,make_v(cam.pos,v[i]))
 			end
 		end
 		add(objs,f)
@@ -141,12 +139,10 @@ function zbuf_draw()
 			o.self:draw(o.x,o.y,o.z,o.w)
 		else
 			cam:draw(polyfill,o.v,o.light==true and o.c or sget(8,o.c))
-			if o.shadows then
- 			-- shadow color
- 			local sc=sget(8,o.c)
- 			for _,v in pairs(o.shadows) do
- 				cam:draw(polyfill,v,sc)
- 			end
+			-- shadow color
+			local sc=sget(8,o.c)
+			for _,v in pairs(o.shadows) do
+				cam:draw(polyfill,v,sc)
 			end
 		end
 	end
@@ -163,7 +159,7 @@ function zbuf_filter(array)
 end
 
 -- collect visible faces
-function collect_faces(model,pos,m,out,out_light)
+function collect_faces(model,pos,m,out,out_casters)
 	-- cam pos in object space
 	local cam_pos=v_clone(cam.pos)
 	m_inv_x_v(m,cam_pos)
@@ -178,12 +174,15 @@ function collect_faces(model,pos,m,out,out_light)
 		local f,n=model.f[i],model.n[i]
 		-- unique face id
 		face_id+=1
+		-- cam facing?
 		-- light facing?
-		local cam_facing,light_facing=v_dot(n,cam_pos)>=model.cp[i],v_dot(n,l)<0
-		if(f.double_sided) cam_facing,light_facing=true,true
+		local light_facing=v_dot(n,l)<0
+		local cam_facing,is_caster=v_dot(n,cam_pos)>=model.cp[i],f.double_sided or light_facing
+		-- edge case for single face polys
+		if(f.double_sided and cam_facing==false) cam_facing,light_facing=true,not light_facing
 		-- viz calculation
 		local vertices={}
-		if cam_facing or light_facing then
+		if cam_facing or is_caster then
 			-- project vertices
 			for k=1,#f.vi do
 				local vi=f.vi[k]
@@ -200,9 +199,9 @@ function collect_faces(model,pos,m,out,out_light)
 			add(out,{v=vertices,c=f.c,id=face_id,light=light_facing,shadows={}})
 		end
 		-- shadow caster
-		if light_facing then
+		if is_caster then
 			-- include face normal in world space
-			add(out_light,{v=vertices,id=face_id,n=m_x_v(m,n),pn={}})
+			add(out_casters,{v=vertices,id=face_id,n=m_x_v(m,n),pn={}})
 		end
 	end
 end
@@ -468,14 +467,14 @@ local draw_session_id=0
 
 function plane_ray_intersect(n,p,a,b,inside)
 	p=make_v(a,p)
-	local da=v_dot(p,n)
-	if(da>0) add(inside,a)
+	local t=v_dot(p,n)
+	if(t>0) add(inside,a)
 		
 	local r=make_v(a,b)
 	local den=v_dot(r,n)
 	-- no intersection
 	if abs(den)>0.001 then
-		local t=da/den
+		t/=den
 		if t>0.01 and t<=1 then
 			-- intersect pos
 			v_scale(r,t)
@@ -520,7 +519,7 @@ local all_actors={
 		mass=32,
 		hardness=0.02,
 		model="piper",
-		update=function(self)			
+		update=function(self)
 			return true
 		end
 	}
@@ -1000,7 +999,7 @@ function unpack_models()
 		-- faces
 		model.f={}
 		for i=1,unpack_int() do
-			local f={ni=i,vi={},c=unpack_int(),double_sided=unpack_int()==1}
+			local f={ni=i,vi={},c=unpack_int(),double_sided=unpack_int()==1 or nil}
 			-- vertex indices
 			for i=1,unpack_int() do
 				add(f.vi,unpack_int())
