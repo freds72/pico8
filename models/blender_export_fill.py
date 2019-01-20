@@ -71,8 +71,10 @@ for f in obdata.polygons:
         s = s + "{:02x}".format(diffuse_to_p8color(mat.diffuse_color))
         # + dual-sided?
         s = s + "{:02x}".format(0 if mat.game_settings.use_backface_culling else 1)
+        # + cast shadows?
+        s = s + "{:02x}".format(1 if mat.use_cast_shadows else 0)
     else:
-        s = s + "{:02x}{:02x}".format(1,0)
+        s = s + "{:02x}{:02x}{:02x}".format(1,0,0)
     # + vertex count
     s = s + "{:02x}".format(len(f.loop_indices))
     # + vertex id (= edge loop)
