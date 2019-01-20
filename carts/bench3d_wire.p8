@@ -371,7 +371,19 @@ function draw_model(model,m,x,y,z,w)
 				p[bk]={x=64+x*w,y=64-y*w,z=z,w=w}
 				b=p[bk]
 			end
-			if(a.z>0 and b.z>0) line(a.x,a.y,b.x,b.y)
+			if a.z>0 and b.z>0 then
+			 --[[
+			 for i=0,15 do
+			 	local t=i/15
+			 	local u=1-(t*b.w)/lerp(a.w,b.w,t)
+			 	local x1,y1=lerp(a.x,b.x,u),lerp(a.y,b.y,u)
+			 	pset(x1,y1,1)--sget(8+4*u,0))
+			 end
+			 ]]
+			 texline(a.x,a.y,b.x,b.y,1,0,1,a.w,b.w,10)
+			 -- line(a.x,a.y,b.x,b.y,7)
+			 -- fastline2(a.x,a.y,b.x,b.y,7) 
+			end
 		end
 	end
 	fillp()
@@ -488,7 +500,7 @@ function draw_stats()
 	fillp(0b1000100010001111)
 	rectfill(0,0,127,9,0x10)
 	fillp()
-	local cpu,mem=stat(1),stat(0)
+	local cpu,mem=100*stat(1),stat(0)
 	cpu_stats[time_t%128+1]={flr(100*cpu),flr(100*(mem/2048))}
 	for i=1,128 do
 		local s=cpu_stats[(time_t+i)%128+1]
@@ -582,8 +594,109 @@ function unpack_models()
 		all_models[name]=clone(model,all_models[name])
 	end
 end
+-->8
+-- tex line
+-- algorithm credits: felice
+-- based off: http://jamesarich.weebly.com/uploads/1/4/0/3/14035069/480xprojectreport.pdf
+function texline(x0,y0,x1,y1,c,u0,u1,w0,w1,n)
+	local w,h=abs(x1-x0),abs(y1-y0)
+
+	-- too small?
+	if h<n and w<n then
+		line(x0,y0,x1,y1,12)
+		return
+	end
+
+	color(c)
+ if h>w then
+	 -- order points on y
+	 if(y0>y1) x0,y0,x1,y1,u0,u1,w0,w1=x1,y1,x0,y0,u1,u0,w1,w0
+		w,h=x1-x0,y1-y0
+ 	local du,dw=(u1*w1-u0*w0)/h,(w1-w0)/h
+		 	
+  -- y-major
+	 u0*=w0
+ 	if y0<0 then
+ 		color(2)
+ 		local t=-y0/h
+ 	 u0=lerp(u0,u1*w0,t)
+ 	 w0=lerp(w0,w1,t)
+ 		x0,y0=x0+w*t,0
+  end
+		 
+  for y=y0,min(y1,127) do	
+ 		local u=u0/w0
+   pset(x0,y, sget(8+7*u,0))
+   x0+=w/h
+   u0+=du
+   w0+=dw
+  end
+ else
+ 	-- x-major
+ 	if(x0>x1) x0,y0,x1,y1,u0,u1,w0,w1=x1,y1,x0,y0,u1,u0,w1,w0
+		w,h=x1-x0,y1-y0
+ 	local du,dw=(u1*w1-u0*w0)/w,(w1-w0)/w
+
+ 	u0*=w0
+ 	if x0<0 then
+ 		color(8)
+ 	 local t=-x0/w
+ 	 -- u is not linear
+ 	 -- u*w is
+ 	 u0=lerp(u0,u1*w1,t)
+ 	 w0=lerp(w0,w1,t)
+ 	 x0,y0=0,y0+h*t
+ 	end
+	
+		--[[
+	 local s="u0:"..u0.." w0:"..w0
+	 s=s.."\nu1:"..u1.." w1:"..w1
+	 s=s.."\ndu:"..du.." dw:"..dw
+	 print(s,x1,y1,u1<0 and 8 or 13)
+	 ]]
+	 
+ 	for x=x0,min(x1,127) do	
+ 		local u=u0/w0
+ 	 pset(x,y0,sget(8+7*u,0))
+ 		y0+=h/w
+ 		u0+=du
+ 		w0+=dw
+ 	end
+	end
+end
+
+
+function fastline2(x0,y0,x1,y1,c,u0,u1,w0,w1)
+ -- order points on y
+ if(y0>y1) x0,y0,x1,y1=x1,y1,x0,y0
+	
+	local w,h=x1-x0,y1-y0
+	 
+	color(c)
+ if abs(h)>abs(w) then
+ 	if y0<0 then
+ 		color(2)
+ 		x0,y0=x0-y0*w/h,0
+  end
+  for y=y0,min(y1,127) do	
+   pset(x0,y)
+   x0+=w/h
+  end
+ else
+		if(x0>x1) x0,x1,y0,y1=x1,x0,y1,y0
+ 	if x0<0 then
+ 		color(8)
+ 	 x0,y0=0,y0-x0*h/w
+ 	end
+ 	for x=x0,min(x1,127) do	
+ 	 pset(x,y0)
+ 		y0+=h/w
+ 	end
+	end
+end
+
 __gfx__
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000115566770000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
