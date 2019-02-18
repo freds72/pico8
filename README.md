@@ -10,7 +10,7 @@ Demake of Vlambeer NuclearThrone
 ![intro](pics/nuke_gameplay.gif)
 
 ## Thunderblade
-Demake of classic Sega arcade game
+Remake of classic Sega arcade game
 
 ![lift off!](pics/thunderblade_teaser.gif)
 
