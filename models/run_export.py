@@ -13,7 +13,7 @@ def call(args):
     #
     return exitcode, out, err
 
-file_list = ['vtree','ground','plane','piper-cub_simple','piper-cub_bbox','cornell','torus']
+file_list = ['vtree','ground','plane','cornell','torus','cube']
 s = "{:02x}".format(len(file_list))
 for blend_file in file_list:
     print("Exporting: {}.blend".format(blend_file))
