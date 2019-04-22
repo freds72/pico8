@@ -1,7 +1,7 @@
 # Pico-8
 Misc. games for PICO-8
 
-Playable games here: https://www.lexaloffle.com/bbs/?uid=25532&mode=carts
+Playable games here: https://www.lexaloffle.com/bbs/?uid=25532&mode=carts or https://freds72.itch.io/
 
 # Games
 ## Nuklear Klone
