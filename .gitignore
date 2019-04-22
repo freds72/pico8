@@ -6,4 +6,5 @@ config.txt
 /carts/*.p8.png
 /cdata
 *.blend1
-*.bin
+*.bin/
+/.vscode/
