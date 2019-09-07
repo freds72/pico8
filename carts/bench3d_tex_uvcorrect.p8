@@ -1,5 +1,5 @@
 pico-8 cartridge // http://www.pico-8.com
-version 16
+version 18
 __lua__
 -- 3d textured bench
 -- by freds72
@@ -7,7 +7,7 @@ __lua__
 -- time
 local time_t=0
 -- globals
-local cam_angle,cam_dist=0.45,7
+local cam_angle,cam_dist=0.45,4.5
 local actors,cam,light={}
 function nop() return true end
 
@@ -226,7 +226,7 @@ function m_x_m(a,b)
 		a11*b11+a12*b21+a13*b31+a14*b41,a21*b11+a22*b21+a23*b31+a24*b41,a31*b11+a32*b21+a33*b31+a34*b41,a41*b11+a42*b21+a43*b31+a44*b41,
 		a11*b12+a12*b22+a13*b32+a14*b42,a21*b12+a22*b22+a23*b32+a24*b42,a31*b12+a32*b22+a33*b32+a34*b42,a41*b12+a42*b22+a43*b32+a44*b42,
 		a11*b13+a12*b23+a13*b33+a14*b43,a21*b13+a22*b23+a23*b33+a24*b43,a31*b13+a32*b23+a33*b33+a34*b43,a41*b13+a42*b23+a43*b33+a44*b43,
-		a11*b14+a12*b24+a13*b34+a14*b44,21*b14+a22*b24+a23*b34+a24*b44,a31*b14+a32*b24+a33*b34+a34*b44,a41*b14+a42*b24+a43*b34+a44*b44
+		a11*b14+a12*b24+a13*b34+a14*b44,a21*b14+a22*b24+a23*b34+a24*b44,a31*b14+a32*b24+a33*b34+a34*b44,a41*b14+a42*b24+a43*b34+a44*b44
   }
 end
 
@@ -257,7 +257,7 @@ function draw_model(model,m,x,y,z,w)
 	-- world to cam
 	-- inv cam
 	local cam_m=m_x_m(cam.m,m)
-	m_set_pos(cam_m,{0,-2,cam_dist-1})
+	m_set_pos(cam_m,{0,-0.5,cam_dist-1})
 
 	-- faces
 	local faces,p={},{}
@@ -272,7 +272,7 @@ function draw_model(model,m,x,y,z,w)
 					local x,y,z=cam_m[1]*v[1]+cam_m[5]*v[2]+cam_m[9]*v[3]+cam_m[13],cam_m[2]*v[1]+cam_m[6]*v[2]+cam_m[10]*v[3]+cam_m[14],cam_m[3]*v[1]+cam_m[7]*v[2]+cam_m[11]*v[3]+cam_m[15]
 				 local w=64/z
 				 -- avoid rehash
-					p[vi]={64+x*w,64-y*w,w,0,0}
+					p[vi]={63.5+flr(x*w),63.5-flr(y*w),w,0,0}
 				end
 			end
 			-- distance to camera (in object space)
@@ -352,7 +352,7 @@ end
 function make_cam(f,x0,y0)
 	x0,y0=x0 or 64,y0 or 64
 	local c={
-		pos={0,0,3},
+		pos={0,1,3},
 		q=make_q(v_up,0),
 		focal=f,
 		update=function(self)
@@ -400,9 +400,9 @@ function _update()
 	if(btn(3)) cam_dist-=0.1
 	cam_dist=mid(cam_dist,2,32)
 	
-	local q=make_q(v_up,cam_angle)
+	local q=make_q(v_up,time()/8)
 	local m=m_from_q(q)
-	cam:track(m_x_xyz(m,0,2,-cam_dist),q)
+	cam:track(m_x_xyz(m,0,0.5,-cam_dist),q)
 	cam:update()
 end
 
@@ -423,7 +423,7 @@ function _init()
 	
 	cam=make_cam(64)
 	
-	light=make_light_actor(5)
+	-- light=make_light_actor(5)
 
 	actor=make_npc({0,0,0},v_up,"car")
 end
