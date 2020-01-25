@@ -13,6 +13,8 @@ function nop() return true end
 -- player
 local plyr
 local actors={}
+-- models
+local all_models={}
 
 -- physic engine
 local world={}
@@ -27,7 +29,7 @@ local k_slop=0.05
 local cam
 local face_id=0
 -- light direction (sun)
-local light_n={0,-1,0}
+local light_n={-0.707,-0.707,0}
 
 -- zbuffer (kind of)
 local drawables={}
@@ -55,7 +57,7 @@ function zbuf_draw()
 		end
 	end
 	
-	--
+	-- add shadows to all faces
 	for _,f in pairs(faces) do
 		-- shadows on light faces only
 		if f.light==true then
@@ -64,14 +66,8 @@ function zbuf_draw()
  			-- don't self clip
  			if sf.id!=f.id then
  				-- per-face shadow polygon
- 				local shadow_v={}
  				-- clip against near face
- 				local v0=f.v[#f.v]
- 				for k=1,#f.v do
- 					local v1=f.v[k]
- 					plane_ray_intersect(sf.n,sf.v[1],v0,v1,shadow_v)
- 					v0=v1
- 				end
+ 				local shadow_v=plane_poly_clip(sf.n,sf.v[1],f.v)
  				-- 
  				if #shadow_v>2 then
  					-- clip against caster edges
@@ -81,24 +77,14 @@ function zbuf_draw()
  						local pn=sf.pn[i]
  						-- generate plane normal + cache
  						if not pn then
- 							local ln=make_v({0,3.2,0},pv0)
- 							--v_normz(ln)
- 							pn=make_v(pv0,pv1)
- 							pn=make_v_cross(pn,ln)
+ 							pn=make_v_cross(make_v(pv0,pv1),light_n)
  							v_normz(pn)
  							sf.pn[i]=pn
  						end
  						
  						-- clip current face
- 						local tmp_v={}
- 						local v0=shadow_v[#shadow_v]
- 						for k=1,#shadow_v do
- 							local v1=shadow_v[k]
- 							plane_ray_intersect(pn,pv0,v0,v1,tmp_v)
- 							v0=v1
- 						end
- 						-- use output for next edge
- 						shadow_v=tmp_v
+ 						shadow_v=plane_poly_clip(pn,pv0,shadow_v)
+ 			
  						-- next shadow edge
  		 				pv0=pv1
  					end
@@ -455,33 +441,41 @@ function m_from_q(q)
 		xz+wy,yz-wx,1-(xx+yy)}
 end
 
--- models
-local all_models={}
-
 function draw_actor(self,x,y,z,w)	
  -- particles
 end
 
--- little hack to perform in-place data updates
-local draw_session_id=0
-
-function plane_ray_intersect(n,p,a,b,inside)
-	p=make_v(a,p)
-	local t=v_dot(p,n)
-	if(t>0) add(inside,a)
-		
-	local r=make_v(a,b)
-	local den=v_dot(r,n)
-	-- no intersection
-	if abs(den)>0.001 then
-		t/=den
-		if t>0.01 and t<=1 then
-			-- intersect pos
-			v_scale(r,t)
-			v_add(r,a)
-			add(inside,r)
-		end
+-- sutherland-hodgman clipping
+function plane_poly_clip(n,p,v)
+	local dist,allin={},true
+	for i=1,#v do
+		dist[i]=v_dot(make_v(v[i],p),n)
+		allin=band(allin,dist[i]>0)
 	end
+	-- early exit
+	if(allin==true) return v
+	
+	local res={}
+	local v0,d0=v[#v],dist[#v]
+	for i=1,#v do
+		local v1,d1=v[i],dist[i]
+		if d1>0 then
+			if d0<=0 then
+				local r=make_v(v0,v1)
+				v_scale(r,d0/(d0-d1))
+				v_add(r,v0)
+				add(res,r)
+			end
+			add(res,v1)
+		elseif d0>0 then
+			local r=make_v(v0,v1)
+			v_scale(r,d0/(d0-d1))
+			v_add(r,v0)
+			add(res,r)
+		end
+		v0,d0=v1,d1
+	end
+	return res
 end
 
 draw_plyr=function(self,x,y,z,w)
@@ -802,19 +796,11 @@ function make_cam(x0,y0,focal)
 		-- draw
 		draw=function(self,fn,v,c)
  		-- clip loop
- 		local out={}
- 		for i=1,#z_planes do
- 			local pp,pn=z_planes[i],z_normals[i]
- 			local v0=v[#v]
- 			for k=1,#v do
- 				local v1=v[k]
- 				plane_ray_intersect(pn,pp,v0,v1,out)
- 				v0=v1
- 			end
- 			-- previous clipped points
- 			v,out=out,{}
- 		end
- 		fn(v,c)
+			for i=1,#z_planes do
+				local pp,pn=z_planes[i],z_normals[i]
+				v=plane_poly_clip(pn,pp,v)
+			end
+			fn(v,c)
 		end
 	}
 	return c
@@ -840,12 +826,7 @@ function draw_ground(self)
 		local p=m_x_v(cam.m,{0,cam.pos[2]-10*k*k,0})
 	
 		local v0=farplane[#farplane]
-		local sky={}
-		for i=1,#farplane do
-			local v1=farplane[i]
-			plane_ray_intersect(n,p,v0,v1,sky)
-			v0=v1
-		end
+		local sky=plane_poly_clip(n,p,farplane)
 		-- complete line?
 		fillp(sky_fillp[k+1])
 		polyfill(sky,sky_gradient[k+1])
@@ -944,7 +925,7 @@ function _draw()
 	-- todo
 	
 	--clip(0,0,128,32)
-	-- draw_ground()	
+	draw_ground()	
 	zbuf_draw()
 	--clip()
 	
@@ -957,10 +938,9 @@ function _init()
 
 	cam=make_cam(64,64,64)
 
-	make_actor(all_actors.ground,{0,0,0})
-	make_actor(all_actors.shader,{0,0,0})
+	-- make_actor(all_actors.ground,{0,0,0})
 	
-	-- make_rigidbody(make_actor(all_actors.piper,{0,5,0}),all_models["piper_bbox"])
+	make_rigidbody(make_actor(all_actors.piper,{0,5,0}),all_models["piper_bbox"])
 	plyr=make_plyr(0,0,6.5,0.5)
 		
 end

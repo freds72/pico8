@@ -8,7 +8,7 @@ __lua__
 -- 
 -- game globals
 local time_t,time_dt=0,0
-local cam_angle,cam_dist=0.15,8
+local cam_angle,cam_dist=0.15,-8
 
 -- register json context here
 local _tok={
@@ -103,9 +103,7 @@ function zbuf_draw()
 	for _,d in pairs(drawables) do
 		local p=d.pos
 		local x,y,z,w=cam:project(p[1],p[2],p[3])
-		if z>0 then
-			add(objs,{obj=d,key=z,x=x,y=y,z=z,w=w})
-		end
+		add(objs,{obj=d,key=z,x=x,y=y,z=z,w=w})
 	end
 	-- z-sorting
 	sort(objs)
@@ -196,6 +194,23 @@ function v_normz(v)
 		v[3]/=d
 	end
 	return d
+end
+function make_v(a,b)
+	return {
+		b[1]-a[1],
+		b[2]-a[2],
+		b[3]-a[3]}
+end
+function v_scale(v,scale)
+	v[1]*=scale
+	v[2]*=scale
+	v[3]*=scale
+end
+function v_add(v,dv,scale)
+	scale=scale or 1
+	v[1]+=scale*dv[1]
+	v[2]+=scale*dv[2]
+	v[3]+=scale*dv[3]
 end
 
 -- matrix functions
@@ -307,12 +322,7 @@ local all_models=json_parse'{"junk1":{"c":3,"r":1.2},"junk2":{"c":3,"r":1.2},"ge
 local dither_pat=json_parse'[0b1111111111111111,0b0111111111111111,0b0111111111011111,0b0101111111011111,0b0101111101011111,0b0101101101011111,0b0101101101011110,0b0101101001011110,0b0101101001011010,0b0001101001011010,0b0001101001001010,0b0000101001001010,0b0000101000001010,0b0000001000001010,0b0000001000001000,0b0000000000000000]'
 
 function draw_actor(self,x,y,z,w)
-	-- distance culling
-	if w>1 then
-		draw_model(self.model,self.m,x,y,z,w)
-	else
-		circfill(x,y,1,self.model.c)
-	end
+	draw_model(self.model,self.m,x,y,z,w)
 end
 
 -- little hack to perform in-place data updates
@@ -322,10 +332,6 @@ function draw_model(model,m,x,y,z,w)
 
 	color(model.c or 1)
 	-- camera distance dithering
-	if w then
-		local d=lerp(1-smoothstep(w/2),1,#dither_pat)
-		fillp(dither_pat[flr(d)]+0b0.1)
-	end
 	
 	-- cam pos in object space
 	local cam_pos=v_clone(cam.pos)
@@ -337,6 +343,22 @@ function draw_model(model,m,x,y,z,w)
  	local cam_m=m_x_m(cam.m,m)
  	m_set_pos(cam_m,{0,-2,cam_dist-1})
 
+ -- cliping helpers
+	local tmin,tmax=0,1
+ local function clipt(denom,num)
+ 	local t=num/denom
+ 	if denom>0 then
+ 		if(t>tmax) return
+ 		if(t>tmin) tmin=t
+ 	elseif denom<0 then
+ 	 if(t<tmin) return
+ 	 if(t<tmax) tmax=t
+ 	elseif num>0 then
+ 		return
+ 	end
+ 	return true
+ end
+  
 	-- faces
 	local f,n
 	for i=1,#model.f do
@@ -359,28 +381,50 @@ function draw_model(model,m,x,y,z,w)
 				local v=model.v[ak]
 				--local x,y,z=m[1]*v[1]+m[5]*v[2]+m[9]*v[3]+m[13]-cam.pos[1],m[2]*x+m[6]*v[2]+m[10]*v[3]+m[14]-cam.pos[2],m[3]*x+m[7]*v[2]+m[11]*v[3]+m[15]-cam.pos[3]
 				local x,y,z=cam_m[1]*v[1]+cam_m[5]*v[2]+cam_m[9]*v[3]+cam_m[13],cam_m[2]*v[1]+cam_m[6]*v[2]+cam_m[10]*v[3]+cam_m[14],cam_m[3]*v[1]+cam_m[7]*v[2]+cam_m[11]*v[3]+cam_m[15]
-				local w=64/z
-				p[ak]={x=64+x*w,y=64-y*w,z=z,w=w}
-				a=p[ak]
+				a={x,y,z}
+				p[ak]=a
 			end
 			if not b then
 				local v=model.v[bk]
 				--local x,y,z=m[1]*v[1]+m[5]*v[2]+m[9]*v[3]+m[13]-cam.pos[1],m[2]*x+m[6]*v[2]+m[10]*v[3]+m[14]-cam.pos[2],m[3]*x+m[7]*v[2]+m[11]*v[3]+m[15]-cam.pos[3]
 				local x,y,z=cam_m[1]*v[1]+cam_m[5]*v[2]+cam_m[9]*v[3]+cam_m[13],cam_m[2]*v[1]+cam_m[6]*v[2]+cam_m[10]*v[3]+cam_m[14],cam_m[3]*v[1]+cam_m[7]*v[2]+cam_m[11]*v[3]+cam_m[15]
-				local w=64/z
-				p[bk]={x=64+x*w,y=64-y*w,z=z,w=w}
-				b=p[bk]
+				b={x,y,z}
+				p[bk]=b
 			end
-			if a.z>0 and b.z>0 then
-			 --[[
-			 for i=0,15 do
-			 	local t=i/15
-			 	local u=1-(t*b.w)/lerp(a.w,b.w,t)
-			 	local x1,y1=lerp(a.x,b.x,u),lerp(a.y,b.y,u)
-			 	pset(x1,y1,1)--sget(8+4*u,0))
-			 end
-			 ]]
-			 texline(a.x,a.y,b.x,b.y,1,0,10,a.w,b.w,10)
+			
+			-- clip
+		 -- a,b=clip3d(a,b)		 
+   local x0,y0,z0=a[1],a[2],a[3]
+   local dx,dy,dz=b[1]-x0,b[2]-y0,b[3]-z0
+   tmin,tmax=0,1
+   if 
+    clipt(-dx-dz,x0+z0) and
+    clipt(dx-dz,-x0+z0) and
+    clipt(-dy-dz,y0+z0) and
+    clipt(dy-dz,-y0+z0) and
+    clipt(-dz,z0-2) and
+    clipt(dz,-z0-16) then
+    if tmax<1 then
+    	b={
+    		x0+tmax*dx,
+    		y0+tmax*dy,
+    		z0+tmax*dz
+    	}
+    end
+    if tmin>0 then
+    	a={
+    		x0+tmin*dx,
+    		y0+tmin*dy,
+    		z0+tmin*dz
+    	}
+    end 
+
+	 		local x0,y0,w0=cam:project2d(a)
+    local x1,y1,w1=cam:project2d(b)
+
+			 line(x0,y0,x1,y1,1,0,1,w0,w1,10)
+ 
+			 -- texline(x0,y0,x1,y1,1,0,1,w0,w1,10)
 			 -- line(a.x,a.y,b.x,b.y,7)
 			 -- fastline2(a.x,a.y,b.x,b.y,7) 
 			end
@@ -431,10 +475,14 @@ function make_cam(f,x0,y0)
 			local v=m_x_xyz(self.m,x,y,z)
 			-- distance to camera plane
 			v[3]-=1
-			if(v[3]<0.001) return nil,nil,-1,nil
 			-- view to screen
- 			local w=self.focal/v[3]
+ 			local w=-self.focal/v[3]
  			return x0+v[1]*w,y0-v[2]*w,v[3],w
+		end,
+	 project2d=function(self,v)
+  	  -- view to screen
+  	  local w=32/v[3]
+  	  return x0+v[1]*w,y0+v[2]*w,w,v[4] and v[4]*w,v[5] and v[5]*w
 		end
 	}
 	return c
@@ -458,12 +506,12 @@ function _update60()
 	if(btn(1)) cam_angle-=0.01
 	if(btn(2)) cam_dist+=0.1
 	if(btn(3)) cam_dist-=0.1
-	cam_dist=mid(cam_dist,1,32)
+	--cam_dist=mid(cam_dist,1,32)
 	
 	if(btnp(4) or btnp(5)) cur_model+=1
 	if(cur_model>#model_catalog) cur_model=1
 	
-	local q=make_q(v_up,cam_angle)
+	local q=make_q(v_up,cam_angle-0.5)
 	local m=m_from_q(q)
 	cam:track(m_x_xyz(m,0,2,-cam_dist),q)
 	cam:update()
@@ -691,6 +739,102 @@ function fastline2(x0,y0,x1,y1,c,u0,u1,w0,w1)
  		y0+=h/w
  	end
 	end
+end
+
+-->8
+-- lian barsky clipping
+--[[
+function clipt(denom,num,te,tl)
+	local t=num/denom
+	if denom>0 then
+	 --print(t..">"..tl)
+		if(t>tl) return
+		if(t>te) t=te
+	elseif denom<0 then
+	 --print(t.."<"..te)
+	 if(t<te) return
+	 tl=t
+	elseif num>0 then
+		return
+	end
+	--print(te.." "..tl)
+	return te,tl
+end
+
+function clip3d(v0,v1)
+ local z0=v0[3]
+ local dz=v1[3]-z0
+	dz={dz,dz,0}
+ z0={z0,z0,z0,z0,-20,-64}
+	local tmin,tmax,j=0,1,1
+	for i=1,1 do
+		local d=v1[i]-v0[i]
+	 --print(-d-dz[i].."<>"..v0[i]+z0[j])
+	 tmin,tmax=clipt(-d-dz[i],v0[i]+z0[j],tmin,tmax)
+	 --print("x-:"..tmin)
+	 if(not tmin) break
+	 tmin,tmax=clipt(d-dz[i],-v0[i]+z0[j+1],tmin,tmax) 
+	 --print("x+:"..tmin)
+	 if(not tmin) break
+	 j+=2
+	end
+ if tmin then
+ 	if tmax<1 then
+ 	 v1=make_v(v0,v1)
+ 	 v_scale(v1,tmax)
+ 	 v_add(v1,v0)
+ 	end
+ 	if tmin>0 then
+ 		v0=v_clone(v0)
+ 		v_add(v0,make_v(v0,v1),tmin)
+ 	end
+  return v0,v1,tmin,tmax
+ end
+end
+]]
+
+function clip3d(v0,v1)
+ local x0,y0,z0=v0[1],v0[2],v0[3]
+ local dx,dy,dz=v1[1]-x0,v1[2]-y0,v1[3]-z0
+	local tmin,tmax=0,1
+ 
+ local function clipt(denom,num)
+ 	local t=num/denom
+ 	if denom>0 then
+ 		if(t>tmax) return
+ 		if(t>tmin) tmin=t
+ 	elseif denom<0 then
+ 	 if(t<tmin) return
+ 	 if(t<tmax) tmax=t
+ 	elseif num>0 then
+ 		return
+ 	end
+ 	return true
+ end
+
+ if 
+  clipt(-dx-dz,x0+z0) and
+  clipt(dx-dz,-x0+z0) and
+  clipt(-dy-dz,y0+z0) and
+  clipt(dy-dz,-y0+z0) and
+  clipt(-dz,z0-2) and
+  clipt(dz,-z0-16) then
+  if tmax<1 then
+  	v1={
+  		x0+tmax*dx,
+  		y0+tmax*dy,
+  		z0+tmax*dz
+  	}
+  end
+  if tmin>0 then
+  	v0={
+  		x0+tmin*dx,
+  		y0+tmin*dy,
+  		z0+tmin*dz
+  	}
+  end
+  return v0,v1
+ end
 end
 
 __gfx__

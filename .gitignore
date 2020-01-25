@@ -4,4 +4,8 @@ config.txt
 /backup/
 /bbs/
 /carts/demos
+/carts/*.p8.png
 /cdata
+*.blend1
+*.bin/
+/.vscode/
