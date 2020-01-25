@@ -380,7 +380,7 @@ function draw_model(model,m,x,y,z,w)
 			 	pset(x1,y1,1)--sget(8+4*u,0))
 			 end
 			 ]]
-			 texline(a.x,a.y,b.x,b.y,1,0,1,a.w,b.w,10)
+			 texline(a.x,a.y,b.x,b.y,1,0,10,a.w,b.w,10)
 			 -- line(a.x,a.y,b.x,b.y,7)
 			 -- fastline2(a.x,a.y,b.x,b.y,7) 
 			end
@@ -601,12 +601,6 @@ end
 function texline(x0,y0,x1,y1,c,u0,u1,w0,w1,n)
 	local w,h=abs(x1-x0),abs(y1-y0)
 
-	-- too small?
-	if h<n and w<n then
-		line(x0,y0,x1,y1,12)
-		return
-	end
-
 	color(c)
  if h>w then
 	 -- order points on y
@@ -623,13 +617,15 @@ function texline(x0,y0,x1,y1,c,u0,u1,w0,w1,n)
  	 w0=lerp(w0,w1,t)
  		x0,y0=x0+w*t,0
   end
-		 
+		
+		local prevu=-1
   for y=y0,min(y1,127) do	
  		local u=u0/w0
-   pset(x0,y, sget(8+7*u,0))
+   pset(x0,y, sget(8+(16*u)%16,0))
    x0+=w/h
    u0+=du
    w0+=dw
+   prevu=u
   end
  else
  	-- x-major
@@ -655,12 +651,14 @@ function texline(x0,y0,x1,y1,c,u0,u1,w0,w1,n)
 	 print(s,x1,y1,u1<0 and 8 or 13)
 	 ]]
 	 
+	 local prevu=-1
  	for x=x0,min(x1,127) do	
  		local u=u0/w0
- 	 pset(x,y0,sget(8+7*u,0))
+ 	 pset(x,y0,sget(8+(16*u)%16,0))
  		y0+=h/w
  		u0+=du
  		w0+=dw
+ 		prevu=u
  	end
 	end
 end
@@ -696,7 +694,7 @@ function fastline2(x0,y0,x1,y1,c,u0,u1,w0,w1)
 end
 
 __gfx__
-00000000115566770000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
