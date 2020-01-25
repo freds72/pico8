@@ -1,5 +1,6 @@
 log.txt
 config.txt
+*.blend1
 /backup/
 /bbs/
 /carts/demos

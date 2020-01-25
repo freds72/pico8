@@ -1,9 +1,25 @@
 pico-8 cartridge // http://www.pico-8.com
-version 16
+version 18
 __lua__
 local time_t=0
 local actors={}
 local plyr
+
+function pick(a)
+ return a[flr(rnd(#a))+1]
+end
+
+function lerp(a,b,t)
+ return (1-t)*a+b*t
+end
+
+function v_lerp(a,b,t)
+ return {
+  v_lerp(a[1],b[1],t),
+  v_lerp(a[2],b[2],t),
+  v_lerp(a[3],b[3],t)
+ }
+end
 
 function project(x,y)
 	return 64+x,64-y
@@ -29,16 +45,18 @@ function make_plyr(x,y)
 end
 
 local next_car_t=0
-function make_car(y)
+local car_spr={6,7,8,23}
+local lanes={-10,-2,2,10}
+function make_car()
 	local right=rnd()>0.5
+	local s=pick(car_spr)
+	local	dx=right and -1 or 1
 	local a={
 		x=right and 64 or -64,
-		y=y,
-		spr=6+flr(rnd(3)),
-		dx=right and -1 or 1,
+		y=pick(lanes),
 		update=function(self)
-			self.x+=self.dx
-			if self.x<-64 or self.x>64 then
+			self.x+=dx
+			if self.x<-72 or self.x>72 then
 				return false
 			end
 			return true
@@ -47,12 +65,28 @@ function make_car(y)
 			palt(14,true)
 			palt(0,false)
 			local x,y=project(self.x,self.y)
-			spr(self.spr,x,y,1,1,right)
+			spr(s,x,y,1,1,right)
 			palt()
 		end
 	}	
 	return add(actors,a)
 end
+
+function make_heli()
+ local a={
+  pos={0,0},
+  draw=function(self)
+  	
+  end,
+  update=function(self)
+   -- target pos
+   local u=make_v(self.pos,plyr.pos)
+   
+  end
+ }
+ add(actors,a)
+end
+
 
 function _init()
 	plyr=make_plyr(0,0)
@@ -77,7 +111,7 @@ function _update60()
  end
  
  if next_car_t<time_t then
- 	make_car(-24+rnd(32))
+ 	make_car()
  	next_car_t=time_t+49+rnd(32)
  end
 end
@@ -111,7 +145,7 @@ __gfx__
 000000000000000000000000000000000000b0000660000006600000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000000000000bb000000ccc00000bbb000666000066000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000cb7b0000b33000000b7b00000b7b000000660600000000000000000000000000000000000000000000000000000000000000000000000000000000
-000000000ccb5bbbbb333000000b5b00000b5b000000008000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000000000ccb5bbbbb333000000b5b00000b5b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 000000000dcb3b3333b30000000b3b00000b3b000000060660000000000000000000000000000000000000000000000000000000000000000000000000000000
 000000000dd33300003000000003b300000ccc000006600006660000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000333000000000000000b000000dcd000066000000660000000000000000000000000000000000000000000000000000000000000000000000000000

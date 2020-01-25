@@ -381,15 +381,15 @@ function draw_model(model,m,x,y,z,w)
 				local v=model.v[ak]
 				--local x,y,z=m[1]*v[1]+m[5]*v[2]+m[9]*v[3]+m[13]-cam.pos[1],m[2]*x+m[6]*v[2]+m[10]*v[3]+m[14]-cam.pos[2],m[3]*x+m[7]*v[2]+m[11]*v[3]+m[15]-cam.pos[3]
 				local x,y,z=cam_m[1]*v[1]+cam_m[5]*v[2]+cam_m[9]*v[3]+cam_m[13],cam_m[2]*v[1]+cam_m[6]*v[2]+cam_m[10]*v[3]+cam_m[14],cam_m[3]*v[1]+cam_m[7]*v[2]+cam_m[11]*v[3]+cam_m[15]
-				p[ak]={x,y,z}
-				a=p[ak]
+				a={x,y,z}
+				p[ak]=a
 			end
 			if not b then
 				local v=model.v[bk]
 				--local x,y,z=m[1]*v[1]+m[5]*v[2]+m[9]*v[3]+m[13]-cam.pos[1],m[2]*x+m[6]*v[2]+m[10]*v[3]+m[14]-cam.pos[2],m[3]*x+m[7]*v[2]+m[11]*v[3]+m[15]-cam.pos[3]
 				local x,y,z=cam_m[1]*v[1]+cam_m[5]*v[2]+cam_m[9]*v[3]+cam_m[13],cam_m[2]*v[1]+cam_m[6]*v[2]+cam_m[10]*v[3]+cam_m[14],cam_m[3]*v[1]+cam_m[7]*v[2]+cam_m[11]*v[3]+cam_m[15]
-				p[bk]={x,y,z}
-				b=p[bk]
+				b={x,y,z}
+				p[bk]=b
 			end
 			
 			-- clip
@@ -649,12 +649,6 @@ end
 function texline(x0,y0,x1,y1,c,u0,u1,w0,w1,n)
 	local w,h=abs(x1-x0),abs(y1-y0)
 
-	-- too small?
-	if h<n and w<n then
-		line(x0,y0,x1,y1,12)
-		return
-	end
-
 	color(c)
  if h>w then
 	 -- order points on y
@@ -671,13 +665,15 @@ function texline(x0,y0,x1,y1,c,u0,u1,w0,w1,n)
  	 w0=lerp(w0,w1,t)
  		x0,y0=x0+w*t,0
   end
-		 
+		
+		local prevu=-1
   for y=y0,min(y1,127) do	
  		local u=u0/w0
-   pset(x0,y, sget(8+7*u,0))
+   pset(x0,y, sget(8+(16*u)%16,0))
    x0+=w/h
    u0+=du
    w0+=dw
+   prevu=u
   end
  else
  	-- x-major
@@ -703,12 +699,14 @@ function texline(x0,y0,x1,y1,c,u0,u1,w0,w1,n)
 	 print(s,x1,y1,u1<0 and 8 or 13)
 	 ]]
 	 
+	 local prevu=-1
  	for x=x0,min(x1,127) do	
  		local u=u0/w0
- 	 pset(x,y0,sget(8+7*u,0))
+ 	 pset(x,y0,sget(8+(16*u)%16,0))
  		y0+=h/w
  		u0+=du
  		w0+=dw
+ 		prevu=u
  	end
 	end
 end
@@ -840,7 +838,7 @@ function clip3d(v0,v1)
 end
 
 __gfx__
-00000000115566770000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000

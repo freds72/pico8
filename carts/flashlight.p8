@@ -1,5 +1,5 @@
 pico-8 cartridge // http://www.pico-8.com
-version 16
+version 18
 __lua__
 -- flashlight shader
 -- from freds72
@@ -28,21 +28,18 @@ darken=function(r,i,j)
 		memset(m,0,64)
 		m+=64
 	end
-	
+	rmin*=rmin
+	rmax*=rmax
 	-- draw shaded circle
 	for y=ymin,ymax do
 		-- 0-centered
 		y-=j
-		-- squared
-		y*=y
-		-- outer radius
-		local xmax=rmax*rmax-y
-		-- inner radius
-		local xmin=rmin*rmin-y
+		-- radius
+		local xmin,xmax=rmin-y*y,rmax-y*y
 		
 		-- note: selected solution is negative
-		xmax=xmax>=0 and flr(shr(i-sqrt(xmax),1)) or flr(i/2)
-		xmin=xmin>=0 and flr(shr(i-sqrt(xmin),1)) or flr(i/2)
+		xmax=flr(shr(xmax>=0 and i-xmax^0.5 or i,1))
+		xmin=flr(shr(xmin>=0 and i-xmin^0.5 or i,1))
 		
 		-- clear left/right
 		memset(m,0,max(xmax)+1)
@@ -50,9 +47,9 @@ darken=function(r,i,j)
 		
 		-- draw inner shade
 		for x=xmax+1,xmin do
-			if(x>=0 and x<64) poke(m+x,shade[shade[peek(m+x)]])
+			if(band(x,0xffc0)==0) poke(m+x,shade[shade[peek(m+x)]])
 			x=ii-x+1
-			if(x>=0 and x<64) poke(m+x,shade[shade[peek(m+x)]])
+			if(band(x,0xffc0)==0) poke(m+x,shade[shade[peek(m+x)]])
 		end	
 		m+=64
 	end
