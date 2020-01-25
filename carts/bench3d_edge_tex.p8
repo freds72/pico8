@@ -278,6 +278,7 @@ function draw_model(model,m,x,y,z,w)
 				 	p[vi]=a
 				end
 				local w=a[3]
+				-- pre-mult u/v
 				verts[ki]={a[1],a[2],w,f.uv[ki].u*w,f.uv[ki].v*w}
 			end
 			-- distance to camera (in object space)
@@ -292,17 +293,6 @@ function draw_model(model,m,x,y,z,w)
 
 	-- draw faces using projected points
 	for _,f in pairs(faces) do
-		--[[
-		local verts=f.v
-		local p0=verts[1]
-		local p1=verts[2]
-		for i=3,#f.face.vi do
-	 		local p2=verts[i]
-	 		tritex(p0,p1,p2)
-	 		p1=p2
-	 		--trifill(p0[1],p0[2],p1[1],p1[2],p2[1],p2[2],11)
-		end
-		]]
 		polytex(f.v)
 	end
 end
@@ -465,46 +455,6 @@ function draw_stats()
 end
 
 -->8
--- trifill by @p01
-function p01_trapeze_h(l,r,lt,rt,y0,y1)
- lt,rt=(lt-l)/(y1-y0),(rt-r)/(y1-y0)
- if(y0<0)l,r,y0=l-y0*lt,r-y0*rt,0 
-	y1=min(y1,128)
-	for y0=y0,y1 do
-  rectfill(l,y0,r,y0)
-  l+=lt
-  r+=rt
- end
-end
-function p01_trapeze_w(t,b,tt,bt,x0,x1)
- tt,bt=(tt-t)/(x1-x0),(bt-b)/(x1-x0)
- if(x0<0)t,b,x0=t-x0*tt,b-x0*bt,0 
- x1=min(x1,128)
- for x0=x0,x1 do
-  rectfill(x0,t,x0,b)
-  t+=tt
-  b+=bt
- end
-end
-function trifill(x0,y0,x1,y1,x2,y2,col)
- color(col)
- if(y1<y0)x0,x1,y0,y1=x1,x0,y1,y0
- if(y2<y0)x0,x2,y0,y2=x2,x0,y2,y0
- if(y2<y1)x1,x2,y1,y2=x2,x1,y2,y1
- if max(x2,max(x1,x0))-min(x2,min(x1,x0)) > y2-y0 then
-  col=x0+(x2-x0)/(y2-y0)*(y1-y0)
-  p01_trapeze_h(x0,x0,x1,col,y0,y1)
-  p01_trapeze_h(x1,col,x2,x2,y1,y2)
- else
-  if(x1<x0)x0,x1,y0,y1=x1,x0,y1,y0
-  if(x2<x0)x0,x2,y0,y2=x2,x0,y2,y0
-  if(x2<x1)x1,x2,y1,y2=x2,x1,y2,y1
-  col=y0+(y2-y0)/(x2-x0)*(x1-x0)
-  p01_trapeze_w(y0,y0,y1,col,x0,x1)
-  p01_trapeze_w(y1,col,y2,y2,x1,x2)
- end
-end
--->8
 -- unpack models
 local mem=0x1000
 function unpack_int()
@@ -573,60 +523,7 @@ function unpack_models()
 end
 
 -->8
--- tritex
-function trapezefill(l,dl,r,dr,start,finish)
-	local l,dl={l[1],l[4],l[5],r[1],r[4],r[5]},{dl[1],dl[4],dl[5],dr[1],dr[4],dr[5]}
-	local dt=1/(finish-start)
-	for k,v in pairs(dl) do
-		dl[k]=(v-l[k])*dt
-	end
-
-	-- cliping
-	if start<0 then
-		for k,v in pairs(dl) do
-			l[k]-=start*v
-		end
-		start=0
-	end
-
-	-- rasterization
-	for j=start,min(finish,127) do
-		--rectfill(l[1],j,l[4],j,11)
-		local u0,v0=l[2],l[3]
-		local du,dv=(l[5]-u0)/(l[4]-l[1]),(l[6]-v0)/(l[4]-l[1])
-		for i=l[1],l[4] do
-			pset(i,j,sget(u0,v0))
-			u0+=du
-			v0+=dv
-		end
-
-		for k,v in pairs(dl) do
-			l[k]+=v
-		end
-	end
-end
-function tritex(v0,v1,v2)
-	local x0,x1,x2=v0[1],v1[1],v2[1]
-	local y0,y1,y2=v0[2],v1[2],v2[2]
-if(y1<y0)v0,v1,x0,x1,y0,y1=v1,v0,x1,x0,y1,y0
-if(y2<y0)v0,v2,x0,x2,y0,y2=v2,v0,x2,x0,y2,y0
-if(y2<y1)v1,v2,x1,x2,y1,y2=v2,v1,x2,x1,y2,y1
-
-	-- mid point
-	local v02,mt={},1/(y2-y0)*(y1-y0)
-	for k,v in pairs(v0) do
-		v02[k]=v+(v2[k]-v)*mt
-	end
-	if(x1>v02[1])v1,v02=v02,v1
-
-	-- upper trapeze
-	-- x u v
-	trapezefill(v0,v1,v0,v02,y0,y1)
-	-- lower trapeze
-	trapezefill(v1,v2,v02,v2,y1,y2)
-
-end
-
+-- textured edge renderer
 function polytex(v)
 	local v0,nodes=v[#v],{}
 	local x0,y0,w0,u0,v0=v0[1],v0[2],v0[3],v0[4],v0[5]
@@ -657,13 +554,12 @@ function polytex(v)
 				local ca=ceil(a)
 				-- sub-pix shift
 				local sa=ca-a
-				a+=sa/dab
 				au+=sa*dau
 				av+=sa*dav
 				aw+=sa*daw
 				for k=ca,min(ceil(b)-1,127) do
-					pset(a,y,sget(au/aw,av/aw))
-					a+=1
+					local c=sget(au/aw,av/aw)
+					if(c!=11) pset(k,y,c)
 					au+=dau
 					av+=dav
 					aw+=daw
