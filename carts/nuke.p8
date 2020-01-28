@@ -6,7 +6,7 @@ __lua__
 local time_t,time_dt=0,0
 local before_update,after_draw={},{}
 local actors={} --all actors in world
-local use_mouse=0
+local use_mouse
 -- level globs
 local lvl_i,cur_loop,lvl=0,1
 local level_cw,level_ch=64,32
@@ -14,8 +14,8 @@ local level_cw,level_ch=64,32
 local good_side,bad_side,any_side=0x1,0x2,0x0
 -- register json context here
 local _tok={
- ['true']=true,
- ['false']=false}
+	['true']=true,
+	['false']=false}
 function nop() end
 local _g={
 	good_side=good_side,
@@ -33,11 +33,11 @@ local function match(s,tokens)
 	return false
 end
 local function skip_delim(str, pos, delim, err_if_missing)
- if sub(str,pos,pos)!=delim then
-  if(err_if_missing) assert('delimiter missing')
-  return pos,false
- end
- return pos+1,true
+	if sub(str,pos,pos)!=delim then
+		if(err_if_missing) assert('delimiter missing')
+		return pos,false
+	end
+	return pos+1,true
 end
 local function parse_str_val(str, pos, val)
 	val=val or ''
@@ -149,15 +149,15 @@ _g.update_blast_part=function(self)
 		for _,a in pairs(actors) do
 			local dx,dy=mid(self.x,a.x-a.w,a.x+a.w)-self.x,mid(self.y,a.y-a.h,a.y+a.h)-self.y
 			if a.hit_t<time_t and abs(dx)<2 and abs(dy)<2 then
- 			local r=dx*dx+dy*dy
- 			if r<4 then
- 				r=1-smoothstep(r/4)
- 				local u,v=normalize(dx,dy,0.5*r)
- 				a.dx+=u
- 				a.dy+=v
- 				a:hit(flr(8*r)+1)
- 			end
- 		end
+				local r=dx*dx+dy*dy
+				if r<4 then
+					r=1-smoothstep(r/4)
+					local u,v=normalize(dx,dy,0.5*r)
+					a.dx+=u
+					a.dy+=v
+					a:hit(flr(8*r)+1)
+				end
+			end
 		end
 	end
 	if self.frame==3 then
@@ -193,7 +193,7 @@ _g.update_part=function(self)
 end
 
 _g.draw_part=function(self,x,y)
- circfill(x,y,8*self.r,self.c)
+	circfill(x,y,8*self.r,self.c)
 end
 
 all_parts=json_parse('{"part_cls":{"inertia":1,"r":1,"dr":0,"frame":0,"df":0.01,"draw":"draw_part","update":"update_part"},"flash":{"dly":8,"r":0.8,"c":7,"dr":-0.1},"blood_splat":{"base_cls":"chunk_base","spr":129},"head":{"base_cls":"chunk_base","spr":201},"turret_splat":{"base_cls":"chunk_base","spr":165,"sw":2,"sh":2},"goo_splat":{"base_cls":"chunk_base","spr":130},"fart":{"dy":-0.05,"rnd":{"r":[0.05,0.2],"dly":[24,32],"c":[11,3,true]}},"laser_spark":{"sfx":37,"zorder":3,"dx":0,"dy":0.04,"c":7,"rnd":{"r":[0.1,0.2],"dly":[24,32]}},"hit":{"dr":-0.02,"rnd":{"r":[0.3,0.4],"dly":[8,12],"c":[9,10,true]}},"blast_smoke":{"inertia":0.95,"dr":-0.03,"rnd":{"r":[0.8,1.2],"dly":[15,30]},"c":1},"slash":{"frames":[196,197,198],"draw":"draw_rspr_part","dly":12},"candle":{"w":0.1,"h":0.1,"inertia":0.9,"rnd":{"c":[8,9,10],"r":[0.1,0.2],"dr":[-0.01,-0.02],"dz":[0.04,0.06],"dly":[12,24]}},"bones":{"base_cls":"chunk_base","rnd":{"spr":[202,203,204]}},"goo_chunks":{"base_cls":"chunk_base","rnd":{"spr":[199,200,199]}},"green_chunks":{"base_cls":"chunk_base","rnd":{"spr":[215,216,215]}},"fireimp_chunks":{"base_cls":"chunk_base","rnd":{"spr":[219,220,220]}},"notice":{"zorder":3,"inertia":0.91,"dly":72,"draw":"draw_txt_part"},"blast_splat":{"base_cls":"chunk_base","frames":[212,213,214],"df":0.20},"blast_chunks":{"base_cls":"chunk_base","rnd":{"spr":[217,218,217]}},"blast":{"sfx":51,"w":1,"h":1,"dly":30,"acc":0,"inertia":0,"frames":[192,193,208,209,194,195,210,211],"rnd":{"bones_c":[2,4]},"update":"update_blast_part","draw":"draw_blast_part","splat":"blast_splat","bones":"blast_chunks"},"chunk_base":{"zorder":1,"inertia":0.85,"r":1,"dr":0,"frame":0,"df":0.01,"rnd":{"dly":[600,900]},"draw":"draw_spr_part","update":"update_part"}}')
@@ -395,9 +395,9 @@ function rspr(sx,sy,x,y,a)
 		for iy=0,7 do
 			-- fast boundary check
 			if band(bor(srcx,srcy),0xfff8)==0 then
-			 c=sget(sx+srcx,sy+srcy)			
-			 if c!=14 then
-				 pset(x+ix,y+iy,c)
+				c=sget(sx+srcx,sy+srcy)			
+				if c!=14 then
+					pset(x+ix,y+iy,c)
 				end
 			end
 			srcx-=ddy0
@@ -461,17 +461,17 @@ function zbuf_draw()
 	local zbuf={{},{},{}}
 	local zdraw,zbuf_zmin,zbuf_zmax={},256,-128
 	for _,obj in pairs(drawables) do
- 	local xe,ye=cam_project(obj.x,obj.y)
- 	local ze=obj.z and 8*obj.z or 0
- 	local zi=obj.zorder or 2
- 	obj=add(zbuf[zi],{obj=obj,x=xe,y=ye-ze,key=ye+ze})
- 	if zi==2 then
- 		local z=flr(obj.key)
- 		zbuf_zmin,zbuf_zmax=min(zbuf_zmin,z),max(zbuf_zmax,z)
- 		local zb=zdraw[z] or {}
- 		add(zb,obj)
- 		zdraw[z]=zb
- 	end
+		local xe,ye=cam_project(obj.x,obj.y)
+		local ze=obj.z and 8*obj.z or 0
+		local zi=obj.zorder or 2
+		obj=add(zbuf[zi],{obj=obj,x=xe,y=ye-ze,key=ye+ze})
+		if zi==2 then
+			local z=flr(obj.key)
+			zbuf_zmin,zbuf_zmax=min(zbuf_zmin,z),max(zbuf_zmax,z)
+			local zb=zdraw[z] or {}
+			add(zb,obj)
+			zdraw[z]=zb
+		end
 	end
 	
 	for _,v in pairs(zbuf[1]) do
@@ -574,14 +574,14 @@ function make_part(x,y,z,src,dx,dy,dz,a)
 			dy=dy or 0,
 			dz=dz or 0,
 			angle=a or 0}))
- if(p.sfx) sfx(p.sfx)
+	if(p.sfx) sfx(p.sfx)
 	p.t=time_t+p.dly
 	return add(parts,p)
 end
 -- spill bones and skull!
 function make_splat(self)
 	make_part(self.x,self.y,0, all_parts[self.splat or "blood_splat"])
- for i=1,self.bones_c do
+	for i=1,self.bones_c do
 		local a=rnd()
 		make_part(self.x+rndlerp(-self.w,self.w),self.y+rndlerp(-self.h,self.h),0,all_parts[self.bones or "bones"],cos(a)/10+self.dx,sin(a)/10+self.dy,0,a)
 	end
@@ -633,7 +633,7 @@ function update_blt(self)
 		end
 
 		if touch then
-		 if self.bounce then
+			if self.bounce then
 				self.side=self.wp.side
 				make_part(x1,y1,0.25,all_parts.flash)
 				sfx(self.wp.bounce_sfx or 58)
@@ -751,8 +751,8 @@ function make_level()
 		end
 	else
 		-- create enough rooms
-	 while make_rooms()<7 do
-	 end
+		while make_rooms()<7 do
+		end
 		for sp in all(lvl.spawn) do
 			-- todo: log progression vs linear?
 			local n=min(rndrng(sp)+cur_loop*cur_loop,15)
@@ -878,16 +878,16 @@ function dig(r,idx)
 end
 
 function solid(x, y)
- return fget(mget(x,y),7)
+	return fget(mget(x,y),7)
 end
 
 function solid_area(a,dx,dy)
 	local x,y,w,h=a.x+dx,a.y+dy,a.w,a.h
- return 
-  solid(x-w,y-h) or
-  solid(x+w,y-h) or
-  solid(x-w,y+h) or
-  solid(x+w,y+h)
+	return 
+		solid(x-w,y-h) or
+		solid(x+w,y-h) or
+		solid(x-w,y+h) or
+		solid(x+w,y+h)
 end
 
 function lineofsight(x1,y1,x2,y2,dist)
@@ -905,34 +905,34 @@ function lineofsight(x1,y1,x2,y2,dist)
 	
 	if dx>=dy then
 		error=dy-dx/2
- 	while x1!=x2 do
-   if (error>0) or (error==0 and ix>0) then
-	   error-=dx
- 	  y1+=iy
+		while x1!=x2 do
+			if (error>0) or (error==0 and ix>0) then
+				error-=dx
+				y1+=iy
 			end
 
- 	 error+=dy
- 	 x1+=ix
- 	 dist-=1
- 	 if(dist<0) return false,-1
-	if(solid(x1,y1)) return false,dist
- 	end
-	else
- 	error=dx-dy/2
-
- 	while y1!=y2 do
-  	if (error>0) or (error==0 and iy>0) then
-  	 error-=dy
-  	 x1+=ix
-		 end
-	
-  	error+=dx
-  	y1+=iy
+			error+=dy
+			x1+=ix
 			dist-=1
-		 if(dist<0) return false,-1
-	 	if(solid(x1,y1)) return false,dist
- 	end
- end
+			if(dist<0) return false,-1
+	if(solid(x1,y1)) return false,dist
+		end
+	else
+		error=dx-dy/2
+
+		while y1!=y2 do
+			if (error>0) or (error==0 and iy>0) then
+				error-=dy
+				x1+=ix
+			end
+	
+			error+=dx
+			y1+=iy
+			dist-=1
+			if(dist<0) return false,-1
+			if(solid(x1,y1)) return false,dist
+		end
+	end
 	return true,dist
 end
 -- true if a will hit another
@@ -941,38 +941,38 @@ function solid_actor(a,dx,dy)
 	cmap_iterator(a.x+dx,a.y+dy,a.w,a.w)
 	local a2=cmap_next()
 	while a2 do
-  if a2!=a then
-   local x,y=(a.x+dx)-a2.x,(a.y+dy)-a2.y
-   if abs(x)<(a.w+a2.w)/2 and
-      abs(y)<(a.h+a2.h)/2
-   then 
-    -- collision damage?
-    if a2.dmg and a.contact_t<time_t and band(a.side,a2.side)==0 then
-    	-- avoid repeated collision
-    	a.contact_t=time_t+30
-    	a:hit(a2.dmg)
-    end
-    
-    if dx!=0 and abs(x) <
+		if a2!=a then
+			local x,y=(a.x+dx)-a2.x,(a.y+dy)-a2.y
+			if abs(x)<(a.w+a2.w)/2 and
+						abs(y)<(a.h+a2.h)/2
+			then 
+				-- collision damage?
+				if a2.dmg and a.contact_t<time_t and band(a.side,a2.side)==0 then
+					-- avoid repeated collision
+					a.contact_t=time_t+30
+					a:hit(a2.dmg)
+				end
+				
+				if dx!=0 and abs(x) <
 	abs(a.x-a2.x) then
-     local v=a.dx+a2.dy
-     a.dx=v/2
-     a2.dx=v/2
-     return true 
-    end
-    
-    if dy!=0 and abs(y) <
+					local v=a.dx+a2.dy
+					a.dx=v/2
+					a2.dx=v/2
+					return true 
+				end
+				
+				if dy!=0 and abs(y) <
 	abs(a.y-a2.y) then
-     local v=a.dy+a2.dy
-     a.dy=v/2
-     a2.dy=v/2
-     return true 
-    end    
-   end
-  end
+					local v=a.dy+a2.dy
+					a.dy=v/2
+					a2.dy=v/2
+					return true 
+				end    
+			end
+		end
 	a2=cmap_next()
- end
- return false
+	end
+	return false
 end
 
 -- checks both walls and actors
@@ -1074,7 +1074,7 @@ function update_path_async(self)
 			end
 		end
 	
-	 local x,y=self.x,self.y
+		local x,y=self.x,self.y
 		local k,pk=flr(x)+96*flr(y),flr(x1)+96*flr(y1)
 		local flood,flood_len={[k]={x=x,y=y,k=k}},1
 		local closedset,camefrom,current={},{}
@@ -1177,7 +1177,7 @@ _g.ammo_pickup=function(self)
 end
 
 _g.npc_update=function(self)
- if(self.hit_t>time_t) return
+	if(self.hit_t>time_t) return
 	if self.move_t<time_t and #self.path>0 then
 		local input=self.input
 		if not input or sqr_dist(self.x,self.y,input.x,input.y)<0.25 then
@@ -1192,10 +1192,10 @@ _g.npc_update=function(self)
 	end
 	
 	-- compute path for only 1 actor/frame
- if self.id==(time_t%actor_id) then
+	if self.id==(time_t%actor_id) then
 		assert(coresume(self.update_path,self))
- end
- 
+	end
+	
 	if self.pause_dly and self.fire_dly_t<time_t then
 		self.fire_t=time_t+self.pause_dly
 		self.fire_dly_t=time_t+self.pause_dly+self.fire_dly
@@ -1318,7 +1318,7 @@ _g.throne_draw=function(a,x,y)
 	if a.hit_t>time_t then
 		memset(0x5f00,0xf,16)
 		pal(tcol,tcol)
- end
+	end
 	-- actor
 	palt(tcol,true)
 	map(a.cx,a.cy,x,y,a.cw,a.ch)
@@ -1343,9 +1343,9 @@ _g.draw_actor=function(a,sx,sy)
 	if a.hit_t>time_t then
 		memset(0x5f00,0xf,16)
 		pal(tcol,tcol)
- 	end
- 	local s,flipx=a.spr,false
- 	if a.frames then
+		end
+		local s,flipx=a.spr,false
+		if a.frames then
 		flipx=face1strip[a.facing+1]
 		s=a.frames[flr(a.frame%#a.frames)+1]
 	end
@@ -1362,7 +1362,7 @@ _g.draw_actor=function(a,sx,sy)
 		-- recoil animation
 		local f=-mid(a.fire_t-time_t,0,8)/4
 		rspr(wp.sx,wp.sy,sx+4*u+f*u,sy+4*v+f*v,1-a.angle)
-	 palt()
+		palt()
 	end
 	
 	-- draw a-star path
@@ -1404,42 +1404,42 @@ function move_actor(a)
 		end
 	end
 
- if a.part and a.part_t<time_t then
- 	make_part(
- 		a.x+rndlerp(-a.w,a.w),a.y-0.5,0,
- 		all_parts[a.part])
- 	a.part_t=time_t+a.part_dly
- end
+	if a.part and a.part_t<time_t then
+		make_part(
+			a.x+rndlerp(-a.w,a.w),a.y-0.5,0,
+			all_parts[a.part])
+		a.part_t=time_t+a.part_dly
+	end
 
 	-- remove old position 
 	cmap_op(a,cmap_del)
 	-- only player gets blocked by actors
 	local solid_test=a==plyr and solid_a or solid_area
- if not solid_test(a,a.dx,0) then
-  a.x+=a.dx
- else
-  -- otherwise bounce
-  a.dx*=-a.bounce
- end
+	if not solid_test(a,a.dx,0) then
+		a.x+=a.dx
+	else
+		-- otherwise bounce
+		a.dx*=-a.bounce
+	end
 
- -- ditto for y
- if not solid_test(a,0,a.dy) then
-  a.y+=a.dy
- else
-  a.dy*=-a.bounce
- end
- 
- -- apply inertia (free clamp)
+	-- ditto for y
+	if not solid_test(a,0,a.dy) then
+		a.y+=a.dy
+	else
+		a.dy*=-a.bounce
+	end
+	
+	-- apply inertia (free clamp)
 	a.dx=amortize(a.dx,a.inertia)
 	a.dy=amortize(a.dy,a.inertia)
 	
- a.frame+=abs(a.dx)*4
- a.frame+=abs(a.dy)*4
- 
- -- update collision map
- cmap_op(a, cmap_add)
+	a.frame+=abs(a.dx)*4
+	a.frame+=abs(a.dy)*4
+	
+	-- update collision map
+	cmap_op(a, cmap_add)
 
- zbuf_write(a)
+	zbuf_write(a)
 end
 
 -- player actor
@@ -1466,21 +1466,25 @@ function make_plyr()
 end
 
 function control_player()
- if plyr_playing then
+	if plyr_playing then
 		local wp,angle,fire,dx,dy=plyr.wp,plyr.angle,false,0,0
 		if(btn(0)) plyr.dx-=plyr.acc dx=-1 angle=0.5
 		if(btn(1)) plyr.dx+=plyr.acc dx=1 angle=0
 		if(btn(2)) plyr.dy-=plyr.acc dy=-1 angle=0.25
 		if(btn(3)) plyr.dy+=plyr.acc dy=1 angle=0.75
 	
-		if use_mouse==1 then
+		if use_mouse then
 			fire=stat(34)==1
 			dx,dy=stat(32),stat(33)
 			plyr.mousex,plyr.mousey=dx,dy
 			angle=(0.5+atan2(64-dx,64-dy))%1
 		else
-			fire=btn(4)
+			dx = btn(0,1) and -1 or (btn(1,1) and 1 or dx)
+			dy = btn(2,1) and -1 or (btn(3,1) and 1 or dy)
 			if(bor(dx,dy)!=0) angle=atan2(dx,dy)
+			if btn(4) or (band(btn(),0xf00)>0 and angle==plyr.angle) then
+				fire=true
+			end
 		end
 	
 		if fire and plyr.fire_t<time_t then
@@ -1494,21 +1498,21 @@ function control_player()
 				cam_shake(u[1],u[2],wp.shk_pow or 0)
 			end
 		end
-		if use_mouse==1 or plyr.lock_t<time_t then
+		if use_mouse or plyr.lock_t<time_t then
 			plyr.angle,plyr.facing=angle,flr(8*angle)
 		end
- end
+	end
 	
- if abs(plyr.dx)+abs(plyr.dy)>0.1 then
-  plyr.frames=plyr.strips[1]
-  plyr.idle_t=time_t+30
- end
- if plyr.idle_t<time_t then
+	if abs(plyr.dx)+abs(plyr.dy)>0.1 then
+		plyr.frames=plyr.strips[1]
+		plyr.idle_t=time_t+30
+	end
+	if plyr.idle_t<time_t then
 		plyr.frames=plyr.strips[2]
 		if time_t%8==0 then
 			plyr.frame+=1
 		end
- end
+	end
 end
 
 function next_level()
@@ -1593,7 +1597,7 @@ start_screen.draw=function()
 	
 	x,y=cos(time_t/64),sin(-time_t/64)
 	rspr(8,8,64+12*x,64+12*y,atan2(x,y))
- 
+	
 	palt(0,false)
 	palt(14,true)
 	sspr(0,112,56,16,10,12,112,32)
@@ -1603,7 +1607,7 @@ start_screen.draw=function()
 	if time_t%32>16 then
 		txt_print("press start",64,108,11)
 	end
-	txt_print(use_mouse==1 and "[keyb.+mouse]" or "[keyboard]",64,116,7)
+	txt_print(use_mouse and "[keyb.+mouse]" or "[keyboard]",64,116,7)
 	
 	txt_options(true,0,true)
 	txt_print("freds72 presents",64,3,6)
@@ -1626,7 +1630,7 @@ game_screen.update=function()
 end
 game_screen.draw=function()
 
- cam_track(plyr.x,plyr.y)
+	cam_track(plyr.x,plyr.y)
 
 	cls(lvl.bkg_col)
 	local cx,cy=lvl.cx or 0,lvl.cy or 0
@@ -1646,7 +1650,7 @@ game_screen.draw=function()
 	map(cx,cy,sx,sy,level_cw,level_ch,2)
 	pal()
 	if(lvl.shader) lvl.shader()
-	if use_mouse==1 then
+	if use_mouse then
 		spr(lvl.cursor or 35,plyr.mousex-3,plyr.mousey-3)
 	end
 
@@ -1687,7 +1691,7 @@ function _update60()
 end
 
 function _draw()
-	local t=stat(1)
+	-- local t=stat(1)
 	cur_screen.draw()
 	futures_update(after_draw)
 
@@ -1704,11 +1708,11 @@ function _init()
 	-- mouse support
 	poke(0x5f2d,1)
 	if cartdata("freds72_nuklear_klone") then
-		use_mouse=dget(0)
+		use_mouse=dget(0)==1
 	end
 	menuitem(1,"mouse on/off", function() 
-		use_mouse=bxor(use_mouse,1)
-		dset(0,use_mouse)
+		use_mouse=not use_mouse
+		dset(0,use_mouse and 1 or 0)
 	end)
 	cur_screen=start_screen
 	music(0)
