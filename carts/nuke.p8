@@ -32,27 +32,27 @@ local function match(s,tokens)
 	end
 	return false
 end
-local function skip_delim(str, pos, delim, err_if_missing)
+local function skip_delim(str, pos, delim) --, err_if_missing)
 	if sub(str,pos,pos)!=delim then
-		if(err_if_missing) assert('delimiter missing')
+		-- if(err_if_missing) assert('delimiter missing')
 		return pos,false
 	end
 	return pos+1,true
 end
 local function parse_str_val(str, pos, val)
 	val=val or ''
-	if pos>#str then
-		assert('end of input found while parsing string.')
-	end
+	-- if pos>#str then
+	-- 	assert('end of input found while parsing string.')
+	-- end
 	local c=sub(str,pos,pos)
 	if(c=='"') return _g[val] or val,pos+1
 	return parse_str_val(str,pos+1,val..c)
 end
 local function parse_num_val(str,pos,val)
 	val=val or ''
-	if pos>#str then
-		assert('end of input found while parsing string.')
-	end
+	-- if pos>#str then
+	-- 	assert('end of input found while parsing string.')
+	-- end
 	local c=sub(str,pos,pos)
 	-- support base 10, 16 and 2 numbers
 	if(not match(c,"-xb0123456789abcdef.")) return tonum(val),pos
@@ -62,7 +62,7 @@ end
 
 function json_parse(str, pos, end_delim)
 	pos=pos or 1
-	if(pos>#str) assert('reached unexpected end of input.')
+	-- if(pos>#str) assert('reached unexpected end of input.')
 	local first=sub(str,pos,pos)
 	if match(first,"{[") then
 		local obj,key,delim_found={},true,true
@@ -70,9 +70,9 @@ function json_parse(str, pos, end_delim)
 		while true do
 			key,pos=json_parse(str, pos, table_delims[first])
 			if(key==nil) return obj,pos
-			if not delim_found then assert('comma missing between table items.') end
+			-- if not delim_found then assert('comma missing between table items.') end
 			if first=="{" then
-				pos=skip_delim(str,pos,':',true)  -- true -> error if missing.
+				pos=skip_delim(str,pos,':') -- ,true) -> error if missing.
 				obj[key],pos=json_parse(str,pos)
 			else
 				add(obj,key)
@@ -92,7 +92,7 @@ function json_parse(str, pos, end_delim)
 			local lit_end=pos+#lit_str-1
 			if sub(str,pos,lit_end)==lit_str then return lit_val,lit_end+1 end
 		end
-		assert('invalid json token')
+		-- assert('invalid json token')
 	end
 end
 -- screens
@@ -1193,7 +1193,8 @@ _g.npc_update=function(self)
 	
 	-- compute path for only 1 actor/frame
 	if self.id==(time_t%actor_id) then
-		assert(coresume(self.update_path,self))
+		coresume(self.update_path,self)
+		-- assert(coresume(self.update_path,self))
 	end
 	
 	if self.pause_dly and self.fire_dly_t<time_t then
@@ -1479,10 +1480,14 @@ function control_player()
 			plyr.mousex,plyr.mousey=dx,dy
 			angle=(0.5+atan2(64-dx,64-dy))%1
 		else
-			dx = btn(0,1) and -1 or (btn(1,1) and 1 or dx)
-			dy = btn(2,1) and -1 or (btn(3,1) and 1 or dy)
+			local d2=false
+			if band(btn(),0xf00)>0 then
+				dx=btn(0,1) and -1 or (btn(1,1) and 1 or 0)
+				dy=btn(2,1) and -1 or (btn(3,1) and 1 or 0)
+				d2=true
+			end
 			if(bor(dx,dy)!=0) angle=atan2(dx,dy)
-			if btn(4) or (band(btn(),0xf00)>0 and angle==plyr.angle) then
+			if btn(4) or (d2 and angle==plyr.angle) then
 				fire=true
 			end
 		end
