@@ -757,7 +757,7 @@ function make_level()
 			-- todo: log progression vs linear?
 			local n=min(rndrng(sp)+cur_loop*cur_loop,15)
 			for i=1,n do
-				local r=rooms[flr(rnd()*#rooms)+1]
+				local r=rndarray(rooms)
 				local x,y=r.x+rndlerp(1,r.w-1),r.y+rndlerp(1,r.h-1)
 				make_actor(x,y,all_actors[sp[3]])
 			end
