@@ -1,7 +1,7 @@
 pico-8 cartridge // http://www.pico-8.com
 version 19
 __lua__
--- 3d textured demo
+-- textured 3d demo
 -- by freds72
 
 -- globals
@@ -196,8 +196,10 @@ function make_cam(x0,y0,focal)
 			self.pos=pos
 		end,
 		project=function(self,verts)
+			local n,f=0.1,2
 			for i,v in pairs(verts) do
 				local x,y,z=v[1],v[2],v[3]
+				z=z*f/(f-n)+f*n/(f-n)
 				local w=focal/z
 				verts[i]={x=x0+x*w,y=y0-y*w,w=w,u=v.u*w,v=v.v*w}
 			end
@@ -239,7 +241,14 @@ local tlines={
 	{
 		-- tline version
 		fn=function(x0,_,x1,y,u,v,du,dv,w,dw)
-			_tline(x0,y,x1,y,u/w,v/w,du/w,dv/w)
+			local dx=(x1-x0)/8
+			for i=0,7 do
+				_tline(x0,y,x0+dx,y,u/w,v/w,du/w,dv/w)
+				x0+=dx
+				u+=du*dx
+				v+=dv*dx
+				w+=dw*dx
+			end
 		end,
 		mode="tline(map)"
 	},
@@ -261,7 +270,7 @@ local tline_mode=2
 function _init()
 	tline=tlines[tline_mode].fn
 
-	cam=make_cam(63.5,63.5,63.5)
+	cam=make_cam(63.5,63.5,96.5)
 end
 
 function _update()
@@ -285,8 +294,10 @@ function _draw()
 	draw_model(cube_model,m,cam)
 
 	rectfill(0,0,127,6,8)
-	print("mode:"..tlines[tline_mode].mode,1,1,7)
+	local cpu=tostr(flr(100*stat(1))).."%"
+	print(cpu,128-#cpu*4,1,2)
 
+	print("mode:"..tlines[tline_mode].mode,1,1,7)
 	print("⬆️⬇️⬅️➡️:rotate/🅾️:tline mode",8,120,14)
 end
 
@@ -294,11 +305,11 @@ end
 
 -- textured edge renderer
 function polytex(v)
-	local v0,nodes=v[#v],{}
-	local x0,y0,w0,u0,v0=v0.x,v0.y,v0.w,v0.u,v0.v
+	local p0,nodes=v[#v],{}
+	local x0,y0,w0,u0,v0=p0.x,p0.y,p0.w,p0.u,p0.v
 	for i=1,#v do
-		local v1=v[i]
-		local x1,y1,w1,u1,v1=v1.x,v1.y,v1.w,v1.u,v1.v
+		local p1=v[i]
+		local x1,y1,w1,u1,v1=p1.x,p1.y,p1.w,p1.u,p1.v
 		local _x1,_y1,_u1,_v1,_w1=x1,y1,u1,v1,w1
 		if(y0>y1) x0,y0,x1,y1,w0,w1,u0,v0,u1,v1=x1,y1,x0,y0,w1,w0,u1,v1,u0,v0
 		local dy=y1-y0
@@ -326,7 +337,21 @@ function polytex(v)
 				au+=sa*dau
 				av+=sa*dav
 				aw+=sa*daw
-				tline(ca,y,min(ceil(b)-1,127),y,au,av,dau,dav,aw,daw)
+
+				--[[
+				local dx,ddau,ddav=dab/8,dau,dav
+				dau*=dx
+				dav*=dx
+				daw*=dx
+				for i=0,7 do
+					_tline(a,y,a+dx,y,au/aw,av/aw,ddau/aw,ddav/aw)
+					a+=dx
+					au+=dau
+					av+=dav
+					aw+=daw
+				end
+				]]
+				--tline(a,y,b,y,au,av,dau,dav,aw,daw)
 			else
 				nodes[y]={x0,w0,u0,v0}
 			end
