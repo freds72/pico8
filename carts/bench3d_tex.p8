@@ -7,7 +7,7 @@ __lua__
 -- time
 local time_t=0
 -- globals
-local cam_angle,cam_dist=0.45,7
+local cam_angle,cam_dist=0.45,5
 local actors,cam,light={}
 function nop() return true end
 
@@ -257,7 +257,7 @@ function draw_model(model,m,x,y,z,w)
 	-- world to cam
 	-- inv cam
 	local cam_m=m_x_m(cam.m,m)
-	m_set_pos(cam_m,{0,-2,cam_dist-1})
+	m_set_pos(cam_m,{0,-0.5,cam_dist-1})
 
 	-- faces
 	local faces,p={},{}
@@ -272,7 +272,7 @@ function draw_model(model,m,x,y,z,w)
 					local x,y,z=cam_m[1]*v[1]+cam_m[5]*v[2]+cam_m[9]*v[3]+cam_m[13],cam_m[2]*v[1]+cam_m[6]*v[2]+cam_m[10]*v[3]+cam_m[14],cam_m[3]*v[1]+cam_m[7]*v[2]+cam_m[11]*v[3]+cam_m[15]
 				 local w=64/z
 				 -- avoid rehash
-					p[vi]={64+x*w,64-y*w,w,0,0}
+					p[vi]={63.5+flr(x*w),63.5-flr(y*w),w,0,0}
 				end
 			end
 			-- distance to camera (in object space)
@@ -288,7 +288,6 @@ function draw_model(model,m,x,y,z,w)
 	-- draw faces using projected points
 	for _,f in pairs(faces) do
 		f=f.face
-		local c=max(v_dot(model.n[f.ni],light.u))
 		local p0,uv0=p[f.vi[1]],f.uv[1]
 		p0[4],p0[5]=uv0.u,uv0.v
 		local p1,uv1=p[f.vi[2]],f.uv[2]
@@ -401,9 +400,9 @@ function _update()
 	if(btn(3)) cam_dist-=0.1
 	cam_dist=mid(cam_dist,2,32)
 	
-	local q=make_q(v_up,cam_angle)
+	local q=make_q(v_up,time()/8)
 	local m=m_from_q(q)
-	cam:track(m_x_xyz(m,0,2,-cam_dist),q)
+	cam:track(m_x_xyz(m,0,0.5,-cam_dist),q)
 	cam:update()
 end
 
@@ -424,7 +423,7 @@ function _init()
 	
 	cam=make_cam(64)
 	
-	light=make_light_actor(5)
+	-- light=make_light_actor(5)
 
 	actor=make_npc({0,0,0},v_up,"car")
 end

@@ -58,6 +58,7 @@ function zbuf_draw()
 	end
 	
 	-- add shadows to all faces
+	-- [[
 	for _,f in pairs(faces) do
 		-- shadows on light faces only
 		if f.light==true then
@@ -94,8 +95,9 @@ function zbuf_draw()
  			end
  		end
 	 end
+	
 	end
-
+	
 	-- project in cam space
 	for _,f in pairs(faces) do
 		-- project into cam space

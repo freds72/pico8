@@ -1,5 +1,5 @@
 pico-8 cartridge // http://www.pico-8.com
-version 16
+version 18
 __lua__
 
 function normalize(u,v,scale)
@@ -38,22 +38,16 @@ end
 
 function rspr(sx,sy,x,y,a,w)
 	local ca,sa=cos(a),sin(a)
- local srcx,srcy,addr,pixel_pair
  local ddx0,ddy0=ca,sa
  local mask=shl(0xfff8,(w-1))
- w*=4	
- ca*=w-0.5
- sa*=w-0.5 
-local dx0,dy0=sa-ca+w,-ca-sa+w
- w=2*w-1
- for ix=0,w do
-  srcx,srcy=dx0,dy0
-  for iy=0,w do
+ w=shl(w,2)
+ local dx0,dy0=(sa-ca)*(w-0.5)+w,(ca+sa)*(0.5-w)+w
+ w=shl(w,1)-1
+ for ix=x,x+w do
+  local srcx,srcy=dx0,dy0
+  for iy=y,w+y do
    if band(bor(srcx,srcy),mask)==0 then
-   	local c=sget(sx+srcx,sy+srcy)
-   	--if c!=14 then
-   		sset(x+ix,y+iy,c)
-  		--end
+   	sset(ix,iy,sget(sx+srcx,sy+srcy))
   	end
    srcx-=ddy0
   	srcy+=ddx0
@@ -67,7 +61,7 @@ local time_t=0
 local plyr={
 	x=0,y=0,
 	dx=0,dy=0,
-	acc=1,
+	acc=0,
 	angle=0,
 	da=0,
 	sx=48,
@@ -127,16 +121,19 @@ function _update60()
 end
 
 function _draw()
-	cls(6)
+	cls(0)
 	
 	draw_parts()
 	
 	palt(0,false)
 	palt(14,true)
 
-	rspr(plyr.sx,plyr.sy,32,16,-plyr.angle,2)	
+ for i=1,16 do
+		rspr(plyr.sx,plyr.sy,32,16,-plyr.angle,2)	
+	end
 	
 	local x,y=64+plyr.x-8,64+plyr.y-8
+ --[[
 	pal(6,0)
 	spr(36,x+1,y,2,2)
 	spr(36,x-1,y,2,2)
@@ -144,6 +141,7 @@ function _draw()
 	spr(36,x,y-1,2,2)
 	
 	pal(6,6)
+	]]
 	spr(36,x,y,2,2)
 
 	rectfill(0,0,127,8,1)
@@ -155,14 +153,14 @@ __gfx__
 00000000ee88eeeee0999a0eee0000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeddddeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
 00700700e000000e091414a0ee0650eeeeee00eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeddddddddeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
 00077000e088777009444490ee0650eeeeee060eeeeeeeeeeeeeeeeeeeeeeeeeeeeddddddddddeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
-00077000e055667004555440ee0990eeeeee0660eeeeeeeeeee666eeeeeeeeeeeedddddddddddeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
-00700700e000000e0339bbb0ee0440eeeee0066000000eeeeee6666eeeeeeeeeeddddddddddddeddddddddeeeeeeeeee00000000000000000000000000000000
-00000000ee88eeee003000b0eee00eeeee066666666cc0eeeeee66666666eeeeeddddddddddddddddddddddeeeeeeeee00000000000000000000000000000000
-00000000eeeeeeeeee0eee0eeeeeeeeeee070000007cc70eeee66666666666eeeddddddddddddddddddddddeeddddeee00000000000000000000000000000000
-00000000eeeeeeee0000000000000000ee0655555666650eeee6666666666eeeedddddddddddddddddddddddddddddee00000000000000000000000000000000
-00000000eeeeeeee0000000000000000eee00000555550eeeeeeee6666eeeeeeeeddddddddddddddddddddddddddddee00000000000000000000000000000000
-00000000ee00000e0000000000000000eeeeeeee00000eeeeeeeeeeeeeeeeeeeeedddddddddddddddddddddddddddddd00000000000000000000000000000000
-00000000e049550e0000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeddddddddddddddddddddddddddddd00000000000000000000000000000000
+00077000e055667004555440ee0990eeeeee0660eeeeeeeeeeeeeeeeeeeeeeeeeedddddddddddeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
+00700700e000000e0339bbb0ee0440eeeee0066000000eeeeee666eeeee66eeeeddddddddddddeddddddddeeeeeeeeee00000000000000000000000000000000
+00000000ee88eeee003000b0eee00eeeee066666666cc0eeeee666e666eeeeeeeddddddddddddddddddddddeeeeeeeee00000000000000000000000000000000
+00000000eeeeeeeeee0eee0eeeeeeeeeee070000007cc70eeeee666666666eeeeddddddddddddddddddddddeeddddeee00000000000000000000000000000000
+00000000eeeeeeee0000000000000000ee0655555666650eeee66666666666eeedddddddddddddddddddddddddddddee00000000000000000000000000000000
+00000000eeeeeeee0000000000000000eee00000555550eeeeee666666666eeeeeddddddddddddddddddddddddddddee00000000000000000000000000000000
+00000000ee00000e0000000000000000eeeeeeee00000eeeeee666e666eeeeeeeedddddddddddddddddddddddddddddd00000000000000000000000000000000
+00000000e049550e0000000000000000eeeeeeeeeeeeeeeeeee666eeeee66eeeeeeddddddddddddddddddddddddddddd00000000000000000000000000000000
 00000000e049660e0000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeddddddddddedddddddddddddddd00000000000000000000000000000000
 00000000ee00000e0000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000
 00000000eeeeeeee0000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee00000000000000000000000000000000

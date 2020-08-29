@@ -270,7 +270,7 @@ function draw_model(model,m,x,y,z,w)
 				if not p[vi] then
 					local v=model.v[vi]
 					local x,y,z=cam_m[1]*v[1]+cam_m[5]*v[2]+cam_m[9]*v[3]+cam_m[13],cam_m[2]*v[1]+cam_m[6]*v[2]+cam_m[10]*v[3]+cam_m[14],cam_m[3]*v[1]+cam_m[7]*v[2]+cam_m[11]*v[3]+cam_m[15]
-				 local w=64/z
+				 local w=63.5/z
 				 -- avoid rehash
 					p[vi]={63.5+flr(x*w),63.5-flr(y*w),w,0,0}
 				end
